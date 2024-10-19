@@ -1,4 +1,4 @@
-use super::{InputDebounce, PopoutPortal};
+use super::{errors_to_list_view, InputDebounce, PopoutPortal};
 use crate::{
     components,
     pages::project::{
@@ -619,7 +619,7 @@ mod metadata {
         super::common::{
             bulk::metadata::Editor as MetadataEditor, metadata::AddDatum as AddDatumEditor,
         },
-        update_properties, ActiveResources, State,
+        update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{components::DetailPopout, pages::project::state, types::Messages};
     use leptos::*;
@@ -633,6 +633,10 @@ mod metadata {
         let messages = expect_context::<Messages>();
         let resources = expect_context::<ActiveResources>();
         let state = expect_context::<Signal<State>>();
+        let input_debounce = expect_context::<InputDebounce>();
+        let (modifications, set_modifications) = create_signal(vec![]);
+        let modifications = leptos_use::signal_debounced(modifications, *input_debounce);
+
         let onremove = Callback::new({
             let project = project.clone();
             let graph = graph.clone();
@@ -656,28 +660,39 @@ mod metadata {
             }
         });
 
-        let onmodify = Callback::new({
-            let project = project.clone();
-            let graph = graph.clone();
-            let resources = resources.clone();
-            let messages = messages.clone();
-            move |value: (String, data::Value)| {
-                let mut update = PropertiesUpdate::default();
-                update.metadata = MetadataAction {
-                    add: vec![],
-                    update: vec![value.clone()],
-                    remove: vec![],
-                };
-
-                spawn_local({
-                    let project = project.rid().get_untracked();
-                    let resources = resources.clone();
-                    let graph = graph.clone();
-                    let messages = messages.clone();
-                    async move { update_properties(project, resources, update, &graph, messages).await }
-                });
-            }
+        let onmodify = Callback::new(move |value: (String, data::Value)| {
+            set_modifications.update(|modifications| modifications.push(value));
         });
+
+        let _ = watch(
+            modifications,
+            {
+                let project = project.clone();
+                let graph = graph.clone();
+                let resources = resources.clone();
+                let messages = messages.clone();
+                move |modifications, _, _| {
+                    let mut update = PropertiesUpdate::default();
+                    update.metadata = MetadataAction {
+                        add: vec![],
+                        update: modifications.clone(),
+                        remove: vec![],
+                    };
+                    set_modifications.update_untracked(|modifications| modifications.clear());
+
+                    spawn_local({
+                        let project = project.rid().get_untracked();
+                        let resources = resources.clone();
+                        let graph = graph.clone();
+                        let messages = messages.clone();
+                        async move {
+                            update_properties(project, resources, update, &graph, messages).await
+                        }
+                    });
+                }
+            },
+            false,
+        );
 
         view! { <MetadataEditor value=state.with(|state| { state.metadata() }) onremove onmodify /> }
     }
@@ -760,22 +775,56 @@ async fn update_properties(
 
     match update_properties_invoke(project, containers, asset_ids, update).await {
         Err(err) => {
-            tracing::error!(?err);
-            todo!();
+            let mut msg = types::message::Builder::error("Could not save properties.");
+            msg.body(format!("{err:?}"));
+            messages.update(|messages| messages.push(msg.build()));
         }
 
         Ok((container_results, asset_results)) => {
             assert_eq!(container_results.len(), expected_results_containers);
             assert_eq!(asset_results.len(), expected_results_assets);
-            for result in container_results {
-                if let Err(err) = result {
-                    todo!();
-                }
-            }
-            for result in asset_results {
-                if let Err(err) = result {
-                    todo!();
-                }
+
+            let container_errors = container_results
+                .into_iter()
+                .filter_map(|err| err.err())
+                .collect::<Vec<_>>();
+
+            let asset_errors = asset_results
+                .into_iter()
+                .filter_map(|err| err.err())
+                .collect::<Vec<_>>();
+
+            if !container_errors.is_empty() || !asset_errors.is_empty() {
+                let mut msg = types::message::Builder::error("Could not save properties.");
+
+                let errors = view! {
+                    <div>
+                        {if !container_errors.is_empty() {
+                            view! {
+                                <div>
+                                    <h2>"Containers"</h2>
+                                    {errors_to_list_view(container_errors)}
+                                </div>
+                            }
+                                .into_view()
+                        } else {
+                            view! {}.into_view()
+                        }}
+                        {if !asset_errors.is_empty() {
+                            view! {
+                                <div>
+                                    <h2>"Assets"</h2>
+                                    {errors_to_list_view(asset_errors)}
+                                </div>
+                            }
+                                .into_view()
+                        } else {
+                            view! {}.into_view()
+                        }}
+                    </div>
+                };
+                msg.body(errors);
+                messages.update(|messages| messages.push(msg.build()));
             }
         }
     }

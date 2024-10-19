@@ -296,11 +296,7 @@ pub mod metadata {
     }
 
     #[component]
-    fn BoolEditor(
-        /// Read signal.
-        value: Signal<Value>,
-        set_value: WriteSignal<Value>,
-    ) -> impl IntoView {
+    fn BoolEditor(value: Signal<Value>, set_value: WriteSignal<Value>) -> impl IntoView {
         let checked = move || {
             value.with(|value| {
                 let Value::Bool(value) = value else {
@@ -321,11 +317,7 @@ pub mod metadata {
     }
 
     #[component]
-    fn StringEditor(
-        /// Read signal.
-        value: Signal<Value>,
-        set_value: WriteSignal<Value>,
-    ) -> impl IntoView {
+    fn StringEditor(value: Signal<Value>, set_value: WriteSignal<Value>) -> impl IntoView {
         let input_value = move || {
             value.with(|value| {
                 let Value::String(value) = value else {
@@ -348,11 +340,8 @@ pub mod metadata {
     }
 
     #[component]
-    fn NumberEditor(
-        /// Read signal.
-        value: Signal<Value>,
-        set_value: WriteSignal<Value>,
-    ) -> impl IntoView {
+    fn NumberEditor(value: Signal<Value>, set_value: WriteSignal<Value>) -> impl IntoView {
+        let (is_valid, set_is_valid) = create_signal(true);
         let input_value = move || {
             value.with(|value| {
                 let Value::Number(value) = value else {
@@ -364,7 +353,6 @@ pub mod metadata {
         };
 
         let oninput = move |value: String| {
-            tracing::debug!(?value);
             let value = value.trim_start_matches("0");
             let Ok(value) = serde_json::from_str(&value) else {
                 return;
@@ -373,22 +361,27 @@ pub mod metadata {
             set_value(Value::Number(value));
         };
 
+        let class = move || {
+            let mut class = "input-compact w-full".to_string();
+            if !is_valid() {
+                class.push_str(" border-syre-red-600");
+            }
+            class
+        };
+
         view! {
             <InputNumber
                 value=Signal::derive(input_value)
                 oninput
+                set_is_valid
+                class=Signal::derive(class)
                 placeholder="Value"
-                class="input-compact w-full"
             />
         }
     }
 
     #[component]
-    fn QuantityEditor(
-        /// Read signal.
-        value: Signal<Value>,
-        set_value: WriteSignal<Value>,
-    ) -> impl IntoView {
+    fn QuantityEditor(value: Signal<Value>, set_value: WriteSignal<Value>) -> impl IntoView {
         let value_magnitude = move || {
             value.with(|value| {
                 let Value::Quantity { magnitude, .. } = value else {
@@ -1221,7 +1214,11 @@ pub mod bulk {
         pub fn Editor(
             #[prop(into)] value: MaybeSignal<Metadata>,
             #[prop(into)] onremove: Callback<String>,
-            #[prop(into)] onmodify: Callback<(String, data::Value)>,
+
+            /// # Arguments
+            /// (`key`, `value`)
+            #[prop(into)]
+            onmodify: Callback<(String, data::Value)>,
         ) -> impl IntoView {
             let value_sorted = move || {
                 let mut value = value.get();
@@ -1283,32 +1280,34 @@ pub mod bulk {
             value: Signal<Value>,
             #[prop(into)] oninput: Callback<data::Value>,
         ) -> impl IntoView {
+            let value_kind = create_memo(move |_| {
+                value.with(|value| match value {
+                    Value::MixedKind => None,
+                    Value::EqualKind(value) => Some(value.clone()),
+                    Value::Equal(value) => Some(value.kind()),
+                })
+            });
+
             let value_editor = {
                 let oninput = oninput.clone();
                 move || {
-                    value.with(|val| match val {
-                        Value::MixedKind => view! {}.into_view(),
-                        Value::EqualKind(data::ValueKind::Bool)
-                        | Value::Equal(data::Value::Bool(_)) => {
+                    value_kind.with(|kind| match kind {
+                        None => view! {}.into_view(),
+                        Some(data::ValueKind::Bool) => {
                             view! { <BoolEditor value oninput /> }.into_view()
                         }
-                        Value::EqualKind(data::ValueKind::String)
-                        | Value::Equal(data::Value::String(_)) => {
+                        Some(data::ValueKind::String) => {
                             view! { <StringEditor value oninput /> }.into_view()
                         }
-                        Value::EqualKind(data::ValueKind::Number)
-                        | Value::Equal(data::Value::Number(_)) => {
+                        Some(data::ValueKind::Number) => {
                             view! { <NumberEditor value oninput /> }.into_view()
                         }
-                        Value::EqualKind(data::ValueKind::Quantity)
-                        | Value::Equal(data::Value::Quantity { .. }) => {
+                        Some(data::ValueKind::Quantity) => {
                             view! { <QuantityEditor value oninput /> }.into_view()
                         }
-                        Value::EqualKind(data::ValueKind::Array)
-                        | Value::Equal(data::Value::Array(_)) => {
+                        Some(data::ValueKind::Array) => {
                             view! { <ArrayEditor value oninput /> }.into_view()
                         }
-                        Value::Equal(data::Value::Null) => unreachable!(),
                     })
                 }
             };
@@ -1322,11 +1321,7 @@ pub mod bulk {
         }
 
         #[component]
-        fn KindSelect(
-            /// Read signal.
-            value: Signal<Value>,
-            onchange: Callback<data::Value>,
-        ) -> impl IntoView {
+        fn KindSelect(value: Signal<Value>, onchange: Callback<data::Value>) -> impl IntoView {
             let input_node = NodeRef::<html::Select>::new();
             create_effect(move |_| {
                 let Some(input) = input_node.get() else {
@@ -1339,13 +1334,18 @@ pub mod bulk {
                             input.set_value(value);
                         }
                     }
-                    _ => {}
+                    Value::EqualKind(value) => {
+                        input.set_value(kind_to_str(value));
+                    }
+                    Value::MixedKind => {
+                        input.set_value("");
+                    }
                 })
             });
 
             let change = move |e| {
                 let kind = string_to_kind(event_target_value(&e)).unwrap();
-                value.with(|value| {
+                value.with_untracked(|value| {
                     if let Value::Equal(value) = value {
                         onchange(convert_value_kind(value.clone(), &kind));
                     } else {
@@ -1529,19 +1529,19 @@ pub mod bulk {
             );
 
             view! {
-                <div class="flex">
+                <div class="flex w-full">
                     <InputNumber
                         value=magnitude
                         oninput=oninput_magnitude
                         placeholder="Magnitude"
-                        class="input-compact"
+                        class="input-compact max-w-[50%]"
                     />
                     <input
                         prop:value=unit
                         minlength="1"
                         on:input=oninput_unit
                         placeholder="Unit"
-                        class="input-compact"
+                        class="input-compact max-w-[50%]"
                     />
                 </div>
             }

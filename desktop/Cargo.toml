@@ -63,6 +63,7 @@ features = [
 	"HtmlOptionElement",
 	"HtmlSelectElement",
 	"HtmlSpanElement",
+	"InputEvent",
 	"Performance",
 	"ResizeObserver",
 	"ResizeObserverBoxOptions",

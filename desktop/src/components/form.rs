@@ -1,8 +1,9 @@
 use leptos::*;
 use std::str::FromStr;
+use wasm_bindgen::JsCast;
 
-/// `<input type="number" ... /> wrapper.
-/// Handles `step` and validation UI.
+/// Similar to `<input type="number" ... />`.
+/// Handles validation.
 #[component]
 pub fn InputNumber(
     /// Read signal.
@@ -10,45 +11,68 @@ pub fn InputNumber(
     #[prop(into)]
     value: Signal<String>,
 
+    /// Signal to indicate if the current value is valid or not.
+    #[prop(optional, into)]
+    set_is_valid: Option<WriteSignal<bool>>,
+
     #[prop(into)] oninput: Callback<String>,
     #[prop(optional)] min: Option<f64>,
     #[prop(optional)] max: Option<f64>,
     #[prop(optional, into)] placeholder: MaybeProp<String>,
     #[prop(default = false)] required: bool,
-    #[prop(optional, into)] class: MaybeProp<String>,
+    #[prop(optional, into)] class: MaybeSignal<String>,
 ) -> impl IntoView {
-    let step = move || {
-        value.with(|value| match value.split_once('.') {
-            None => {
-                let magnitude = value.chars().rev().take_while(|c| *c == '0').count();
-                10_f64.powi(magnitude as i32)
-            }
-            Some((_, decs)) => 10_f64.powi(-(decs.len() as i32)),
-        })
-    };
+    const DECIMAL_MARKER: &'static str = ".";
 
-    let is_invalid = move || {
-        value
-            .with(|value| {
+    let _ = watch(
+        value,
+        move |value, _, prev_validity| {
+            let Some(set_is_valid) = set_is_valid else {
+                return true;
+            };
+
+            // NB: For JSON, leading zeros (`0`) are not valid unless it is
+            // the only character.
+            let validity = if value == "0" {
+                true
+            } else {
                 let value = value.trim_start_matches("0");
-                serde_json::Number::from_str(value)
-            })
-            .is_err()
-    };
+                serde_json::Number::from_str(value).is_ok()
+            };
 
+            if let Some(prev_validity) = prev_validity.as_ref() {
+                if validity != *prev_validity {
+                    set_is_valid.set(validity);
+                }
+            } else {
+                set_is_valid.set(validity);
+            }
+
+            validity
+        },
+        true,
+    );
+
+    // NB: Must check if the typed character was a period with nothing follwing it.
+    // If input ends in a perdiod (`.`) the whole number part is reported
+    // **without** the period, so the value maybe updated and the period erased,
+    // making it impossible to type a period as the next character.
     view! {
         <input
-            type="number"
-            class:error=is_invalid
+            type="text"
+            inputmode="decimal"
             prop:value=value
-            on:input=move |e| {
-                let v = event_target_value(&e);
-                tracing::debug!(?v);
-                oninput(v)
+            on:input=move |e: ev::Event| {
+                let value = event_target_value(&e);
+                if let Some(e) = e.dyn_ref::<ev::InputEvent>() {
+                    if let Some(key) = e.data() {
+                        if key == DECIMAL_MARKER && !value.contains(DECIMAL_MARKER) {
+                            return;
+                        }
+                    }
+                }
+                oninput(value);
             }
-            min=min
-            max=max
-            step=step
             placeholder=placeholder
             class=class
             required=required

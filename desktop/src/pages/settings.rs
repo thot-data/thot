@@ -118,6 +118,7 @@ fn DesktopSettings() -> impl IntoView {
                 user_settings.update(|settings| {
                     settings.desktop = Ok(update.clone());
                 });
+
                 let user = user.clone();
                 spawn_local(async move {
                     if let Err(err) = update_desktop_settings(user, update).await {

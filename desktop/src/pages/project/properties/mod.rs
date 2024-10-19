@@ -4,6 +4,7 @@ use super::{
 };
 use crate::types;
 use leptos::*;
+use std::fmt;
 use syre_core::types::ResourceId;
 use syre_desktop_lib as lib;
 
@@ -58,7 +59,6 @@ pub fn PropertiesBar() -> impl IntoView {
     let active_editor = expect_context::<RwSignal<workspace::PropertiesEditor>>();
     let popout_portal = NodeRef::<html::Div>::new();
     provide_context(PopoutPortal(popout_portal));
-
     provide_context(InputDebounce(Signal::derive(move || {
         user_settings.with(|settings| {
             let debounce = match &settings.desktop {
@@ -212,4 +212,18 @@ pub fn detail_popout_top(
     let y_max = (parent_rect.height() - popout_rect.height()) as i32 - MARGIN;
     let top = (base_rect.top() - parent_rect.top()) as i32;
     crate::common::clamp(top, MARGIN, y_max)
+}
+
+/// Intended to take in a list of errors and produce a `<ul>`.
+fn errors_to_list_view(errors: Vec<impl fmt::Debug>) -> impl IntoView {
+    view! {
+        <ul>
+            {errors
+                .into_iter()
+                .map(|err| {
+                    view! { <li>{format!("{err:?}")}</li> }
+                })
+                .collect::<Vec<_>>()}
+        </ul>
+    }
 }

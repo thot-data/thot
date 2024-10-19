@@ -415,10 +415,10 @@ pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
 
 mod name {
     use super::{
-        super::common::bulk::Value, container_assets, update_properties, ActiveResources, State,
-        InputDebounce,
+        super::{common::bulk::Value, errors_to_list_view},
+        container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
-    use crate::{components::form::debounced::InputText, pages::project::state, types::Messages};
+    use crate::{components::form::debounced::InputText, pages::project::state, types};
     use leptos::*;
     use syre_desktop_lib::command::asset::bulk::PropertiesUpdate;
 
@@ -426,7 +426,7 @@ mod name {
     pub fn Editor() -> impl IntoView {
         let project = expect_context::<state::Project>();
         let graph = expect_context::<state::Graph>();
-        let messages = expect_context::<Messages>();
+        let messages = expect_context::<types::Messages>();
         let assets = expect_context::<ActiveResources>();
         let state = expect_context::<Signal<State>>();
         let input_debounce = expect_context::<InputDebounce>();
@@ -441,17 +441,24 @@ mod name {
                 async move {
                     match update_properties(project, asset_ids, update).await {
                         Err(err) => {
-                            tracing::error!(?err);
-                            todo!();
+                            let mut msg =
+                                types::message::Builder::error("Could not save properties.");
+                            msg.body(format!("{err:?}"));
+                            messages.update(|messages| messages.push(msg.build()));
                         }
 
                         Ok(asset_results) => {
                             assert_eq!(asset_results.len(), expected_results_len);
-                            for result in asset_results {
-                                if let Err(err) = result {
-                                    tracing::error!(?err);
-                                    todo!();
-                                }
+                            let errors = asset_results
+                                .into_iter()
+                                .filter_map(|err| err.err())
+                                .collect::<Vec<_>>();
+
+                            if !errors.is_empty() {
+                                let mut msg =
+                                    types::message::Builder::error("Could not save properties.");
+                                msg.body(errors_to_list_view(errors));
+                                messages.update(|messages| messages.push(msg.build()));
                             }
                         }
                     }
@@ -530,10 +537,10 @@ mod name {
 
 mod kind {
     use super::{
-        super::common::bulk::kind::Editor as KindEditor, container_assets, update_properties,
-        ActiveResources, State, InputDebounce,
+        super::{common::bulk::kind::Editor as KindEditor, errors_to_list_view},
+        container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
-    use crate::{pages::project::state, types::Messages};
+    use crate::{pages::project::state, types};
     use leptos::*;
     use syre_desktop_lib::command::asset::bulk::PropertiesUpdate;
 
@@ -541,7 +548,7 @@ mod kind {
     pub fn Editor() -> impl IntoView {
         let project = expect_context::<state::Project>();
         let graph = expect_context::<state::Graph>();
-        let messages = expect_context::<Messages>();
+        let messages = expect_context::<types::Messages>();
         let assets = expect_context::<ActiveResources>();
         let state = expect_context::<Signal<State>>();
         let input_debounce = expect_context::<InputDebounce>();
@@ -556,16 +563,24 @@ mod kind {
                 async move {
                     match update_properties(project, asset_ids, update).await {
                         Err(err) => {
-                            tracing::error!(?err);
-                            todo!();
+                            let mut msg =
+                                types::message::Builder::error("Could not save properties.");
+                            msg.body(format!("{err:?}"));
+                            messages.update(|messages| messages.push(msg.build()));
                         }
 
                         Ok(asset_results) => {
                             assert_eq!(asset_results.len(), expected_results_len);
-                            for result in asset_results {
-                                if let Err(err) = result {
-                                    todo!();
-                                }
+                            let errors = asset_results
+                                .into_iter()
+                                .filter_map(|err| err.err())
+                                .collect::<Vec<_>>();
+
+                            if !errors.is_empty() {
+                                let mut msg =
+                                    types::message::Builder::error("Could not save properties.");
+                                msg.body(errors_to_list_view(errors));
+                                messages.update(|messages| messages.push(msg.build()));
                             }
                         }
                     }
@@ -579,10 +594,10 @@ mod kind {
 
 mod description {
     use super::{
-        super::common::bulk::description::Editor as DescriptionEditor, container_assets,
-        update_properties, ActiveResources, State, InputDebounce,
+        super::{common::bulk::description::Editor as DescriptionEditor, errors_to_list_view},
+        container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
-    use crate::{pages::project::state, types::Messages};
+    use crate::{pages::project::state, types};
     use leptos::*;
     use syre_desktop_lib::command::asset::bulk::PropertiesUpdate;
 
@@ -590,7 +605,7 @@ mod description {
     pub fn Editor() -> impl IntoView {
         let project = expect_context::<state::Project>();
         let graph = expect_context::<state::Graph>();
-        let messages = expect_context::<Messages>();
+        let messages = expect_context::<types::Messages>();
         let assets = expect_context::<ActiveResources>();
         let state = expect_context::<Signal<State>>();
         let input_debounce = expect_context::<InputDebounce>();
@@ -605,17 +620,24 @@ mod description {
                 async move {
                     match update_properties(project, asset_ids, update).await {
                         Err(err) => {
-                            tracing::error!(?err);
-                            todo!();
+                            let mut msg =
+                                types::message::Builder::error("Could not save properties.");
+                            msg.body(format!("{err:?}"));
+                            messages.update(|messages| messages.push(msg.build()));
                         }
 
                         Ok(asset_results) => {
                             assert_eq!(asset_results.len(), expected_results_len);
-                            for result in asset_results {
-                                if let Err(err) = result {
-                                    tracing::error!(?err);
-                                    todo!();
-                                }
+                            let errors = asset_results
+                                .into_iter()
+                                .filter_map(|err| err.err())
+                                .collect::<Vec<_>>();
+
+                            if !errors.is_empty() {
+                                let mut msg =
+                                    types::message::Builder::error("Could not save properties.");
+                                msg.body(errors_to_list_view(errors));
+                                messages.update(|messages| messages.push(msg.build()));
                             }
                         }
                     }
@@ -636,10 +658,13 @@ mod description {
 
 mod tags {
     use super::{
-        super::common::bulk::tags::{AddTags as AddTagsEditor, Editor as TagsEditor},
+        super::{
+            common::bulk::tags::{AddTags as AddTagsEditor, Editor as TagsEditor},
+            errors_to_list_view,
+        },
         container_assets, update_properties, ActiveResources, State,
     };
-    use crate::{components::DetailPopout, pages::project::state, types::Messages};
+    use crate::{components::DetailPopout, pages::project::state, types};
     use leptos::*;
     use syre_desktop_lib::command::{asset::bulk::PropertiesUpdate, bulk::TagsAction};
 
@@ -647,7 +672,7 @@ mod tags {
     pub fn Editor() -> impl IntoView {
         let project = expect_context::<state::Project>();
         let graph = expect_context::<state::Graph>();
-        let messages = expect_context::<Messages>();
+        let messages = expect_context::<types::Messages>();
         let assets = expect_context::<ActiveResources>();
         let state = expect_context::<Signal<State>>();
         let onremove = Callback::new({
@@ -672,16 +697,25 @@ mod tags {
                     async move {
                         match update_properties(project, asset_ids, update).await {
                             Err(err) => {
-                                tracing::error!(?err);
-                                todo!();
+                                let mut msg =
+                                    types::message::Builder::error("Could not save properties.");
+                                msg.body(format!("{err:?}"));
+                                messages.update(|messages| messages.push(msg.build()));
                             }
 
                             Ok(asset_results) => {
                                 assert_eq!(asset_results.len(), expected_results_len);
-                                for result in asset_results {
-                                    if let Err(err) = result {
-                                        todo!();
-                                    }
+                                let errors = asset_results
+                                    .into_iter()
+                                    .filter_map(|err| err.err())
+                                    .collect::<Vec<_>>();
+
+                                if !errors.is_empty() {
+                                    let mut msg = types::message::Builder::error(
+                                        "Could not save properties.",
+                                    );
+                                    msg.body(errors_to_list_view(errors));
+                                    messages.update(|messages| messages.push(msg.build()));
                                 }
                             }
                         }
@@ -697,7 +731,7 @@ mod tags {
     pub fn AddTags(#[prop(into, optional)] onclose: Option<Callback<()>>) -> impl IntoView {
         let project = expect_context::<state::Project>();
         let graph = expect_context::<state::Graph>();
-        let messages = expect_context::<Messages>();
+        let messages = expect_context::<types::Messages>();
         let assets = expect_context::<ActiveResources>();
         let onadd = Callback::new(move |tags: Vec<String>| {
             if tags.is_empty() {
@@ -716,24 +750,28 @@ mod tags {
                 async move {
                     match update_properties(project, asset_ids, update).await {
                         Err(err) => {
-                            tracing::error!(?err);
-                            todo!();
+                            let mut msg =
+                                types::message::Builder::error("Could not save properties.");
+                            msg.body(format!("{err:?}"));
+                            messages.update(|messages| messages.push(msg.build()));
                         }
 
                         Ok(asset_results) => {
                             assert_eq!(asset_results.len(), expected_results_len);
-                            let mut all_ok = true;
-                            for result in asset_results {
-                                if let Err(err) = result {
-                                    all_ok = false;
-                                    todo!();
-                                }
-                            }
+                            let errors = asset_results
+                                .into_iter()
+                                .filter_map(|err| err.err())
+                                .collect::<Vec<_>>();
 
-                            if all_ok {
+                            if errors.is_empty() {
                                 if let Some(onclose) = onclose {
                                     onclose(());
                                 }
+                            } else {
+                                let mut msg =
+                                    types::message::Builder::error("Could not save properties.");
+                                msg.body(errors_to_list_view(errors));
+                                messages.update(|messages| messages.push(msg.build()));
                             }
                         }
                     }
@@ -757,12 +795,15 @@ mod tags {
 
 mod metadata {
     use super::{
-        super::common::{
-            bulk::metadata::Editor as MetadataEditor, metadata::AddDatum as AddDatumEditor,
+        super::{
+            common::{
+                bulk::metadata::Editor as MetadataEditor, metadata::AddDatum as AddDatumEditor,
+            },
+            errors_to_list_view,
         },
-        container_assets, update_properties, ActiveResources, State,
+        container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
-    use crate::{components::DetailPopout, pages::project::state, types::Messages};
+    use crate::{components::DetailPopout, pages::project::state, types};
     use leptos::*;
     use syre_core::types::data;
     use syre_desktop_lib::command::{asset::bulk::PropertiesUpdate, bulk::MetadataAction};
@@ -771,9 +812,13 @@ mod metadata {
     pub fn Editor() -> impl IntoView {
         let project = expect_context::<state::Project>();
         let graph = expect_context::<state::Graph>();
-        let messages = expect_context::<Messages>();
+        let messages = expect_context::<types::Messages>();
         let assets = expect_context::<ActiveResources>();
         let state = expect_context::<Signal<State>>();
+        let input_debounce = expect_context::<InputDebounce>();
+        let (modifications, set_modifications) = create_signal(vec![]);
+        let modifications = leptos_use::signal_debounced(modifications, *input_debounce);
+
         let onremove = Callback::new({
             let project = project.clone();
             let graph = graph.clone();
@@ -794,16 +839,25 @@ mod metadata {
                     async move {
                         match update_properties(project, asset_ids, update).await {
                             Err(err) => {
-                                tracing::error!(?err);
-                                todo!();
+                                let mut msg =
+                                    types::message::Builder::error("Could not save properties.");
+                                msg.body(format!("{err:?}"));
+                                messages.update(|messages| messages.push(msg.build()));
                             }
 
                             Ok(asset_results) => {
                                 assert_eq!(asset_results.len(), expected_results_len);
-                                for result in asset_results {
-                                    if let Err(err) = result {
-                                        todo!();
-                                    }
+                                let errors = asset_results
+                                    .into_iter()
+                                    .filter_map(|err| err.err())
+                                    .collect::<Vec<_>>();
+
+                                if !errors.is_empty() {
+                                    let mut msg = types::message::Builder::error(
+                                        "Could not save properties.",
+                                    );
+                                    msg.body(errors_to_list_view(errors));
+                                    messages.update(|messages| messages.push(msg.build()));
                                 }
                             }
                         }
@@ -812,43 +866,62 @@ mod metadata {
             }
         });
 
-        let onmodify = Callback::new({
-            let project = project.clone();
-            let graph = graph.clone();
-            let assets = assets.clone();
-            move |value: (String, data::Value)| {
-                let mut update = PropertiesUpdate::default();
-                update.metadata = MetadataAction {
-                    add: vec![],
-                    update: vec![value.clone()],
-                    remove: vec![],
-                };
+        let onmodify = Callback::new(move |value: (String, data::Value)| {
+            set_modifications.update(|modifications| modifications.push(value));
+        });
 
-                spawn_local({
-                    let project = project.rid().get_untracked();
-                    let asset_ids =
-                        assets.with_untracked(|assets| container_assets(assets, &graph));
-                    let expected_results_len = asset_ids.len();
-                    async move {
-                        match update_properties(project, asset_ids, update).await {
-                            Err(err) => {
-                                tracing::error!(?err);
-                                todo!();
-                            }
+        let _ = watch(
+            modifications,
+            {
+                let project = project.clone();
+                let graph = graph.clone();
+                let assets = assets.clone();
+                move |modifications, _, _| {
+                    let mut update = PropertiesUpdate::default();
+                    update.metadata = MetadataAction {
+                        add: vec![],
+                        update: modifications.clone(),
+                        remove: vec![],
+                    };
+                    set_modifications.update_untracked(|modifications| modifications.clear());
 
-                            Ok(asset_results) => {
-                                assert_eq!(asset_results.len(), expected_results_len);
-                                for result in asset_results {
-                                    if let Err(err) = result {
-                                        todo!();
+                    spawn_local({
+                        let project = project.rid().get_untracked();
+                        let asset_ids =
+                            assets.with_untracked(|assets| container_assets(assets, &graph));
+                        let expected_results_len = asset_ids.len();
+                        async move {
+                            match update_properties(project, asset_ids, update).await {
+                                Err(err) => {
+                                    let mut msg = types::message::Builder::error(
+                                        "Could not save properties.",
+                                    );
+                                    msg.body(format!("{err:?}"));
+                                    messages.update(|messages| messages.push(msg.build()));
+                                }
+
+                                Ok(asset_results) => {
+                                    assert_eq!(asset_results.len(), expected_results_len);
+                                    let errors = asset_results
+                                        .into_iter()
+                                        .filter_map(|err| err.err())
+                                        .collect::<Vec<_>>();
+
+                                    if !errors.is_empty() {
+                                        let mut msg = types::message::Builder::error(
+                                            "Could not save properties.",
+                                        );
+                                        msg.body(errors_to_list_view(errors));
+                                        messages.update(|messages| messages.push(msg.build()));
                                     }
                                 }
                             }
                         }
-                    }
-                });
-            }
-        });
+                    });
+                }
+            },
+            false,
+        );
 
         view! { <MetadataEditor value=state.with(|state| { state.metadata() }) onremove onmodify /> }
     }
@@ -857,7 +930,7 @@ mod metadata {
     pub fn AddDatum(#[prop(optional, into)] onclose: Option<Callback<()>>) -> impl IntoView {
         let project = expect_context::<state::Project>();
         let graph = expect_context::<state::Graph>();
-        let messages = expect_context::<Messages>();
+        let messages = expect_context::<types::Messages>();
         let assets = expect_context::<ActiveResources>();
         let state = expect_context::<Signal<State>>();
         let onadd = Callback::new({
@@ -880,24 +953,30 @@ mod metadata {
                     async move {
                         match update_properties(project, asset_ids, update).await {
                             Err(err) => {
-                                tracing::error!(?err);
-                                todo!();
+                                let mut msg =
+                                    types::message::Builder::error("Could not save properties.");
+                                msg.body(format!("{err:?}"));
+                                messages.update(|messages| messages.push(msg.build()));
                             }
 
                             Ok(asset_results) => {
                                 assert_eq!(asset_results.len(), expected_results_len);
                                 let mut all_ok = true;
-                                for result in asset_results {
-                                    if let Err(err) = result {
-                                        all_ok = false;
-                                        todo!();
-                                    }
-                                }
+                                let errors = asset_results
+                                    .into_iter()
+                                    .filter_map(|err| err.err())
+                                    .collect::<Vec<_>>();
 
-                                if all_ok {
+                                if errors.is_empty() {
                                     if let Some(onclose) = onclose {
                                         onclose(());
                                     }
+                                } else {
+                                    let mut msg = types::message::Builder::error(
+                                        "Could not save properties.",
+                                    );
+                                    msg.body(errors_to_list_view(errors));
+                                    messages.update(|messages| messages.push(msg.build()));
                                 }
                             }
                         }
