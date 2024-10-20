@@ -90,7 +90,6 @@ impl FsWatcher {
                 }
             });
 
-        let trash_events = Self::filter_nested_events(trash_events);
         let mut trash_event_parents: Vec<(&PathBuf, Vec<&DebouncedEvent>)> =
             Vec::with_capacity(trash_events.len());
         for event in trash_events {

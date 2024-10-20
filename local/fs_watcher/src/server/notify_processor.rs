@@ -66,6 +66,97 @@ impl FsWatcher {
             .collect::<Vec<_>>();
 
         let events = Self::filter_nested_events(events);
+
+        #[cfg(target_os = "windows")]
+        let events = Self::windows_filter_modify_events(events);
+
+        events
+    }
+
+    /// Remove nested events.
+    ///
+    /// i.e. If a folder was created/removed with children, and both the parent folder and children
+    /// resources creation/removal events are present, the events of the children are filtered out.
+    fn filter_nested_events<'a>(mut events: Vec<&'a DebouncedEvent>) -> Vec<&'a DebouncedEvent> {
+        use notify::EventKind;
+
+        enum EventRelation {
+            ParentOf(usize),
+            Descendant,
+        }
+
+        let len_orig = events.len();
+        let create_remove_folder_events = events
+            .clone()
+            .into_iter()
+            .filter(|event| match event.kind {
+                EventKind::Create(notify::event::CreateKind::Folder)
+                | EventKind::Create(notify::event::CreateKind::Any)
+                | EventKind::Remove(notify::event::RemoveKind::Folder)
+                | EventKind::Remove(notify::event::RemoveKind::Any) => true,
+                _ => false,
+            })
+            .collect::<Vec<_>>();
+
+        let mut parent_events: Vec<&DebouncedEvent> = vec![];
+        for event in create_remove_folder_events {
+            let [path] = &event.paths[..] else {
+                panic!("invalid paths");
+            };
+
+            let relation = parent_events.iter().enumerate().find_map(|(idx, parent)| {
+                let [parent_path] = &(*parent).paths[..] else {
+                    panic!("invalid paths");
+                };
+
+                if parent_path.starts_with(path) {
+                    Some(EventRelation::ParentOf(idx))
+                } else if path.starts_with(parent_path) {
+                    Some(EventRelation::Descendant)
+                } else {
+                    None
+                }
+            });
+
+            match relation {
+                None => parent_events.push(event),
+                Some(EventRelation::ParentOf(idx)) => parent_events[idx] = event,
+                Some(EventRelation::Descendant) => {}
+            };
+        }
+
+        events.retain(|event| {
+            match event.kind {
+                EventKind::Create(_)
+                | EventKind::Remove(_)
+                | EventKind::Modify(notify::event::ModifyKind::Data(_))
+                | EventKind::Modify(notify::event::ModifyKind::Any) => {
+                    let [path] = &event.paths[..] else {
+                        panic!("invalid paths");
+                    };
+
+                    !parent_events.iter().any(|parent| {
+                        let [parent_path] = &parent.paths[..] else {
+                            panic!("invalid paths");
+                        };
+
+                        if parent_path == path {
+                            false
+                        } else {
+                            path.starts_with(parent_path)
+                        }
+                    })
+                }
+                EventKind::Modify(notify::event::ModifyKind::Name(_)) => {
+                    // NB: Not clear how to handle.
+                    // Let pass through.
+                    true
+                }
+                _ => unreachable!("event kind previously filtered"),
+            }
+        });
+
+        tracing::trace!("filtered {} nested events", len_orig - events.len());
         events
     }
 
@@ -869,6 +960,48 @@ impl FsWatcher {
         };
 
         Ok(id)
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl FsWatcher {
+    /// Remove modify events that are paired to a `Create` event.
+    fn windows_filter_modify_events<'a>(
+        mut events: Vec<&'a DebouncedEvent>,
+    ) -> Vec<&'a DebouncedEvent> {
+        use notify::EventKind;
+
+        let len_orig = events.len();
+
+        let create_events = events
+            .iter()
+            .filter_map(|event| {
+                if matches!(event.kind, EventKind::Create(_)) {
+                    let [path] = &event.paths[..] else {
+                        panic!("invalid paths");
+                    };
+
+                    Some(path.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        events.retain(|event| {
+            if matches!(event.kind, EventKind::Modify(_)) {
+                let [path] = &event.paths[..] else {
+                    panic!("invalid paths");
+                };
+
+                !create_events.iter().any(|create_path| path == create_path)
+            } else {
+                true
+            }
+        });
+        tracing::trace!("filtered {} nested events", len_orig - events.len());
+
+        events
     }
 }
 
