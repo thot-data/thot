@@ -523,88 +523,88 @@ impl FsWatcher {
 impl FsWatcher {
     /// Filters out nested events.
     ///
-    /// e.g. If a folder was created/removed with children, and both the parent folder and children
+    /// i.e. If a folder was created/removed with children, and both the parent folder and children
     /// resources creation/removal events are present, the events of the children are filtered out.
-    fn filter_nested_events<'a>(events: Vec<&'a DebouncedEvent>) -> Vec<&'a DebouncedEvent> {
+    fn filter_nested_events<'a>(mut events: Vec<&'a DebouncedEvent>) -> Vec<&'a DebouncedEvent> {
         use notify::EventKind;
-        use std::collections::HashMap;
 
-        /// A group of events.
-        /// The map key is the common ancestor path of the group.
-        /// The stand alone event is the common ancestor event.
-        /// The events in the `Vec` are nested events.
-        type EventGroupMap<'a> = HashMap<PathBuf, (&'a DebouncedEvent, Vec<&'a DebouncedEvent>)>;
+        enum EventRelation {
+            ParentOf(usize),
+            Descendant,
+        }
 
-        /// Group events based on path.
-        fn group_events<'a>(events: &Vec<&'a DebouncedEvent>) -> EventGroupMap<'a> {
-            let mut groups = EventGroupMap::new();
-            for event in events.iter() {
-                let [path] = &event.paths[..] else {
+        let len_orig = events.len();
+        let create_remove_folder_events = events
+            .clone()
+            .into_iter()
+            .filter(|event| match event.kind {
+                EventKind::Create(notify::event::CreateKind::Folder)
+                | EventKind::Create(notify::event::CreateKind::Any)
+                | EventKind::Remove(notify::event::RemoveKind::Folder)
+                | EventKind::Remove(notify::event::RemoveKind::Any) => true,
+                _ => false,
+            })
+            .collect::<Vec<_>>();
+
+        let mut parent_events: Vec<&DebouncedEvent> = vec![];
+        for event in create_remove_folder_events {
+            let [path] = &event.paths[..] else {
+                panic!("invalid paths");
+            };
+
+            let relation = parent_events.iter().enumerate().find_map(|(idx, parent)| {
+                let [parent_path] = &(*parent).paths[..] else {
                     panic!("invalid paths");
                 };
 
-                if let Some((_, events)) = groups.iter_mut().find_map(|(key, events)| {
-                    if path.starts_with(key) {
-                        Some(events)
-                    } else {
-                        None
-                    }
-                }) {
-                    events.push(event);
-                } else if let Some(key) = groups.keys().find(|key| key.starts_with(path)).cloned() {
-                    let (key_event, mut events) = groups.remove(&key).unwrap();
-                    events.push(key_event);
-                    groups.insert(path.clone(), (event, events));
+                if parent_path.starts_with(path) {
+                    Some(EventRelation::ParentOf(idx))
+                } else if path.starts_with(parent_path) {
+                    Some(EventRelation::Descendant)
                 } else {
-                    groups.insert(path.clone(), (event, vec![]));
+                    None
                 }
-            }
+            });
 
-            groups
+            match relation {
+                None => parent_events.push(event),
+                Some(EventRelation::ParentOf(idx)) => parent_events[idx] = event,
+                Some(EventRelation::Descendant) => {}
+            };
         }
 
-        let create_events = events
-            .clone()
-            .into_iter()
-            .filter(|event| matches!(event.kind, EventKind::Create(_)))
-            .collect::<Vec<_>>();
+        events.retain(|event| {
+            match event.kind {
+                EventKind::Create(_)
+                | EventKind::Remove(_)
+                | EventKind::Modify(notify::event::ModifyKind::Data(_))
+                | EventKind::Modify(notify::event::ModifyKind::Any) => {
+                    let [path] = &event.paths[..] else {
+                        panic!("invalid paths");
+                    };
 
-        let create_groups = group_events(&create_events);
-        let create_child_events = create_groups
-            .values()
-            .flat_map(|(_, children)| children)
-            .collect::<Vec<_>>();
+                    !parent_events.iter().any(|parent| {
+                        let [parent_path] = &parent.paths[..] else {
+                            panic!("invalid paths");
+                        };
 
-        let events = events
-            .into_iter()
-            .filter(|&event| {
-                !create_child_events
-                    .iter()
-                    .any(|&&child| std::ptr::eq(event, child))
-            })
-            .collect::<Vec<_>>();
+                        if parent_path == path {
+                            false
+                        } else {
+                            path.starts_with(parent_path)
+                        }
+                    })
+                }
+                EventKind::Modify(notify::event::ModifyKind::Name(_)) => {
+                    // NB: Not clear how to handle.
+                    // Let pass through.
+                    true
+                }
+                _ => unreachable!("event kind previously filtered"),
+            }
+        });
 
-        let remove_events = events
-            .clone()
-            .into_iter()
-            .filter(|event| matches!(event.kind, EventKind::Remove(_)))
-            .collect::<Vec<_>>();
-
-        let remove_groups = group_events(&remove_events);
-        let remove_child_events = remove_groups
-            .values()
-            .flat_map(|(_, children)| children)
-            .collect::<Vec<_>>();
-
-        let events = events
-            .into_iter()
-            .filter(|&event| {
-                !remove_child_events
-                    .iter()
-                    .any(|&&child| std::ptr::eq(event, child))
-            })
-            .collect();
-
+        tracing::trace!("filtered {} nested events", len_orig - events.len());
         events
     }
 }

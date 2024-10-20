@@ -193,7 +193,7 @@ impl Builder {
             }
         }
 
-        tracing::trace!(?state);
+        tracing::trace!(target: "syre::local::database::state", ?state);
         let mut db = Database {
             config: self.config,
             state,
@@ -406,7 +406,7 @@ mod windows {
                 tracing::error!(?err);
             }
 
-            tracing::trace!(?self.state);
+            tracing::trace!(target: "syre::local::database::state", state = ?self.state);
             Ok(())
         }
 
