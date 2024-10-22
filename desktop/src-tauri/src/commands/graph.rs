@@ -152,15 +152,10 @@ pub async fn container_duplicate(
         panic!("invalid state");
     };
 
-    let ignore =
-        ignore::gitignore::GitignoreBuilder::new(local::common::ignore_file_of(&project_path))
-            .build()
-            .ok();
-
     let root_path =
         db::common::container_system_path(project_path.join(&properties.data_root), &container);
 
-    duplicate::duplicate_subgraph(root_path, ignore)
+    duplicate::duplicate_subgraph(root_path)
         .await
         .map(|_path| ())
         .map_err(|err| err.into())
@@ -246,38 +241,18 @@ mod duplicate {
     ///
     /// # Returns
     /// Path to the duplicated root.
-    pub async fn duplicate_subgraph(
-        root: impl AsRef<Path>,
-        ignore: Option<ignore::gitignore::Gitignore>,
-    ) -> Result<PathBuf, error::Error> {
+    pub async fn duplicate_subgraph(root: impl AsRef<Path>) -> Result<PathBuf, error::Error> {
         let dup_root =
             local::common::unique_file_name(&root).map_err(|err| error::Error::Filename(err))?;
 
         let tmp_root = tempfile::tempdir().map_err(|err| error::Error::Tmp(err.kind()))?;
-        let containers = walkdir::WalkDir::new(&root)
+        let dir_walker = ignore::WalkBuilder::new(&root)
+            .add_custom_ignore_filename(local::common::ignore_file())
+            .filter_entry(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
+            .build();
+        let containers = dir_walker
             .into_iter()
             .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_type().is_dir())
-            .filter(|entry| {
-                let Some(file_name) = entry.path().file_name() else {
-                    return false;
-                };
-                if file_name == local::common::app_dir().as_os_str() {
-                    return false;
-                }
-                let Some(file_name) = file_name.to_str() else {
-                    return false;
-                };
-                if file_name.starts_with(".") {
-                    return false;
-                }
-
-                if let Some(ignore) = ignore.as_ref() {
-                    !ignore.matched(entry.path(), true).is_ignore()
-                } else {
-                    true
-                }
-            })
             .map(|entry| {
                 let rel_path = entry.path().strip_prefix(&root).unwrap();
                 let path = tmp_root.path().join(rel_path);
@@ -322,7 +297,7 @@ mod duplicate {
                 container.save().map_err(|err| {
                     (
                         container.base_path().to_path_buf(),
-                        error::Duplicate::Save(err.kind()),
+                        error::Duplicate::Save(err),
                     )
                 })
             })
@@ -353,6 +328,8 @@ mod duplicate {
         }
     }
 
+    // NB: When duplicating a subgraph, shoul everything be duplicated
+    // or should ignore files be respected?
     /// # Returns
     /// `Err` if any path fails to be copied.
     pub async fn copy_dir(
@@ -362,9 +339,9 @@ mod duplicate {
         let src: &Path = src.as_ref();
         let dst: &Path = dst.as_ref();
         let mut results = tokio::task::JoinSet::new();
-        let mut dir_walker = ignore::WalkBuilder::new(src);
-        dir_walker.add_custom_ignore_filename(local::common::ignore_file());
-        let dir_walker = dir_walker.build();
+        let dir_walker = ignore::WalkBuilder::new(src)
+            .add_custom_ignore_filename(local::common::ignore_file())
+            .build();
         for entry in dir_walker.into_iter().filter_map(|entry| entry.ok()) {
             let rel_path = entry.path().strip_prefix(src).unwrap();
             let dst = dst.join(rel_path);
@@ -432,7 +409,7 @@ mod duplicate {
             Load(local::loader::container::State),
 
             /// Saving the child failed.
-            Save(io::ErrorKind),
+            Save(local::project::resources::container::error::Save),
         }
 
         impl Into<lib::command::graph::error::duplicate::Error> for Error {
@@ -463,8 +440,14 @@ mod duplicate {
                                         properties: properties.err(),
                                         settings: settings.err(),
                                     },
-                                    Duplicate::Save(err) => {
-                                        error::duplicate::Duplicate::Save(err.into())
+                                    Duplicate::Save(err) => { match err {
+                                        local::project::resources::container::error::Save::CreateDir(error) => error::duplicate::Duplicate::Save(error::duplicate::SaveContainer::CreateDir(error.into())),
+                                        local::project::resources::container::error::Save::SaveFiles{properties, assets, settings} => error::duplicate::Duplicate::Save(error::duplicate::SaveContainer::SaveFiles{
+                                            properties: properties.map(|err| err.into()) ,
+                                            assets: assets.map(|err| err.into()),
+                                            settings: settings.map(|err| err.into())
+                                        }),
+                                    }
                                     }
                                 };
 

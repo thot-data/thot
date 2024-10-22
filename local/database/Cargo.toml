@@ -22,6 +22,7 @@ file-id = { version = "0.2", optional = true }
 futures  = { workspace = true, optional = true }
 ignore  = { workspace = true, optional = true }
 notify = { workspace = true, default-features = false, optional = true }
+rayon = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -34,8 +35,8 @@ tracing-appender = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["time", "json", "env-filter"] }
 trash = { workspace = true, optional = true }
 uuid = { workspace = true, features = ["serde", "v4", "v7"] }
+walkdir = { workspace = true, optional = true }
 zmq = { workspace = true, optional = true }
-rayon = { workspace = true, optional = true }
 
 syre-core = { workspace = true }
 syre-local = { workspace = true }
@@ -69,6 +70,7 @@ server = [
 	"dep:surrealdb",
 	"dep:tokio",
 	"dep:trash",
+	"dep:walkdir",
 	"dep:zmq",
 ]
 client = [

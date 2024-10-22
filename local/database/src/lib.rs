@@ -1,5 +1,6 @@
 #![feature(io_error_more)]
 #![feature(assert_matches)]
+#![feature(result_flattening)]
 //! # Syre Local Database
 //! Implements a local database for Syre.
 pub mod common;

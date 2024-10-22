@@ -49,29 +49,39 @@ impl Container {
     }
 
     /// Save all data.
-    pub fn save(&self) -> StdResult<(), io::Error> {
+    pub fn save(&self) -> StdResult<(), error::Save> {
         let properties_path = <Self as LocalResource<StoredContainerProperties>>::path(self);
         let assets_path = <Self as LocalResource<Vec<Asset>>>::path(self);
         let settings_path = <Self as LocalResource<ContainerSettings>>::path(self);
 
-        fs::create_dir_all(properties_path.parent().expect("invalid Container path"))?;
+        fs::create_dir_all(properties_path.parent().expect("invalid Container path"))
+            .map_err(error::Save::CreateDir)?;
         let properties: StoredContainerProperties = self.container.clone().into();
 
-        fs::write(
+        let save_properties = fs::write(
             properties_path,
             serde_json::to_string_pretty(&properties).unwrap(),
-        )?;
+        );
 
-        fs::write(
+        let save_assets = fs::write(
             assets_path,
             serde_json::to_string_pretty(&self.assets).unwrap(),
-        )?;
+        );
 
-        fs::write(
+        let save_settings = fs::write(
             settings_path,
             serde_json::to_string_pretty(&self.settings).unwrap(),
-        )?;
-        Ok(())
+        );
+
+        if save_properties.is_err() || save_assets.is_err() || save_settings.is_err() {
+            Err(error::Save::SaveFiles {
+                properties: save_properties.err(),
+                assets: save_assets.err(),
+                settings: save_settings.err(),
+            })
+        } else {
+            Ok(())
+        }
     }
 
     pub fn base_path(&self) -> &Path {
@@ -226,6 +236,20 @@ impl LocalResource<ContainerSettings> for Container {
 
     fn base_path(&self) -> &Path {
         &self.base_path
+    }
+}
+
+pub mod error {
+    use std::io;
+
+    #[derive(Debug)]
+    pub enum Save {
+        CreateDir(io::Error),
+        SaveFiles {
+            properties: Option<io::Error>,
+            assets: Option<io::Error>,
+            settings: Option<io::Error>,
+        },
     }
 }
 

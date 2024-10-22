@@ -65,7 +65,7 @@ fn main() {
         .expect("error while running tauri application");
 }
 
-// #[cfg(not(debug_assertions))]
+#[cfg(not(debug_assertions))]
 mod logging {
     use syre_desktop as desktop;
     use tracing_subscriber::{

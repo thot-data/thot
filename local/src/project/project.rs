@@ -236,10 +236,7 @@ pub fn project_root_path(path: impl AsRef<Path>) -> Option<PathBuf> {
 // }
 
 pub mod converter {
-    use super::super::{
-        container,
-        resources::{Analyses, Project},
-    };
+    use super::super::{container, resources};
     use crate::{common, loader::container::Loader as ContainerLoader, system::config};
     use std::{
         collections::HashMap,
@@ -315,7 +312,7 @@ pub mod converter {
             };
 
             let pid = super::init(root.as_path())?;
-            let mut project = Project::load_from(root.as_path()).unwrap();
+            let mut project = resources::Project::load_from(root.as_path()).unwrap();
             project.data_root = self.data_root.clone();
             project.analysis_root = self.analysis_root.clone();
 
@@ -385,8 +382,8 @@ pub mod converter {
                 }
 
                 // initialize scripts
-                let mut scripts =
-                    Analyses::load_from(&root).map_err(|err| error::Convert::Analyses(err))?;
+                let mut scripts = resources::Analyses::load_from(&root)
+                    .map_err(|err| error::Convert::Analyses(err))?;
                 for script_path in script_paths {
                     let Ok(script) = Script::from_path(script_path) else {
                         continue;
@@ -407,7 +404,7 @@ pub mod converter {
 
             if self.analysis_root.is_some() {
                 // assign scripts
-                let analyses = Analyses::load_from(&root)?;
+                let analyses = resources::Analyses::load_from(&root)?;
                 let mut container_scripts = HashMap::new();
                 for script in analyses.scripts() {
                     let entry = container_scripts
@@ -427,7 +424,22 @@ pub mod converter {
                         container.set_analysis_association(AnalysisAssociation::new(script));
                     }
 
-                    container.save()?;
+                    container.save().map_err(|err| match err {
+                        resources::container::error::Save::CreateDir(error) => error,
+                        resources::container::error::Save::SaveFiles {
+                            properties,
+                            assets,
+                            settings,
+                        } => {
+                            if let Some(err) = properties {
+                                err
+                            } else if let Some(err) = assets {
+                                err
+                            } else {
+                                settings.unwrap()
+                            }
+                        }
+                    })?;
                 }
             }
 

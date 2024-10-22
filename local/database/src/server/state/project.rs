@@ -115,15 +115,8 @@ impl State {
         });
         project.set_analyses(analyses);
 
-        // TODO: Allow recursive ignore files
-        let ignore = common::load_syre_ignore(&path)
-            .map(|res| res.ok())
-            .flatten();
-
         if let Result::Ok(properties) = project.properties().as_ref() {
-            if let Ok(graph) =
-                graph::State::load(state.path().join(&properties.data_root), ignore.as_ref())
-            {
+            if let Ok(graph) = graph::State::load(state.path().join(&properties.data_root)) {
                 project.set_graph(graph)
             }
         }
@@ -666,10 +659,7 @@ pub mod graph {
 
         /// # Errors
         /// + If `path` is not a directory.
-        pub fn load(
-            path: impl AsRef<Path>,
-            ignore: Option<&ignore::gitignore::Gitignore>,
-        ) -> Result<Self, io::ErrorKind> {
+        pub fn load(path: impl AsRef<Path>) -> Result<Self, io::ErrorKind> {
             let path = path.as_ref();
             if !path.exists() {
                 return Err(io::ErrorKind::NotFound);
@@ -681,48 +671,34 @@ pub mod graph {
             Ok(rayon::ThreadPoolBuilder::new()
                 .build()
                 .unwrap()
-                .install(move || Self::load_tree(path, ignore)))
+                .install(move || Self::load_tree(path)))
         }
 
         /// Recursive loader.
         ///
         /// # Panics
         /// + If the path is invalid.
-        fn load_tree(
-            path: impl AsRef<Path>,
-            ignore: Option<&ignore::gitignore::Gitignore>,
-        ) -> Self {
-            let path = path.as_ref();
-            let root = Container::load(path).unwrap();
+        fn load_tree(path: impl AsRef<Path>) -> Self {
+            assert!(path.as_ref().is_dir());
+
+            let root = Container::load(&path).unwrap();
             let mut graph = Self::new(root);
-            let children = fs::read_dir(path)
-                .unwrap()
-                .into_iter()
-                .filter_map(|entry| {
-                    let path = entry.unwrap().path();
-                    let file_name = path.file_name().unwrap();
-                    if !path.is_dir()
-                        || file_name == local::common::app_dir()
-                        || file_name
-                            .to_str()
-                            .map(|name| name.starts_with("."))
-                            .unwrap_or(false)
-                    {
-                        return None;
-                    }
 
-                    if ignore
-                        .map(|ignore| ignore.matched(&path, true).is_ignore())
-                        .unwrap_or(false)
-                    {
-                        return None;
-                    }
-
-                    Some(path)
+            let dir_walker = ignore::WalkBuilder::new(&path)
+                .add_custom_ignore_filename(local::common::ignore_file())
+                .max_depth(Some(1))
+                .filter_entry(|entry| {
+                    entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
+                        && entry.file_name() != local::common::app_dir()
                 })
+                .build();
+            let children = dir_walker
+                .into_iter()
+                .skip(1)
+                .filter_map(|entry| entry.ok())
                 .collect::<Vec<_>>()
                 .into_par_iter()
-                .map(|path| Self::load_tree(path, ignore))
+                .map(|entry| Self::load_tree(entry.path()))
                 .collect::<Vec<_>>();
 
             let root = graph.root().clone();

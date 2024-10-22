@@ -1,18 +1,22 @@
 //! Local [`ResourceTree`](CoreTres).
-use crate::common;
-use crate::error::Result;
-use crate::project::resources::Container;
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-use syre_core::error::{Error as CoreError, Resource as ResourceError};
-use syre_core::graph::tree::{EdgeMap, NodeMap};
-use syre_core::graph::{ResourceNode, ResourceTree};
-use syre_core::project::{Asset, Container as CoreContainer};
-use syre_core::types::ResourceId;
+use crate::{common, error::Result, project::resources};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+};
+use syre_core::{
+    error::{Error as CoreError, Resource as ResourceError},
+    graph::{
+        tree::{EdgeMap, NodeMap},
+        {ResourceNode, ResourceTree},
+    },
+    project::{Asset, Container as CoreContainer},
+    types::ResourceId,
+};
 
 type CoreContainerTree = ResourceTree<CoreContainer>;
-type ContainerTree = ResourceTree<Container>;
+type ContainerTree = ResourceTree<resources::Container>;
 
 pub struct ContainerTreeTransformer;
 impl ContainerTreeTransformer {
@@ -84,11 +88,11 @@ impl ContainerTreeTransformer {
         let nodes = nodes
             .into_values()
             .map(|node| {
-                let mut container = Container::new(rel_paths.get(&node.rid()).unwrap());
+                let mut container = resources::Container::new(rel_paths.get(&node.rid()).unwrap());
                 container.container = node.into_data();
                 (container.rid().clone(), ResourceNode::new(container))
             })
-            .collect::<HashMap<ResourceId, ResourceNode<Container>>>();
+            .collect::<HashMap<ResourceId, ResourceNode<resources::Container>>>();
 
         ResourceTree::from_parts(nodes, edges).unwrap()
     }
@@ -117,7 +121,7 @@ impl ContainerTreeDuplicator {
             )));
         };
 
-        let mut container = Container::new(node.base_path());
+        let mut container = resources::Container::new(node.base_path());
         container.properties = node.properties.clone();
         container.analyses = node.analyses.clone();
         for asset_base in node.assets.iter() {
@@ -195,10 +199,25 @@ fn duplicate_without_assets_to(
 
     // duplicate container to new location
     // first create entire tree in temp folder, then move to desired location
-    let mut container = Container::new(path);
+    let mut container = resources::Container::new(path);
     container.properties = node.properties.clone();
     container.analyses = node.analyses.clone();
-    container.save()?;
+    container.save().map_err(|err| match err {
+        resources::container::error::Save::CreateDir(error) => error,
+        resources::container::error::Save::SaveFiles {
+            properties,
+            assets,
+            settings,
+        } => {
+            if let Some(err) = properties {
+                err
+            } else if let Some(err) = assets {
+                err
+            } else {
+                settings.unwrap()
+            }
+        }
+    })?;
 
     let dup_root = container.rid().clone();
     let mut dup_graph = ResourceTree::new(container);

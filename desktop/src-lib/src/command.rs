@@ -87,16 +87,6 @@ pub mod graph {
             use std::path::PathBuf;
             use syre_local::error::IoSerde;
 
-            // #[derive(Serialize, Deserialize, Debug)]
-            // pub enum DuplicateTree {
-            //     Load(LoadTree)
-            // }
-
-            // #[derive(Serialize, Deserialize, Debug)]
-            // pub enum DuplicateTree {
-            //     Load(LoadTree),
-            //     Duplicate(DuplicateTree)
-            // }
             #[derive(Serialize, Deserialize, Debug)]
             pub enum Error {
                 /// Creating a unique file name for the duplicate root failed.
@@ -124,7 +114,17 @@ pub mod graph {
                 },
 
                 /// Saving the child failed.
-                Save(IoErrorKind),
+                Save(SaveContainer),
+            }
+
+            #[derive(Serialize, Deserialize, Debug)]
+            pub enum SaveContainer {
+                CreateDir(IoErrorKind),
+                SaveFiles {
+                    properties: Option<IoErrorKind>,
+                    assets: Option<IoErrorKind>,
+                    settings: Option<IoErrorKind>,
+                },
             }
         }
     }
@@ -274,7 +274,7 @@ pub mod asset {
 
         pub mod error {
             use serde::{Deserialize, Serialize};
-            use std::{io, path::PathBuf};
+            use std::io;
             use syre_core::types::ResourceId;
             use syre_local::error::{IoErrorKind, IoSerde};
 

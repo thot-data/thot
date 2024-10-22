@@ -14,11 +14,21 @@ use syre_local::{
 };
 use uuid::Uuid;
 
+// TODO: Allow errors to be sent.
+// pub enum Event {
+//     Update(Update),
+//     Error(Error),
+// }
+
 /// Update types.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Update {
+    /// Id of the update.
     id: Uuid,
+
+    /// Id of the event that triggered the update.
     parent: Uuid,
+
     kind: UpdateKind,
 }
 

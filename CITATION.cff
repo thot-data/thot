@@ -14,7 +14,7 @@ authors:
 repository-code: 'https://github.com/syre-data/syre'
 url: 'https://syre.ai'
 abstract: >-
-  Syre is a tool set for managing and analyzing scientific
+  Syre is a toolset for managing and analyzing scientific
   data.
 keywords:
   - data

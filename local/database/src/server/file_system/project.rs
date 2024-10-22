@@ -464,12 +464,9 @@ impl Database {
         assert_eq!(*path, data_root_path);
         assert!(!project_state.graph().is_present());
 
-        let ignore = common::load_syre_ignore(project.path())
-            .map(|res| res.ok())
-            .flatten();
         let project_path = project.path().clone();
         let project_id = properties.rid().clone();
-        let graph = server::state::project::graph::State::load(path, ignore.as_ref()).unwrap();
+        let graph = server::state::project::graph::State::load(path).unwrap();
         let graph_state = graph.as_graph();
         self.state
             .try_reduce(server::state::Action::Project {

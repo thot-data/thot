@@ -244,7 +244,7 @@ impl Actor {
                     return vec![];
                 }
 
-                let (projects) = state::load_user_state(&self.db, &user_update);
+                let projects = state::load_user_state(&self.db, &user_update);
                 let _ = state_user.insert(state::User::new(user_update.clone(), projects));
 
                 let user = self.db.user().get(user_update.clone()).unwrap();

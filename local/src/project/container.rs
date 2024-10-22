@@ -32,10 +32,13 @@ pub mod functions {
 #[cfg(feature = "fs")]
 pub mod builder {
     //! Build containers.
-    use super::super::{project, resources::Container};
-    use super::error;
-    use crate::project::asset;
-    use crate::{common::app_dir, loader::container::Loader as ContainerLoader};
+    use super::{
+        super::{project, resources::Container},
+        error,
+    };
+    use crate::{
+        common::app_dir, loader::container::Loader as ContainerLoader, project::resources,
+    };
     use std::{
         fs,
         path::{self, Path, PathBuf},
@@ -167,6 +170,23 @@ pub mod builder {
             }
 
             if let Err(err) = container.save() {
+                let err = match err {
+                    resources::container::error::Save::CreateDir(error) => error,
+                    resources::container::error::Save::SaveFiles {
+                        properties,
+                        assets,
+                        settings,
+                    } => {
+                        if let Some(err) = properties {
+                            err
+                        } else if let Some(err) = assets {
+                            err
+                        } else {
+                            settings.unwrap()
+                        }
+                    }
+                };
+
                 return Err(error::Build::Save(err.kind()));
             }
 
@@ -326,6 +346,23 @@ pub mod builder {
                 }
 
                 if let Err(err) = container.save() {
+                    let err = match err {
+                        resources::container::error::Save::CreateDir(error) => error,
+                        resources::container::error::Save::SaveFiles {
+                            properties,
+                            assets,
+                            settings,
+                        } => {
+                            if let Some(err) = properties {
+                                err
+                            } else if let Some(err) = assets {
+                                err
+                            } else {
+                                settings.unwrap()
+                            }
+                        }
+                    };
+
                     return Err(error::Build::Save(err.kind()));
                 }
 
