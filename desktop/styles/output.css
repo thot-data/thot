@@ -972,6 +972,10 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   direction: ltr;
 }
 
+.visible {
+  visibility: visible;
+}
+
 .invisible {
   visibility: hidden;
 }
@@ -1508,6 +1512,10 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   background-color: rgb(255 255 255 / var(--tw-bg-opacity));
 }
 
+.fill-secondary-400 {
+  fill: #898e99;
+}
+
 .fill-white {
   fill: #fff;
 }
@@ -1716,6 +1724,12 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   transition-duration: 150ms;
 }
 
+.transition-opacity {
+  transition-property: opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
 .transition-width {
   transition-property: width;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -1856,10 +1870,6 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   right: -0.25rem;
 }
 
-.hover\:cursor-pointer:hover {
-  cursor: pointer;
-}
-
 .hover\:border-black:hover {
   --tw-border-opacity: 1;
   border-color: rgb(0 0 0 / var(--tw-border-opacity));
@@ -1898,6 +1908,10 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
 .hover\:bg-secondary-200:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(196 199 204 / var(--tw-bg-opacity));
+}
+
+.hover\:opacity-0:hover {
+  opacity: 0;
 }
 
 .hover\:delay-150:hover {
@@ -1994,6 +2008,10 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
 .dark\:bg-syre-red-500:where(.dark, .dark *) {
   --tw-bg-opacity: 1;
   background-color: rgb(213 65 11 / var(--tw-bg-opacity));
+}
+
+.dark\:fill-secondary-500:where(.dark, .dark *) {
+  fill: #6b7280;
 }
 
 .dark\:fill-secondary-700:where(.dark, .dark *) {

@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     commands, common,
-    components::{ ToggleExpand, TruncateLeft},
+    components::{self, ToggleExpand, TruncateLeft},
     types,
 };
 use futures::StreamExt;
@@ -250,6 +250,30 @@ fn ContainerLayerTitleOk(
         }
     });
 
+    let container_visibility = workspace_graph_state
+        .container_visibility_get(graph.path(&container).unwrap())
+        .unwrap();
+
+    let toggle_container_visibility = move |e: MouseEvent| {
+        if e.button() != types::MouseButton::Primary {
+            return;
+        }
+        e.stop_propagation();
+
+        container_visibility.set(!container_visibility());
+    };
+
+    let num_children = {
+        let graph = graph.clone();
+        let container = container.clone();
+        move || {
+            graph
+                .children(&container)
+                .map(|children| children.with(|children| children.len()))
+                .unwrap_or(0)
+        }
+    };
+
     let title = {
         let properties = properties.clone();
         move || properties().name().get()
@@ -417,11 +441,36 @@ fn ContainerLayerTitleOk(
                     <ToggleExpand expanded />
                 </span>
             </div>
-            <div class="grow inline-flex gap-1">
-                <span class="pr-1">
-                    <Icon icon=icondata::FaFolderRegular />
-                </span>
-                <TruncateLeft>{title}</TruncateLeft>
+            <div class="grow inline-flex gap-2">
+                <div class="grow inline-flex gap-1">
+                    <span class="pr-1">
+                        <Icon icon=icondata::FaFolderRegular />
+                    </span>
+                    <TruncateLeft>{title}</TruncateLeft>
+                </div>
+                <div>
+                    {move || {
+                        if num_children() > 0 {
+                            view! {
+                                <button type="button" on:mousedown=toggle_container_visibility>
+                                    {move || {
+                                        container_visibility
+                                            .with(|visible| {
+                                                if *visible {
+                                                    view! { <Icon icon=components::icon::Eye /> }
+                                                } else {
+                                                    view! { <Icon icon=components::icon::EyeClosed /> }
+                                                }
+                                            })
+                                    }}
+                                </button>
+                            }
+                                .into_view()
+                        } else {
+                            view! {}.into_view()
+                        }
+                    }}
+                </div>
             </div>
         </div>
     }

@@ -21,7 +21,7 @@ pub fn start_database_if_needed(
     Some(handler)
 }
 
-// Important On macOS m1, not dropping the `Receiver` (part of the _db_handler), causes ZMQ issues.
+// IMPORTANT: On macOS m1, not dropping the `Receiver` (part of the _db_handler), causes ZMQ issues.
 /// Initializes a [`Database`] as a sidecar process.
 fn init_database(app: &tauri::AppHandle) -> (Receiver<CommandEvent>, CommandChild) {
     app.shell()

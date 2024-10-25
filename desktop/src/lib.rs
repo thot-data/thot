@@ -1,4 +1,5 @@
 #![feature(assert_matches)]
+#![feature(btree_extract_if)]
 
 mod app;
 pub(crate) mod commands;

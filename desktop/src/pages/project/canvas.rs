@@ -28,8 +28,10 @@ const MAX_CONTAINER_HEIGHT: usize = 400;
 const CONTAINER_HEADER_HEIGHT: usize = 50;
 const CONTAINER_PREVIEW_LINE_HEIGHT: usize = 24;
 const PADDING_X_SIBLING: usize = 20;
-const PADDING_Y_CHILDREN: usize = 30;
-const RADIUS_ADD_CHILD: usize = 10;
+const PADDING_Y_CHILDREN: usize = 60;
+const RADIUS_CANVAS_BUTTON: usize = 10;
+const RADIUS_TOGGLE_VIEW_INDICATOR: usize = 3;
+const CONTAINER_VISIBLITY_ICON_SIZE: usize = 14;
 const VB_SCALE_ENLARGE: f32 = 0.9; // zoom in should reduce viewport.
 const VB_SCALE_REDUCE: f32 = 1.1;
 const VB_BASE: usize = 1000;
@@ -509,6 +511,7 @@ fn CanvasView(
 #[component]
 fn Graph(root: state::graph::Node) -> impl IntoView {
     let graph = expect_context::<state::Graph>();
+    let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
     let container_preview_height = expect_context::<ContainerPreviewHeight>();
     // let container_resize_observer = expect_context::<ContainerResizeObserver>();
     let portal_ref = expect_context::<PortalRef>();
@@ -522,6 +525,10 @@ fn Graph(root: state::graph::Node) -> impl IntoView {
         let dialog = create_child_ref.get().unwrap();
         dialog.show_modal().unwrap();
     };
+
+    let container_visibility = workspace_graph_state
+        .container_visibility_get(graph.path(&root).unwrap())
+        .unwrap();
 
     let children = graph.children(&root).unwrap().read_only();
     let siblings = {
@@ -554,7 +561,7 @@ fn Graph(root: state::graph::Node) -> impl IntoView {
             let tree_height = root.subtree_height().get();
             let height = tree_height.get() * (container_height() + PADDING_Y_CHILDREN)
                 - PADDING_Y_CHILDREN
-                + RADIUS_ADD_CHILD;
+                + RADIUS_CANVAS_BUTTON;
 
             cmp::max(height, 0)
         }
@@ -637,6 +644,38 @@ fn Graph(root: state::graph::Node) -> impl IntoView {
         }
     };
 
+    let visibility_toggle_line_coordiantes = {
+        let x_node = x_node.clone();
+        let container_height = container_height.clone();
+        move || {
+            let x = x_node() + CONTAINER_WIDTH / 2;
+            let y1 = container_height();
+            let y2 = cmp::max(container_height() + (PADDING_Y_CHILDREN / 2), 0);
+
+            (x.to_string(), y1.to_string(), x.to_string(), y2.to_string())
+        }
+    };
+
+    let connector_lines_center = {
+        let x_node = x_node.clone();
+        let container_height = container_height.clone();
+        move || {
+            let x = x_node() + CONTAINER_WIDTH / 2;
+            let y = cmp::max(container_height() + (PADDING_Y_CHILDREN / 2), 0);
+
+            (x, y)
+        }
+    };
+
+    let toggle_container_visibility = move |e: MouseEvent| {
+        if e.button() != types::MouseButton::Primary {
+            return;
+        }
+        e.stop_propagation();
+
+        container_visibility.set(!container_visibility());
+    };
+
     let child_key = {
         let graph = graph.clone();
         move |child: &state::graph::Node| {
@@ -666,28 +705,108 @@ fn Graph(root: state::graph::Node) -> impl IntoView {
     view! {
         <svg width=width height=height x=x y=y>
             <g>
-                <For each=children key=child_key.clone() let:child>
-                    <polyline
-                        fill="none"
-                        class="stroke-secondary-400 dark:stroke-secondary-500"
-                        points=line_points(child.sibling_index(), child.subtree_width())
-                    ></polyline>
-                </For>
+                <g class:hidden=move || !container_visibility()>
+                    <For each=children key=child_key.clone() let:child>
+                        <polyline
+                            fill="none"
+                            class="stroke-secondary-400 dark:stroke-secondary-500"
+                            points=line_points(child.sibling_index(), child.subtree_width())
+                        ></polyline>
+                    </For>
+                </g>
+                <g>
+                    {move || {
+                        if children.with(|children| children.len()) > 0 {
+                            let (x1, y1, x2, y2) = visibility_toggle_line_coordiantes();
+                            view! {
+                                <line
+                                    x1=x1
+                                    y1=y1
+                                    x2=x2
+                                    y2=y2
+                                    class="stroke-secondary-400 dark:stroke-secondary-500"
+                                ></line>
+                            }
+                                .into_view()
+                        } else {
+                            view! {}.into_view()
+                        }
+                    }}
+                    <g class="group cursor-pointer">
+                        {move || {
+                            let (cx, cy) = connector_lines_center();
+                            view! {
+                                <circle
+                                    r=RADIUS_TOGGLE_VIEW_INDICATOR
+                                    cx=cx
+                                    cy=cy
+                                    class="stroke-secondary-400 fill-secondary-400 dark:stroke-secondary-500 \
+                                    dark:fill-secondary-500 transition-opacity transition-delay-200 hover:opacity-0"
+                                ></circle>
+                                <g
+                                    on:mousedown=toggle_container_visibility
+                                    class="group-[:not(:hover)]:hidden"
+                                >
+                                    <circle
+                                        r=RADIUS_CANVAS_BUTTON
+                                        cx=cx
+                                        cy=cy
+                                        class="stroke-black dark:stroke-white fill-white \
+                                        dark:fill-secondary-700 stroke-2 transition-opacity transition-delay-200 \
+                                        opacity:0 hover:opacity-1"
+                                    ></circle>
+                                    <svg
+                                        x=move || {
+                                            cx as f64 - (CONTAINER_VISIBLITY_ICON_SIZE as f64) / 2.0
+                                        }
+                                        y=move || {
+                                            cy as f64 - (CONTAINER_VISIBLITY_ICON_SIZE as f64) / 2.0
+                                        }
+                                        width=CONTAINER_VISIBLITY_ICON_SIZE
+                                        height=CONTAINER_VISIBLITY_ICON_SIZE
+                                    >
+                                        {move || {
+                                            if container_visibility() {
+                                                view! {
+                                                    <Icon
+                                                        icon=components::icon::Eye
+                                                        width=CONTAINER_VISIBLITY_ICON_SIZE.to_string()
+                                                        height=CONTAINER_VISIBLITY_ICON_SIZE.to_string()
+                                                    />
+                                                }
+                                            } else {
+                                                view! {
+                                                    <Icon
+                                                        icon=components::icon::EyeClosed
+                                                        width=CONTAINER_VISIBLITY_ICON_SIZE.to_string()
+                                                        height=CONTAINER_VISIBLITY_ICON_SIZE.to_string()
+                                                    />
+                                                }
+                                            }
+                                        }}
+                                    </svg>
+                                </g>
+                            }
+                        }}
+                    </g>
+                </g>
             </g>
             <g class="group">
                 <foreignObject width=CONTAINER_WIDTH height=container_height x=x_node.clone() y=0>
                     <ContainerView node_ref=container_node container=root.clone() />
                 </foreignObject>
-                <g class="group-[:not(:hover)]:hidden hover:cursor-pointer">
+                <g
+                    on:mousedown=create_child_dialog_show
+                    class="group-[:not(:hover)]:hidden cursor-pointer"
+                >
                     <circle
-                        on:mousedown=create_child_dialog_show
                         cx={
                             let x_node = x_node.clone();
                             move || { x_node() + CONTAINER_WIDTH / 2 }
                         }
 
                         cy=container_height.clone()
-                        r=RADIUS_ADD_CHILD
+                        r=RADIUS_CANVAS_BUTTON
                         class="stroke-black dark:stroke-white fill-white dark:fill-secondary-700 stroke-2"
                     ></circle>
                     <line
@@ -695,7 +814,7 @@ fn Graph(root: state::graph::Node) -> impl IntoView {
                             let x_node = x_node.clone();
                             move || {
                                 (x_node() + CONTAINER_WIDTH / 2) as f32
-                                    - RADIUS_ADD_CHILD as f32 * PLUS_SCALE
+                                    - RADIUS_CANVAS_BUTTON as f32 * PLUS_SCALE
                             }
                         }
 
@@ -703,7 +822,7 @@ fn Graph(root: state::graph::Node) -> impl IntoView {
                             let x_node = x_node.clone();
                             move || {
                                 (x_node() + CONTAINER_WIDTH / 2) as f32
-                                    + RADIUS_ADD_CHILD as f32 * PLUS_SCALE
+                                    + RADIUS_CANVAS_BUTTON as f32 * PLUS_SCALE
                             }
                         }
 
@@ -723,16 +842,16 @@ fn Graph(root: state::graph::Node) -> impl IntoView {
                         }
 
                         y1=move || {
-                            container_height() as f32 - RADIUS_ADD_CHILD as f32 * PLUS_SCALE
+                            container_height() as f32 - RADIUS_CANVAS_BUTTON as f32 * PLUS_SCALE
                         }
                         y2=move || {
-                            container_height() as f32 + RADIUS_ADD_CHILD as f32 * PLUS_SCALE
+                            container_height() as f32 + RADIUS_CANVAS_BUTTON as f32 * PLUS_SCALE
                         }
                         class="stroke-black dark:stroke-white stroke-2 linecap-round"
                     ></line>
                 </g>
             </g>
-            <g>
+            <g class:hidden=move || !container_visibility()>
                 <For each=children key=child_key.clone() let:child>
                     <Graph root=child />
                 </For>

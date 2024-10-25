@@ -18,7 +18,7 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     let actor = crate::db::actor::Builder::new(app.handle().clone());
     std::thread::Builder::new()
-        .name("syre desktop update listener".into())
+        .name("syre desktop update listener".to_string())
         .spawn(move || actor.run())?;
 
     let main = app.get_webview_window("main").unwrap();

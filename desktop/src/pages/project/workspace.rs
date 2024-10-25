@@ -240,8 +240,9 @@ fn WorkspaceGraph(graph: db::state::Graph) -> impl IntoView {
     let project = expect_context::<state::Project>();
     let messages = expect_context::<types::Messages>();
     let graph = state::Graph::new(graph);
+    let workspace_graph_state = state::WorkspaceGraph::new(&graph);
     provide_context(graph.clone());
-    provide_context(state::WorkspaceGraph::new());
+    provide_context(workspace_graph_state.clone());
 
     let (drag_over_event, set_drag_over_event) =
         create_signal(tauri_sys::window::DragDropEvent::Leave);
@@ -282,7 +283,7 @@ fn WorkspaceGraph(graph: db::state::Graph) -> impl IntoView {
                         | db::event::Project::Asset { .. }
                         | db::event::Project::AssetFile(_)
                         | db::event::Project::Flag { .. } => {
-                            handle_event_graph(event, graph.clone())
+                            handle_event_graph(event, graph.clone(), workspace_graph_state.clone())
                         }
                     }
                 }
@@ -948,7 +949,11 @@ fn handle_event_project_analyses_modified(event: lib::Event, project: state::Pro
     });
 }
 
-fn handle_event_graph(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph(
+    event: lib::Event,
+    graph: state::Graph,
+    workspace_graph_state: state::WorkspaceGraph,
+) {
     let lib::EventKind::Project(update) = event.kind() else {
         panic!("invalid event kind");
     };
@@ -961,7 +966,9 @@ fn handle_event_graph(event: lib::Event, graph: state::Graph) {
         | db::event::Project::Analyses(_)
         | db::event::Project::AnalysisFile(_) => unreachable!("handled elsewhere"),
 
-        db::event::Project::Graph(_) => handle_event_graph_graph(event, graph),
+        db::event::Project::Graph(_) => {
+            handle_event_graph_graph(event, graph, workspace_graph_state)
+        }
         db::event::Project::Container { .. } => handle_event_graph_container(event, graph),
         db::event::Project::Asset { .. } => handle_event_graph_asset(event, graph),
         db::event::Project::AssetFile(_) => handle_event_graph_asset_file(event, graph),
@@ -969,26 +976,124 @@ fn handle_event_graph(event: lib::Event, graph: state::Graph) {
     }
 }
 
-fn handle_event_graph_graph(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph_graph(
+    event: lib::Event,
+    graph: state::Graph,
+    workspace_graph_state: state::WorkspaceGraph,
+) {
     let lib::EventKind::Project(db::event::Project::Graph(update)) = event.kind() else {
         panic!("invalid event kind");
     };
 
     match update {
         db::event::Graph::Created(_) => todo!(),
-        db::event::Graph::Inserted {
-            parent,
-            graph: subgraph,
-        } => graph
-            .insert(
-                common::normalize_path_sep(parent),
-                state::Graph::new(subgraph.clone()),
-            )
-            .unwrap(),
-        db::event::Graph::Renamed { from, to } => graph.rename(from, to).unwrap(),
+        db::event::Graph::Inserted { .. } => {
+            handle_event_graph_graph_inserted(event, graph, workspace_graph_state)
+        }
+        db::event::Graph::Renamed { from, to } => {
+            handle_event_graph_graph_renamed(event, graph, workspace_graph_state)
+        }
         db::event::Graph::Moved { from, to } => todo!(),
-        db::event::Graph::Removed(path) => graph.remove(common::normalize_path_sep(path)).unwrap(),
+        db::event::Graph::Removed(_) => {
+            handle_event_graph_graph_removed(event, graph, workspace_graph_state)
+        }
     }
+}
+
+fn handle_event_graph_graph_inserted(
+    event: lib::Event,
+    graph: state::Graph,
+    workspace_graph_state: state::WorkspaceGraph,
+) {
+    let lib::EventKind::Project(db::event::Project::Graph(db::event::Graph::Inserted {
+        parent,
+        graph: subgraph,
+    })) = event.kind()
+    else {
+        panic!("invalid event kind");
+    };
+
+    // NB: Must create visibility signals first before inserting nodes into graph.
+    // Downstream components expect a visibility signal to be present.
+    let subgraph = state::Graph::new(subgraph.clone());
+    let base_path = common::normalize_path_sep(parent).join(subgraph.root().name().get_untracked());
+    let container_visibility_new = subgraph.nodes().with_untracked(|nodes| {
+        nodes
+            .iter()
+            .map(|container| {
+                let path = subgraph.path(container).unwrap();
+                (
+                    lib::utils::join_path_absolute(&base_path, common::normalize_path_sep(path)),
+                    create_rw_signal(true),
+                )
+            })
+            .collect::<Vec<_>>()
+    });
+
+    workspace_graph_state
+        .container_visiblity()
+        .update(|container_visibility| {
+            container_visibility.extend(container_visibility_new);
+        });
+
+    graph
+        .insert(common::normalize_path_sep(parent), subgraph)
+        .unwrap();
+}
+
+fn handle_event_graph_graph_renamed(
+    event: lib::Event,
+    graph: state::Graph,
+    workspace_graph_state: state::WorkspaceGraph,
+) {
+    let lib::EventKind::Project(db::event::Project::Graph(db::event::Graph::Renamed { from, to })) =
+        event.kind()
+    else {
+        panic!("invalid event kind");
+    };
+
+    // NB: Must create visibility signals first before inserting nodes into graph.
+    // Downstream components expect a visibility signal to be present.
+    workspace_graph_state
+        .container_visiblity()
+        .update(|container_visibility| {
+            let mut to_path = from.clone();
+            to_path.set_file_name(to);
+
+            let renamed = container_visibility
+                .extract_if(|path, _| path.starts_with(from))
+                .map(|(path, visibility)| {
+                    let path = path.strip_prefix(from).unwrap();
+                    (to_path.join(path), visibility)
+                })
+                .collect::<Vec<_>>();
+
+            container_visibility.extend(renamed);
+        });
+
+    graph.rename(from, to).unwrap();
+}
+
+fn handle_event_graph_graph_removed(
+    event: lib::Event,
+    graph: state::Graph,
+    workspace_graph_state: state::WorkspaceGraph,
+) {
+    let lib::EventKind::Project(db::event::Project::Graph(db::event::Graph::Removed(path))) =
+        event.kind()
+    else {
+        panic!("invalid event kind");
+    };
+
+    // NB: Must remove nodes first, then remove visibility signals.
+    // Downstream components expect a visibility signal to be present.
+    let path = common::normalize_path_sep(path);
+    graph.remove(&path).unwrap();
+    workspace_graph_state
+        .container_visiblity()
+        .update(|container_visibility| {
+            container_visibility.retain(|container, _| !container.starts_with(&path));
+        });
 }
 
 fn handle_event_graph_container(event: lib::Event, graph: state::Graph) {
