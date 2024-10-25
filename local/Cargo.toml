@@ -22,6 +22,7 @@ csv.workspace = true
 derivative = "2.2"
 derive_more.workspace = true
 directories = { workspace = true, optional = true }
+fastrand = "2.1"
 glob = { workspace = true, optional = true }
 has_id = { workspace = true, features = ["derive", "serde"] }
 ignore = { workspace = true, optional = true }
@@ -36,6 +37,7 @@ tracing = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4"] }
 validator = "0.18"
 walkdir.workspace = true
+windows-sys = { version = "0.59.0", features = ["Win32_Foundation", "Win32_Storage"] }
 
 syre-core = { workspace = true, features = ["serde"] }
 

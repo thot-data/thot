@@ -1,4 +1,5 @@
 //! Crate wide constant values.
+use std::ffi::OsStr;
 
 /// Current project format version.
 pub static PROJECT_FORMAT_VERSION: &str = "0.11.0";
@@ -21,3 +22,6 @@ pub const IGNORE_FILE: &str = ".syreignore";
 // ************
 
 pub const WINDOWS_UNC_PREFIX: &str = "\\\\?\\";
+
+/// Common prefix for temporary files and directories.
+pub const TEMPFILE_PREFIX: &str = ".~syretmp.";

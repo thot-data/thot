@@ -40,10 +40,28 @@ const VB_HEIGHT_MAX: usize = 10_000;
 pub const DATA_KEY_CONTAINER: &str = "container";
 pub const DATA_KEY_ASSET: &str = "asset";
 
+/// Context menu for root container.
+#[derive(derive_more::Deref, Clone)]
+struct ContextMenuContainerRoot(Rc<menu::Menu>);
+impl ContextMenuContainerRoot {
+    pub fn new(menu: Rc<menu::Menu>) -> Self {
+        Self(menu)
+    }
+}
+
 /// Context menu for containers that are `Ok`.
 #[derive(derive_more::Deref, Clone)]
 struct ContextMenuContainerOk(Rc<menu::Menu>);
 impl ContextMenuContainerOk {
+    pub fn new(menu: Rc<menu::Menu>) -> Self {
+        Self(menu)
+    }
+}
+
+/// Context menu for containers that are `Err`.
+#[derive(derive_more::Deref, Clone)]
+struct ContextMenuContainerErr(Rc<menu::Menu>);
+impl ContextMenuContainerErr {
     pub fn new(menu: Rc<menu::Menu>) -> Self {
         Self(menu)
     }
@@ -60,7 +78,7 @@ impl ContextMenuAsset {
 
 /// Active container for the container context menu.
 #[derive(derive_more::Deref, derive_more::From, Clone)]
-struct ContextMenuActiveContainerOk(state::graph::Node);
+struct ContextMenuActiveContainer(state::graph::Node);
 
 /// Active asset for the asset context menu.
 #[derive(derive_more::Deref, derive_more::From, Clone)]
@@ -86,11 +104,45 @@ pub fn Canvas() -> impl IntoView {
     let graph = expect_context::<state::Graph>();
     let messages = expect_context::<types::Messages>();
 
-    let context_menu_active_container_ok =
-        create_rw_signal::<Option<ContextMenuActiveContainerOk>>(None);
+    let context_menu_active_container: RwSignal<Option<ContextMenuActiveContainer>> =
+        create_rw_signal::<Option<ContextMenuActiveContainer>>(None);
+
     let context_menu_active_asset = create_rw_signal::<Option<ContextMenuActiveAsset>>(None);
-    provide_context(context_menu_active_container_ok.clone());
+    provide_context(context_menu_active_container.clone());
     provide_context(context_menu_active_asset);
+
+    let context_menu_container_root = create_local_resource(|| (), {
+        let project = project.clone();
+        let graph = graph.clone();
+        let messages = messages.clone();
+        move |_| {
+            let project = project.clone();
+            let graph = graph.clone();
+            let messages = messages.clone();
+            async move {
+                let mut container_open = tauri_sys::menu::item::MenuItemOptions::new("Open");
+                container_open.set_id("canvas:container-open");
+
+                let (menu, mut listeners) = menu::Menu::with_id_and_items(
+                    "canvas:container-ok-context_menu",
+                    vec![container_open.into()],
+                )
+                .await;
+
+                spawn_local({
+                    let container_open = listeners.pop().unwrap().unwrap();
+                    handle_context_menu_container_root_events(
+                        project,
+                        graph,
+                        messages,
+                        container_open,
+                    )
+                });
+
+                Rc::new(menu)
+            }
+        }
+    });
 
     let context_menu_container_ok = create_local_resource(|| (), {
         let project = project.clone();
@@ -130,9 +182,49 @@ pub fn Canvas() -> impl IntoView {
                         project,
                         graph,
                         messages,
-                        context_menu_active_container_ok.read_only(),
+                        context_menu_active_container.read_only(),
                         container_open,
                         container_duplicate,
+                        container_trash,
+                    )
+                });
+
+                Rc::new(menu)
+            }
+        }
+    });
+
+    let context_menu_container_err = create_local_resource(|| (), {
+        let project = project.clone();
+        let graph = graph.clone();
+        let messages = messages.clone();
+        move |_| {
+            let project = project.clone();
+            let graph = graph.clone();
+            let messages = messages.clone();
+            async move {
+                let mut container_open = tauri_sys::menu::item::MenuItemOptions::new("Open");
+                container_open.set_id("canvas:container-open");
+
+                let mut container_trash = tauri_sys::menu::item::MenuItemOptions::new("Trash");
+                container_trash.set_id("canvas:container-trash");
+
+                let (menu, mut listeners) = menu::Menu::with_id_and_items(
+                    "canvas:container-err-context_menu",
+                    vec![container_open.into(), container_trash.into()],
+                )
+                .await;
+
+                spawn_local({
+                    // pop from end to beginning
+                    let container_trash = listeners.pop().unwrap().unwrap();
+                    let container_open = listeners.pop().unwrap().unwrap();
+                    handle_context_menu_container_err_events(
+                        project,
+                        graph,
+                        messages,
+                        context_menu_active_container.read_only(),
+                        container_open,
                         container_trash,
                     )
                 });
@@ -182,9 +274,20 @@ pub fn Canvas() -> impl IntoView {
         }>
 
             {move || {
+                let context_menu_container_root = context_menu_container_root.get()?;
                 let context_menu_container_ok = context_menu_container_ok.get()?;
+                let context_menu_container_err = context_menu_container_err.get()?;
                 let context_menu_asset = context_menu_asset.get()?;
-                Some(view! { <CanvasView context_menu_container_ok context_menu_asset /> })
+                Some(
+                    view! {
+                        <CanvasView
+                            context_menu_container_root
+                            context_menu_container_ok
+                            context_menu_container_err
+                            context_menu_asset
+                        />
+                    },
+                )
             }}
 
         </Suspense>
@@ -198,7 +301,12 @@ fn CanvasLoading() -> impl IntoView {
 
 #[component]
 fn CanvasView(
+    /// Context menu for the root container.
+    context_menu_container_root: Rc<menu::Menu>,
+    /// Context menu for `Ok` non-root containers.
     context_menu_container_ok: Rc<menu::Menu>,
+    /// Context menu for `Err` non-root containers.
+    context_menu_container_err: Rc<menu::Menu>,
     context_menu_asset: Rc<menu::Menu>,
 ) -> impl IntoView {
     let graph = expect_context::<state::Graph>();
@@ -225,7 +333,9 @@ fn CanvasView(
     //         let height = common::clamp(height, 0, MAX_CONTAINER_HEIGHT);
     //         set_container_height(height);
     //     });
+    provide_context(ContextMenuContainerRoot::new(context_menu_container_root));
     provide_context(ContextMenuContainerOk::new(context_menu_container_ok));
+    provide_context(ContextMenuContainerErr::new(context_menu_container_err));
     provide_context(ContextMenuAsset::new(context_menu_asset));
     provide_context(PortalRef(portal_ref));
     provide_context(ContainerPreviewHeight(container_preview_height));
@@ -782,9 +892,10 @@ fn ContainerOk(
     let project = expect_context::<state::Project>();
     let graph = expect_context::<state::Graph>();
     let messages = expect_context::<types::Messages>();
-    let context_menu = expect_context::<ContextMenuContainerOk>();
+    let context_menu_root = expect_context::<ContextMenuContainerRoot>();
+    let context_menu_ok = expect_context::<ContextMenuContainerOk>();
     let context_menu_active_container =
-        expect_context::<RwSignal<Option<ContextMenuActiveContainerOk>>>();
+        expect_context::<RwSignal<Option<ContextMenuActiveContainer>>>();
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
     let (drag_over, set_drag_over) = create_signal(0);
     provide_context(Container(container.clone()));
@@ -869,17 +980,26 @@ fn ContainerOk(
 
     let highlight = move || selected() || drag_over() > 0;
     let contextmenu = {
+        let graph = graph.clone();
         let container = container.clone();
+        let context_menu_root = context_menu_root.clone();
+        let context_menu_ok = context_menu_ok.clone();
+
         move |e: MouseEvent| {
             e.prevent_default();
 
+            let is_root = Rc::ptr_eq(&container, graph.root());
             context_menu_active_container.update(|active_container| {
                 let _ = active_container.insert(container.clone().into());
             });
-
-            let menu = context_menu.clone();
+            let context_menu_root = context_menu_root.clone();
+            let context_menu_ok = context_menu_ok.clone();
             spawn_local(async move {
-                menu.popup().await.unwrap();
+                if is_root {
+                    context_menu_root.popup().await.unwrap();
+                } else {
+                    context_menu_ok.popup().await.unwrap();
+                };
             });
         }
     };
@@ -1458,6 +1578,12 @@ fn ContainerErr(
     #[prop(optional)] node_ref: NodeRef<html::Div>,
     container: state::graph::Node,
 ) -> impl IntoView {
+    let graph = expect_context::<state::Graph>();
+    let context_menu_root = expect_context::<ContextMenuContainerRoot>();
+    let context_menu_err = expect_context::<ContextMenuContainerErr>();
+    let context_menu_active_container =
+        expect_context::<RwSignal<Option<ContextMenuActiveContainer>>>();
+
     let show_details = create_rw_signal(false);
     let error = {
         let properties = container.properties().read_only();
@@ -1472,8 +1598,34 @@ fn ContainerErr(
         }
     };
 
+    let contextmenu = {
+        let graph = graph.clone();
+        let container = container.clone();
+        let context_menu_root = context_menu_root.clone();
+        let context_menu_err = context_menu_err.clone();
+
+        move |e: MouseEvent| {
+            e.prevent_default();
+
+            let is_root = Rc::ptr_eq(&container, graph.root());
+            context_menu_active_container.update(|active_container| {
+                let _ = active_container.insert(container.clone().into());
+            });
+            let context_menu_root = context_menu_root.clone();
+            let context_menu_err = context_menu_err.clone();
+            spawn_local(async move {
+                if is_root {
+                    context_menu_root.popup().await.unwrap();
+                } else {
+                    context_menu_err.popup().await.unwrap();
+                };
+            });
+        }
+    };
+
     view! {
         <div
+            on:contextmenu=contextmenu
             ref=node_ref
             class="h-full flex flex-col border-4 border-syre-red-600 rounded bg-white dark:bg-secondary-700"
             data-resource=DATA_KEY_CONTAINER
@@ -1627,11 +1779,30 @@ fn handle_container_action_add_analysis_accociation(
     });
 }
 
+async fn handle_context_menu_container_root_events(
+    project: state::Project,
+    graph: state::Graph,
+    messages: types::Messages,
+    container_open: Channel<String>,
+) {
+    let mut container_open = container_open.fuse();
+    loop {
+        futures::select! {
+            event = container_open.next() => match event {
+                None => continue,
+                Some(_id) => {
+                   handle_context_menu_container_events_container_open(graph.root(), &project, &graph, messages).await
+                }
+            },
+        }
+    }
+}
+
 async fn handle_context_menu_container_ok_events(
     project: state::Project,
     graph: state::Graph,
     messages: types::Messages,
-    context_menu_active_container: ReadSignal<Option<ContextMenuActiveContainerOk>>,
+    context_menu_active_container: ReadSignal<Option<ContextMenuActiveContainer>>,
     container_open: Channel<String>,
     container_duplicate: Channel<String>,
     container_trash: Channel<String>,
@@ -1644,7 +1815,8 @@ async fn handle_context_menu_container_ok_events(
             event = container_open.next() => match event {
                 None => continue,
                 Some(_id) => {
-                   handle_context_menu_container_ok_events_container_open(context_menu_active_container, &project, &graph, messages).await
+                    let container = context_menu_active_container.get_untracked().unwrap();
+                    handle_context_menu_container_events_container_open(&*container, &project, &graph, messages).await
                 }
             },
 
@@ -1676,8 +1848,48 @@ async fn handle_context_menu_container_ok_events(
     }
 }
 
-async fn handle_context_menu_container_ok_events_container_open(
-    active_container: ReadSignal<Option<ContextMenuActiveContainerOk>>,
+async fn handle_context_menu_container_err_events(
+    project: state::Project,
+    graph: state::Graph,
+    messages: types::Messages,
+    context_menu_active_container: ReadSignal<Option<ContextMenuActiveContainer>>,
+    container_open: Channel<String>,
+    container_trash: Channel<String>,
+) {
+    let mut container_open = container_open.fuse();
+    let mut container_trash = container_trash.fuse();
+    loop {
+        futures::select! {
+            event = container_open.next() => match event {
+                None => continue,
+                Some(_id) => {
+                    let container = context_menu_active_container.get_untracked().unwrap();
+                    handle_context_menu_container_events_container_open(&*container, &project, &graph, messages).await
+                }
+            },
+
+            event = container_trash.next() => match event {
+                None => continue,
+                Some(_id) => {
+                    let container = context_menu_active_container.get_untracked().unwrap();
+                    let container_path = graph.path(&container).unwrap();
+                    let path = common::normalize_path_sep(container_path);
+                    let project_id = project.rid().get_untracked();
+                    if let Err(err) =  trash_container(project_id, path).await {
+                            messages.update(|messages|{
+                                let mut msg = types::message::Builder::error("Could not trash container.");
+                                msg.body(format!("{err:?}"));
+                                messages.push(msg.build());
+                            });
+                        }
+                }
+            }
+        }
+    }
+}
+
+async fn handle_context_menu_container_events_container_open(
+    container: &state::graph::Node,
     project: &state::Project,
     graph: &state::Graph,
     messages: types::Messages,
@@ -1687,8 +1899,7 @@ async fn handle_context_menu_container_ok_events_container_open(
         .get_untracked()
         .join(project.properties().data_root().get_untracked());
 
-    let container = active_container.get_untracked().unwrap();
-    let container_path = graph.path(&container).unwrap();
+    let container_path = graph.path(container).unwrap();
     let path = common::container_system_path(data_root, container_path);
 
     if let Err(err) = commands::fs::open_file(path).await {
@@ -1701,7 +1912,7 @@ async fn handle_context_menu_container_ok_events_container_open(
 }
 
 async fn handle_context_menu_container_ok_events_container_duplicate(
-    active_container: ReadSignal<Option<ContextMenuActiveContainerOk>>,
+    active_container: ReadSignal<Option<ContextMenuActiveContainer>>,
     project: &state::Project,
     graph: &state::Graph,
     messages: types::Messages,

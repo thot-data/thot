@@ -100,9 +100,6 @@ pub mod graph {
 
                 /// Relocating the duplicated tree to its final dstination failed.
                 Move(IoErrorKind),
-
-                /// Copying the duplicated tree to its final dstination failed.
-                Copy(Vec<(PathBuf, IoErrorKind)>),
             }
 
             #[derive(Serialize, Deserialize, Debug)]

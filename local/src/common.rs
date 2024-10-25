@@ -3,7 +3,7 @@ use crate::constants::*;
 use regex::Regex;
 use std::{
     ffi::OsString,
-    fs, io,
+    io,
     path::{Component, Path, PathBuf, Prefix, MAIN_SEPARATOR},
 };
 
@@ -39,7 +39,7 @@ pub fn unique_file_name(path: impl AsRef<Path>) -> Result<PathBuf, io::ErrorKind
     // get highest counter
     let name_pattern = Regex::new(&format!(r"{file_prefix} \((\d+)\){ext}$")).unwrap();
     let mut highest = None;
-    for entry in fs::read_dir(parent).map_err(|err| err.kind())? {
+    for entry in std::fs::read_dir(parent).map_err(|err| err.kind())? {
         let entry_path = entry.map(|entry| entry.path()).map_err(|err| err.kind())?;
         let Some(entry_file_name) = entry_path
             .file_name()
@@ -247,6 +247,119 @@ pub fn ignore_file() -> OsString {
 /// <path>/\<IGNORE_FILE\>
 pub fn ignore_file_of(path: impl AsRef<Path>) -> PathBuf {
     path.as_ref().join(IGNORE_FILE)
+}
+
+pub mod fs {
+    //! Function that modify the file system.
+    use crate::constants;
+    use std::{
+        ffi::OsString,
+        io,
+        path::{Path, PathBuf},
+    };
+
+    const TEMPFILE_NAME_LEN: usize = 6;
+
+    /// Temporary directory.
+    /// Removes directory on drop.
+    pub struct TempDir {
+        /// Absolute path of the directory.
+        path: Box<Path>,
+    }
+
+    impl TempDir {
+        pub fn path(&self) -> &Path {
+            self.path.as_ref()
+        }
+
+        #[cfg(target_os = "windows")]
+        /// Creates a temporary directory in a given parent directory.
+        /// The directory name is prefixed by [`constants::TEMPFILE_PREFIX`] and hidden.
+        ///
+        /// # Notes
+        /// + No cleanup is performed for the directory.
+        pub fn hidden_in(parent: impl AsRef<Path>) -> io::Result<Self> {
+            use std::os::windows::ffi::OsStrExt;
+            use windows_sys::{core::PCWSTR, Win32::Storage::FileSystem};
+
+            let dir = Self::create_in(&parent)?;
+            let filename_win = dir
+                .path()
+                .as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect::<Vec<u16>>();
+
+            let res = unsafe {
+                FileSystem::SetFileAttributesW(
+                    filename_win.as_ptr(),
+                    FileSystem::FILE_ATTRIBUTE_HIDDEN,
+                )
+            };
+
+            if res == 0 {
+                Err(io::Error::last_os_error())
+            } else {
+                Ok(dir)
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        /// Creates a temporary directory in a given parent directory.
+        /// The directory name is prefixed by [`constants::TEMPFILE_PREFIX`].
+        ///
+        /// # Returns
+        /// Name of the temporary directory.
+        pub fn hidden_in(parent: impl AsRef<Path>) -> io::Result<Self> {
+            Self::create_in(parent)
+        }
+
+        /// Creates a temporary directory in a given parent directory.
+        /// The directory name is prefixed by [`constants::TEMPFILE_PREFIX`].
+        ///
+        /// # Returns
+        /// Name of the temporary directory.
+        fn create_in(parent: impl AsRef<Path>) -> io::Result<Self> {
+            let path = parent.as_ref().join(Self::tmpname());
+            std::fs::create_dir(&path)?;
+            Ok(Self {
+                path: path.into_boxed_path(),
+            })
+        }
+
+        /// Creates a filename for a temporary directory.
+        /// The name is prefixed by [`constants::TEMPFILE_PREFIX`].
+        fn tmpname() -> OsString {
+            let tmpname = std::iter::repeat_with(fastrand::alphanumeric)
+                .take(TEMPFILE_NAME_LEN)
+                .collect::<String>();
+
+            let mut filename = OsString::from(constants::TEMPFILE_PREFIX);
+            filename.push(tmpname);
+            filename
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            if let Err(err) = std::fs::remove_dir_all(self.path()) {
+                tracing::error!("could not remove temporary directory {:?}", self.path());
+            }
+        }
+    }
+}
+
+pub mod ignore {
+    use std::path::Path;
+
+    pub struct WalkBuilder;
+    impl WalkBuilder {
+        pub fn new(path: impl AsRef<Path>) -> ignore::WalkBuilder {
+            let mut builder = ignore::WalkBuilder::new(path);
+            builder.add_custom_ignore_filename(super::ignore_file());
+            builder
+        }
+    }
 }
 
 #[cfg(test)]

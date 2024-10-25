@@ -13,6 +13,7 @@ use serde_json::Value as JsValue;
 use std::{collections::HashMap, io, path::PathBuf, thread};
 use syre_fs_watcher as watcher;
 use syre_local::{
+    self as local,
     system::{
         collections::{ProjectManifest, UserManifest},
         config::Config as LocalConfig,
@@ -29,6 +30,9 @@ pub struct Builder {
     /// Paths to watch.
     /// Usually project paths.
     paths: Vec<PathBuf>,
+
+    /// Path patterns to treat as outside the watcher's scope.
+    ignore_paths: Vec<glob::Pattern>,
 }
 
 impl Builder {
@@ -36,6 +40,7 @@ impl Builder {
         Self {
             config,
             paths: vec![],
+            ignore_paths: vec![],
         }
     }
 }
@@ -51,16 +56,16 @@ impl Builder {
         let (fs_command_tx, fs_command_rx) = crossbeam::channel::unbounded();
         let query_actor = query::Actor::new(query_tx.clone());
 
-        let fs_command_client = watcher::Client::new(fs_command_tx);
-        let mut fs_watcher = watcher::server::Builder::new(
-            fs_command_rx,
-            fs_event_tx,
-            watcher::server::Config::new(
-                self.config.user_manifest().clone(),
-                self.config.project_manifest().clone(),
-                self.config.local_config().clone(),
-            ),
+        let mut watcher_config = watcher::server::config::Builder::new(
+            self.config.user_manifest().clone(),
+            self.config.project_manifest().clone(),
+            self.config.local_config().clone(),
         );
+        watcher_config.add_ignore_patterns(self.ignore_paths);
+
+        let fs_command_client = watcher::Client::new(fs_command_tx);
+        let mut fs_watcher =
+            watcher::server::Builder::new(fs_command_rx, fs_event_tx, watcher_config.build());
         fs_watcher.add_paths(self.paths);
 
         let (store_tx, store_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -208,30 +213,23 @@ impl Builder {
         Ok(())
     }
 
-    pub fn add_path(self, path: impl Into<PathBuf>) -> Self {
-        let Self {
-            mut paths,
-            config: app_config,
-        } = self;
-
-        paths.push(path.into());
-        Self {
-            paths,
-            config: app_config,
-        }
+    pub fn add_path(&mut self, path: impl Into<PathBuf>) -> &mut Self {
+        self.paths.push(path.into());
+        self
     }
 
-    pub fn add_paths(self, paths: Vec<PathBuf>) -> Self {
-        let Self {
-            paths: mut paths_stored,
-            config: app_config,
-        } = self;
+    pub fn add_paths(&mut self, paths: Vec<PathBuf>) -> &mut Self {
+        self.paths.extend(paths);
+        self
+    }
 
-        paths_stored.extend(paths);
-        Self {
-            paths: paths_stored,
-            config: app_config,
-        }
+    pub fn add_ignore_path(
+        &mut self,
+        pattern: impl AsRef<str>,
+    ) -> Result<&mut Self, glob::PatternError> {
+        let pattern = glob::Pattern::new(pattern.as_ref())?;
+        self.ignore_paths.push(pattern);
+        Ok(self)
     }
 }
 

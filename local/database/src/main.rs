@@ -1,7 +1,7 @@
 //! Runs a local [`Database`].
 //!
 //! Must be run with the `server` feature enabled.
-use syre_local::system::collections::ProjectManifest;
+use syre_local::{self as local, system::collections::ProjectManifest};
 use syre_local_database::server;
 
 /// Run the database with the default config.
@@ -22,7 +22,11 @@ fn main() {
         }
     };
 
-    let db = server::Builder::new(config.build()).add_paths(projects);
+    let mut db = server::Builder::new(config.build());
+    db.add_paths(projects);
+    db.add_ignore_path(format!("**/{}*", local::constants::TEMPFILE_PREFIX))
+        .unwrap();
+
     db.run().unwrap();
 }
 

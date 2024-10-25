@@ -393,8 +393,7 @@ impl Database {
 fn graph_reassign_ids(
     path: impl AsRef<Path>,
 ) -> Result<(), Vec<(PathBuf, error::ContainerPropertiesAssets)>> {
-    let walker = ignore::WalkBuilder::new(path)
-        .add_custom_ignore_filename(local::common::ignore_file())
+    let walker = local::common::ignore::WalkBuilder::new(path)
         .filter_entry(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
         .build();
 

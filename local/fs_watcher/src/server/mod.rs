@@ -5,7 +5,7 @@ mod path_watcher;
 pub(crate) mod watcher;
 
 pub use event::{Event, EventKind};
-pub use watcher::{Builder, Config, FsWatcher};
+pub use watcher::{config, Builder, Config, FsWatcher};
 
 pub enum ConversionResult<'a> {
     Ok(event::Event<'a>),

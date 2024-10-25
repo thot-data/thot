@@ -1,6 +1,5 @@
 //! Common error types.
 use crate::types::ResourceId;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::result::Result as StdResult;
 use thiserror::Error;

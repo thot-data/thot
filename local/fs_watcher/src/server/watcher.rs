@@ -532,6 +532,59 @@ pub mod config {
         },
     };
 
+    /// [`Config`] builder.
+    #[derive(Debug)]
+    pub struct Builder {
+        user_manifest: PathBuf,
+        project_manifest: PathBuf,
+        local_config: PathBuf,
+        ignore_paths: Vec<glob::Pattern>,
+    }
+
+    impl Builder {
+        pub fn new(
+            user_manifest: impl Into<PathBuf>,
+            project_manifest: impl Into<PathBuf>,
+            local_config: impl Into<PathBuf>,
+        ) -> Self {
+            Self {
+                user_manifest: user_manifest.into(),
+                project_manifest: project_manifest.into(),
+                local_config: local_config.into(),
+                ignore_paths: vec![],
+            }
+        }
+
+        /// Add a glob pattern to ignore events.
+        /// If an event's path matches the pattern, the event is ignored.
+        ///
+        /// **TODO:** If an event has multiple paths, where one matches an ignore pattern
+        /// the event is adjust as if the respective path was outside the watcher's scope.
+        pub fn add_ignore_patterns(
+            &mut self,
+            patterns: impl IntoIterator<Item = glob::Pattern>,
+        ) -> &mut Self {
+            self.ignore_paths.extend(patterns);
+            self
+        }
+
+        pub fn build(self) -> Config {
+            let Self {
+                user_manifest,
+                project_manifest,
+                local_config,
+                ignore_paths,
+            } = self;
+
+            Config {
+                user_manifest,
+                project_manifest,
+                local_config,
+                ignore_paths,
+            }
+        }
+    }
+
     #[derive(Clone, Debug)]
     pub struct Config {
         /// Path to the local user manifest file.
@@ -545,28 +598,39 @@ pub mod config {
         /// Path to the local config file.
         /// Should be absolute.
         local_config: PathBuf,
+
+        /// Additional paths that should be ignored.
+        ignore_paths: Vec<glob::Pattern>,
     }
 
     impl Config {
+        #[cfg(target_os = "windows")]
         /// # Notes
-        /// + On Windows, paths are converted to UNC.
+        /// + Paths are converted to UNC.
         pub fn new(
             user_manifest: impl Into<PathBuf>,
             project_manifest: impl Into<PathBuf>,
             local_config: impl Into<PathBuf>,
         ) -> Self {
-            if cfg!(target_os = "windows") {
-                Self {
-                    user_manifest: common::ensure_windows_unc(user_manifest),
-                    project_manifest: common::ensure_windows_unc(project_manifest),
-                    local_config: common::ensure_windows_unc(local_config),
-                }
-            } else {
-                Self {
-                    user_manifest: user_manifest.into(),
-                    project_manifest: project_manifest.into(),
-                    local_config: local_config.into(),
-                }
+            Self {
+                user_manifest: common::ensure_windows_unc(user_manifest),
+                project_manifest: common::ensure_windows_unc(project_manifest),
+                local_config: common::ensure_windows_unc(local_config),
+                ignore_paths: vec![],
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        pub fn new(
+            user_manifest: impl Into<PathBuf>,
+            project_manifest: impl Into<PathBuf>,
+            local_config: impl Into<PathBuf>,
+        ) -> Self {
+            Self {
+                user_manifest: user_manifest.into(),
+                project_manifest: project_manifest.into(),
+                local_config: local_config.into(),
+                ignore_paths: vec![],
             }
         }
 
@@ -576,6 +640,7 @@ pub mod config {
                 user_manifest: UserManifest::default_path()?,
                 project_manifest: ProjectManifest::default_path()?,
                 local_config: LocalConfig::default_path()?,
+                ignore_paths: vec![],
             })
         }
 
@@ -589,6 +654,10 @@ pub mod config {
 
         pub fn local_config(&self) -> &PathBuf {
             &self.local_config
+        }
+
+        pub fn ignore_paths(&self) -> &Vec<glob::Pattern> {
+            &self.ignore_paths
         }
 
         pub fn load_user_manifest(&self) -> Result<UserManifest, IoSerde> {

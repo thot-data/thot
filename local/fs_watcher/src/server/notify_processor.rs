@@ -24,7 +24,24 @@ impl FsWatcher {
         events: &'a Vec<DebouncedEvent>,
     ) -> (Vec<fs_event::Event>, Vec<ConversionError>) {
         let events = events.iter().collect::<Vec<_>>();
-        let filtered_events = Self::filter_events(events.clone());
+        let filtered_events = Self::filter_events(events.clone())
+            .into_iter()
+            .filter(|event| {
+                match &event.paths[..] {
+                    // TODO: May want to handle events with multiple paths.
+                    // Could do this by passing in ignore paths to `Self::filter_events` and deciding
+                    // how to handle it based on event type. e.g. If moving from an ignored path treat as a creation event;
+                    // if moving into an ignored path, treat as a removal event; if moving between ignore paths, filter event out.
+                    [path] => !self
+                        .app_config
+                        .ignore_paths()
+                        .iter()
+                        .any(|pattern| pattern.matches_path(path)),
+                    _ => true,
+                }
+            })
+            .collect::<Vec<_>>();
+
         let (grouped, remaining) = self.group_events(filtered_events);
         let (mut converted, errors) = self.convert_events(remaining);
         converted.extend(grouped);

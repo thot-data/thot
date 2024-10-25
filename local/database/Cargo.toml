@@ -20,6 +20,7 @@ crossbeam = { workspace = true, optional = true }
 derive_more = { workspace = true, features = ["full"] }
 file-id = { version = "0.2", optional = true }
 futures  = { workspace = true, optional = true }
+glob  = { workspace = true, optional = true }
 ignore  = { workspace = true, optional = true }
 notify = { workspace = true, default-features = false, optional = true }
 rayon = { workspace = true, optional = true }
@@ -62,6 +63,7 @@ server = [
 	"dep:file_path_from_id",
 	"dep:file-id",
 	"dep:futures",
+	"dep:glob",
 	"dep:has_id",
 	"dep:ignore",
 	"dep:notify",

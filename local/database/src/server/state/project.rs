@@ -684,8 +684,7 @@ pub mod graph {
             let root = Container::load(&path).unwrap();
             let mut graph = Self::new(root);
 
-            let dir_walker = ignore::WalkBuilder::new(&path)
-                .add_custom_ignore_filename(local::common::ignore_file())
+            let dir_walker = local::common::ignore::WalkBuilder::new(&path)
                 .max_depth(Some(1))
                 .filter_entry(|entry| {
                     entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
