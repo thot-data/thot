@@ -92,25 +92,26 @@ pub mod workspace_graph {
         collections::BTreeMap,
         ops::Deref,
         path::{Path, PathBuf},
+        rc::Rc,
     };
     use syre_core::types::ResourceId;
 
-    pub type ContainerVisibilityMap = BTreeMap<PathBuf, RwSignal<bool>>;
+    pub type ContainerVisibility = Vec<(super::graph::Node, RwSignal<bool>)>;
 
     #[derive(Clone, Debug)]
     pub struct State {
         selection: RwSignal<Vec<SelectedResource>>,
-        container_visibility: RwSignal<ContainerVisibilityMap>,
+        container_visibility: RwSignal<ContainerVisibility>,
     }
 
     impl State {
         pub fn new(graph: &super::graph::State) -> Self {
-            let mut container_visibility = ContainerVisibilityMap::new();
-            graph.nodes().with_untracked(|nodes| {
-                for node in nodes {
-                    let path = graph.path(node).unwrap();
-                    container_visibility.insert(path, create_rw_signal(true));
-                }
+            let container_visibility = graph.nodes().with_untracked(|nodes| {
+                nodes
+                    .iter()
+                    .cloned()
+                    .map(|node| (node, create_rw_signal(true)))
+                    .collect()
             });
 
             Self {
@@ -155,28 +156,30 @@ pub mod workspace_graph {
                 .update(|selection| selection.retain(|resource| resource.rid() != rid));
         }
 
-        pub fn container_visiblity(&self) -> RwSignal<ContainerVisibilityMap> {
+        pub fn container_visiblity(&self) -> RwSignal<ContainerVisibility> {
             self.container_visibility.clone()
         }
 
         /// Get the visibility signal for a specific container.
         pub fn container_visibility_get(
             &self,
-            container: impl AsRef<Path>,
+            container: &super::graph::Node,
         ) -> Option<RwSignal<bool>> {
-            self.container_visibility
-                .with_untracked(|map| map.get(container.as_ref()).cloned())
+            self.container_visibility.with_untracked(|containers| {
+                containers.iter().find_map(|(node, visibility)| {
+                    Rc::ptr_eq(node, container).then_some(visibility.clone())
+                })
+            })
         }
 
         pub fn container_visibility_show_all(&self) {
-            self.container_visibility
-                .with_untracked(|container_visibility| {
-                    container_visibility.values().for_each(|visibility| {
-                        if !visibility.get_untracked() {
-                            visibility.set(true);
-                        }
-                    })
-                });
+            self.container_visibility.with_untracked(|visibilities| {
+                visibilities.iter().for_each(|(_, visibility)| {
+                    if !visibility.get_untracked() {
+                        visibility.set(true);
+                    }
+                })
+            });
         }
     }
 
@@ -495,11 +498,13 @@ pub mod graph {
         }
     }
 
+    pub type Children = Vec<(Node, RwSignal<Vec<Node>>)>;
+
     #[derive(Clone)]
     pub struct State {
         nodes: RwSignal<Vec<Node>>,
         root: Node,
-        children: RwSignal<Vec<(Node, RwSignal<Vec<Node>>)>>,
+        children: RwSignal<Children>,
         parents: Rc<RefCell<Vec<(Node, RwSignal<Node>)>>>,
     }
 
@@ -613,6 +618,10 @@ pub mod graph {
 
         pub fn root(&self) -> &Node {
             &self.root
+        }
+
+        pub fn edges(&self) -> ReadSignal<Children> {
+            self.children.read_only()
         }
 
         pub fn children(&self, parent: &Node) -> Option<RwSignal<Vec<Node>>> {

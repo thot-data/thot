@@ -337,7 +337,7 @@ pub mod bulk {
 
 pub mod error {
     use serde::{Deserialize, Serialize};
-    use std::{ffi::OsString, io, path::PathBuf};
+    use std::{io, path::PathBuf};
 
     #[derive(Serialize, Deserialize, Debug)]
     pub struct ProjectNotFound;

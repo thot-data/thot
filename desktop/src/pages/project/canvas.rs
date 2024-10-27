@@ -16,7 +16,7 @@ use leptos::{
 };
 use leptos_icons::*;
 use serde::Serialize;
-use std::{cmp, io, num::NonZeroUsize, path::PathBuf, rc::Rc};
+use std::{cmp, collections::HashMap, io, iter, num::NonZeroUsize, path::PathBuf, rc::Rc};
 use syre_core::{project::AnalysisAssociation, types::ResourceId};
 use syre_desktop_lib as lib;
 use syre_local as local;
@@ -29,9 +29,10 @@ const CONTAINER_HEADER_HEIGHT: usize = 50;
 const CONTAINER_PREVIEW_LINE_HEIGHT: usize = 24;
 const PADDING_X_SIBLING: usize = 20;
 const PADDING_Y_CHILDREN: usize = 60;
-const RADIUS_CANVAS_BUTTON: usize = 10;
-const RADIUS_TOGGLE_VIEW_INDICATOR: usize = 3;
-const CONTAINER_VISIBLITY_ICON_SIZE: usize = 14;
+const CANVAS_BUTTON_RADIUS: usize = 10;
+const CANVAS_BUTTON_STROKE: usize = 2; // ensure this aligns with the actual stroke width defined in svg elements
+const TOGGLE_VIEW_INDICATOR_RADIUS: usize = 3;
+const ICON_SCALE: f64 = 0.9;
 const VB_SCALE_ENLARGE: f32 = 0.9; // zoom in should reduce viewport.
 const VB_SCALE_REDUCE: f32 = 1.1;
 const VB_BASE: usize = 1000;
@@ -85,10 +86,6 @@ struct ContextMenuActiveContainer(state::graph::Node);
 /// Active asset for the asset context menu.
 #[derive(derive_more::Deref, derive_more::From, Clone)]
 struct ContextMenuActiveAsset(ResourceId);
-
-// /// Resize observer run when container nodes change size.
-// #[derive(derive_more::Deref, derive_more::From, Clone)]
-// struct ContainerResizeObserver(web_sys::ResizeObserver);
 
 #[derive(derive_more::Deref, derive_more::From, Clone, Copy)]
 struct ContainerPreviewHeight(ReadSignal<usize>);
@@ -317,34 +314,13 @@ fn CanvasView(
 
     let portal_ref = create_node_ref();
     let (container_preview_height, set_container_preview_height) = create_signal(0);
-    // let container_resize_observer =
-    //     Closure::<dyn Fn(wasm_bindgen::JsValue)>::new(move |entries: wasm_bindgen::JsValue| {
-    //         assert!(entries.is_array());
-    //         let entries = entries.dyn_ref::<js_sys::Array>().unwrap();
-    //         let height = entries
-    //             .iter()
-    //             .map(|entry| {
-    //                 let entry = entry.dyn_ref::<web_sys::ResizeObserverEntry>().unwrap();
-    //                 let border_box = entry.border_box_size().get(0); //.dyn_ref::<web_sys>();
-    //                 let border_box = border_box.dyn_ref::<web_sys::ResizeObserverSize>().unwrap();
-    //                 border_box.block_size() as usize
-    //             })
-    //             .max()
-    //             .unwrap();
 
-    //         let height = common::clamp(height, 0, MAX_CONTAINER_HEIGHT);
-    //         set_container_height(height);
-    //     });
     provide_context(ContextMenuContainerRoot::new(context_menu_container_root));
     provide_context(ContextMenuContainerOk::new(context_menu_container_ok));
     provide_context(ContextMenuContainerErr::new(context_menu_container_err));
     provide_context(ContextMenuAsset::new(context_menu_asset));
     provide_context(PortalRef(portal_ref));
     provide_context(ContainerPreviewHeight(container_preview_height));
-    // provide_context(ContainerResizeObserver(
-    //     web_sys::ResizeObserver::new(container_resize_observer.as_ref().unchecked_ref()).unwrap(),
-    // ));
-    // container_resize_observer.forget();
 
     create_effect(move |_| {
         let height = workspace_state.preview().with(|preview| {
@@ -500,7 +476,7 @@ fn CanvasView(
                 }
                 class=("cursor-grabbing", move || pan_drag.with(|c| c.is_some()))
             >
-                <Graph root=graph.root().clone() />
+                <Graph />
             </svg>
 
             <div ref=portal_ref></div>
@@ -508,15 +484,164 @@ fn CanvasView(
     }
 }
 
+type DisplayNode = Rc<DisplayData>;
+
+#[derive(Clone)]
+struct DisplayData {
+    container: state::graph::Node,
+    visibility: ReadSignal<bool>,
+    children: RwSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
+}
+
+impl DisplayData {
+    pub fn children(&self) -> ReadSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>> {
+        self.children.read_only()
+    }
+
+    pub fn width(&self) -> Signal<NonZeroUsize> {
+        Signal::derive({
+            let visibility = self.visibility;
+            let children = self.children.read_only();
+            move || {
+                children.with(|children| {
+                    let children_widths = children
+                        .iter()
+                        .map(|(data, width)| width)
+                        .collect::<Vec<_>>();
+
+                    if visibility.get() && !children_widths.is_empty() {
+                        let width = children_widths
+                            .iter()
+                            .fold(0, |width, child_width| width + child_width.get().get());
+
+                        NonZeroUsize::new(width).unwrap()
+                    } else {
+                        NonZeroUsize::new(1).unwrap()
+                    }
+                })
+            }
+        })
+    }
+}
+
+#[derive(Clone)]
+struct DisplayGraph {
+    nodes: RwSignal<Vec<DisplayNode>>,
+    children: ReadSignal<state::graph::Children>,
+}
+
+impl DisplayGraph {
+    pub fn from(
+        graph: &state::Graph,
+        visibilities: ReadSignal<state::workspace_graph::ContainerVisibility>,
+    ) -> Self {
+        let children = graph.edges();
+        let nodes = children.with_untracked(|children| {
+            children
+                .iter()
+                .map(|(container, _)| {
+                    let visibility = visibilities
+                        .with_untracked(|visibilities| {
+                            visibilities.iter().find_map(|(node, visibility)| {
+                                Rc::ptr_eq(node, container).then_some(visibility.read_only())
+                            })
+                        })
+                        .unwrap();
+
+                    DisplayNode::new(DisplayData {
+                        container: container.clone(),
+                        visibility,
+                        children: create_rw_signal(vec![]),
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+
+        nodes.iter().for_each(|data| {
+            let container_children = children.with_untracked(|children| {
+                children
+                    .iter()
+                    .find_map(|(parent, children)| {
+                        Rc::ptr_eq(parent, &data.container).then_some(children.read_only())
+                    })
+                    .unwrap()
+            });
+
+            let display_children = container_children.with_untracked(|container_children| {
+                container_children
+                    .iter()
+                    .map(|container_child| {
+                        nodes
+                            .iter()
+                            .find_map(|node| {
+                                Rc::ptr_eq(&node.container, container_child)
+                                    .then_some((node.container.clone(), node.width()))
+                            })
+                            .unwrap()
+                    })
+                    .collect::<Vec<_>>()
+            });
+
+            data.children
+                .update_untracked(|children| children.extend(display_children))
+        });
+
+        Self {
+            nodes: create_rw_signal(nodes),
+            children,
+        }
+    }
+
+    pub fn get(&self, container: &state::graph::Node) -> Option<DisplayNode> {
+        self.nodes.with_untracked(|nodes| {
+            nodes
+                .iter()
+                .find(|node| Rc::ptr_eq(&node.container, container))
+                .cloned()
+        })
+    }
+
+    pub fn width(&self, container: &state::graph::Node) -> Option<Signal<NonZeroUsize>> {
+        self.nodes.with_untracked(|nodes| {
+            nodes
+                .iter()
+                .find_map(|node| Rc::ptr_eq(&node.container, container).then_some(node.width()))
+        })
+    }
+}
+
 #[component]
-fn Graph(root: state::graph::Node) -> impl IntoView {
+fn Graph() -> impl IntoView {
+    let graph = expect_context::<state::Graph>();
+    let workspace_graph_state = expect_context::<state::workspace_graph::State>();
+    provide_context(DisplayGraph::from(
+        &graph,
+        workspace_graph_state.container_visiblity().read_only(),
+    ));
+    let root = graph.root();
+
+    view! { <GraphView root=root.clone() /> }
+}
+
+#[component]
+fn GraphView(root: state::graph::Node) -> impl IntoView {
     let graph = expect_context::<state::Graph>();
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
+    let display_graph = expect_context::<DisplayGraph>();
     let container_preview_height = expect_context::<ContainerPreviewHeight>();
-    // let container_resize_observer = expect_context::<ContainerResizeObserver>();
     let portal_ref = expect_context::<PortalRef>();
     let create_child_ref = NodeRef::<html::Dialog>::new();
     let container_node = NodeRef::<html::Div>::new();
+
+    fn child_key(child: &state::graph::Node, graph: &state::Graph) -> String {
+        child.properties().with_untracked(|properties| {
+            properties
+                .as_ref()
+                .map(|properties| properties.rid().with_untracked(|rid| rid.to_string()))
+                .unwrap_or_else(|_| graph.path(child).unwrap().to_string_lossy().to_string())
+        })
+    }
+
     let create_child_dialog_show = move |e: MouseEvent| {
         if e.button() != types::MouseButton::Primary {
             return;
@@ -527,7 +652,7 @@ fn Graph(root: state::graph::Node) -> impl IntoView {
     };
 
     let container_visibility = workspace_graph_state
-        .container_visibility_get(graph.path(&root).unwrap())
+        .container_visibility_get(&root)
         .unwrap();
 
     let children = graph.children(&root).unwrap().read_only();
@@ -541,52 +666,80 @@ fn Graph(root: state::graph::Node) -> impl IntoView {
         }
     };
 
-    let container_height = move || {
-        container_preview_height.with(|preview_height| CONTAINER_HEADER_HEIGHT + preview_height)
-    };
+    let display_data = display_graph.get(&root).unwrap();
 
-    let width = {
-        let root = root.clone();
+    let container_height = Signal::derive(move || {
+        container_preview_height.with(|preview_height| CONTAINER_HEADER_HEIGHT + preview_height)
+    });
+
+    let width = Signal::derive({
+        let width = display_data.width();
         move || {
-            root.subtree_width().with(|width| {
+            width.with(|width| {
                 width.get() * (CONTAINER_WIDTH + PADDING_X_SIBLING) - PADDING_X_SIBLING
             })
         }
-    };
+    });
 
     let height = {
         let root = root.clone();
-        let container_height = container_height.clone();
+        let container_visibility = container_visibility.read_only();
         move || {
-            let tree_height = root.subtree_height().get();
-            let height = tree_height.get() * (container_height() + PADDING_Y_CHILDREN)
-                - PADDING_Y_CHILDREN
-                + RADIUS_CANVAS_BUTTON;
+            let height = if container_visibility() {
+                let height = root.subtree_height().with(|height| height.get());
+                height * (container_height.get() + PADDING_Y_CHILDREN) - PADDING_Y_CHILDREN
+                    + CANVAS_BUTTON_RADIUS
+                    + CANVAS_BUTTON_STROKE
+            } else {
+                container_height.get() + PADDING_Y_CHILDREN - PADDING_Y_CHILDREN / 2
+                    + CANVAS_BUTTON_RADIUS
+                    + CANVAS_BUTTON_STROKE
+            };
 
             cmp::max(height, 0)
         }
     };
 
-    let x = {
+    let older_sibling_widths = Signal::derive({
         let root = root.clone();
+        let graph = graph.clone();
+        let display_nodes = display_graph.nodes.read_only();
+
         move || {
-            let older_sibling_width = siblings()
+            siblings()
                 .map(|siblings| {
                     siblings.with(|siblings| {
                         root.sibling_index().with(|index| {
                             siblings
                                 .iter()
                                 .take(*index)
-                                .map(|sibling| sibling.subtree_width().get())
-                                .reduce(|total, width| total.checked_add(width.get()).unwrap())
-                                .map(|width| width.get())
-                                .unwrap_or(0)
+                                .map(|sibling| {
+                                    display_nodes.with(|display_nodes| {
+                                        display_nodes
+                                            .iter()
+                                            .find_map(|data| {
+                                                Rc::ptr_eq(&data.container, sibling)
+                                                    .then(|| data.width())
+                                            })
+                                            .unwrap()
+                                    })
+                                })
+                                .collect::<Vec<_>>()
                         })
                     })
                 })
-                .unwrap_or(0);
+                .unwrap_or(vec![])
+        }
+    });
 
-            older_sibling_width * (CONTAINER_WIDTH + PADDING_X_SIBLING)
+    let x = {
+        let root = root.clone();
+        let graph = graph.clone();
+        move || {
+            let x = older_sibling_widths
+                .with(|widths| widths.iter().fold(0, |x, width| x + width.get().get()));
+
+            x * (CONTAINER_WIDTH + PADDING_X_SIBLING)
         }
     };
 
@@ -597,75 +750,144 @@ fn Graph(root: state::graph::Node) -> impl IntoView {
             if state::graph::Node::ptr_eq(&root, graph.root()) {
                 0
             } else {
-                container_height() + PADDING_Y_CHILDREN
+                container_height.get() + PADDING_Y_CHILDREN
             }
         }
     };
 
-    let x_node = {
-        let width = width.clone();
-        move || (width() - CONTAINER_WIDTH) / 2
-    };
+    let x_node = Signal::derive(move || (width.with(|width| (width - CONTAINER_WIDTH) / 2)));
 
-    fn x_child_offset(index: usize, children: &Vec<state::graph::Node>) -> usize {
-        children
-            .iter()
-            .take(index)
-            .map(|child| child.subtree_width().get())
-            .reduce(|total, width| total.checked_add(width.get()).unwrap())
-            .map(|width| width.get())
-            .unwrap_or(0)
+    view! {
+        <svg width=width height=height x=x y=y>
+            <GraphEdges x_node children_widths=display_data.children() container_visibility />
+            <g class="group">
+                <foreignObject width=CONTAINER_WIDTH height=container_height x=x_node y=0>
+                    <ContainerView node_ref=container_node container=root.clone() />
+                </foreignObject>
+                <svg
+                    x=move || {
+                        x_node
+                            .with(|x| {
+                                x + CONTAINER_WIDTH / 2 - CANVAS_BUTTON_RADIUS
+                                    - CANVAS_BUTTON_STROKE
+                            })
+                    }
+                    y=move || container_height.get() - CANVAS_BUTTON_RADIUS - CANVAS_BUTTON_STROKE
+                    width=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
+                    height=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
+                    on:mousedown=create_child_dialog_show
+                    class="group-[:not(:hover)]:hidden cursor-pointer"
+                >
+                    <circle
+                        r=CANVAS_BUTTON_RADIUS
+                        cx=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                        cy=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                        class="stroke-black dark:stroke-white fill-white dark:fill-secondary-700 stroke-2"
+                    ></circle>
+                    <svg
+                        x=CANVAS_BUTTON_STROKE as f64
+                            + CANVAS_BUTTON_RADIUS as f64 * (1.0 - ICON_SCALE)
+                        y=CANVAS_BUTTON_STROKE as f64
+                            + CANVAS_BUTTON_RADIUS as f64 * (1.0 - ICON_SCALE)
+                        width=CANVAS_BUTTON_RADIUS * 2
+                        height=CANVAS_BUTTON_RADIUS * 2
+                    >
+                        <Icon
+                            icon=components::icon::Add
+                            width=(CANVAS_BUTTON_RADIUS as f64 * 2.0 * ICON_SCALE).to_string()
+                            height=(CANVAS_BUTTON_RADIUS as f64 * 2.0 * ICON_SCALE).to_string()
+                            class="stroke-black dark:stroke-white stroke-2 linecap-round"
+                        />
+                    </svg>
+                </svg>
+            </g>
+            <g class:hidden=move || !container_visibility()>
+                <For
+                    each=children
+                    key={
+                        let graph = graph.clone();
+                        move |child| child_key(child, &graph)
+                    }
+                    let:child
+                >
+                    <GraphView root=child />
+                </For>
+            </g>
+        </svg>
+
+        {move || {
+            if let Some(mount) = portal_ref.get() {
+                let mount = (*mount).clone();
+                view! {
+                    <Portal mount clone:root>
+                        <ModalDialog node_ref=create_child_ref clone:root>
+                            <CreateChildContainer
+                                parent=root.clone()
+                                parent_ref=create_child_ref.clone()
+                            />
+                        </ModalDialog>
+                    </Portal>
+                }
+                    .into_view()
+            } else {
+                ().into_view()
+            }
+        }}
     }
+}
+
+#[component]
+fn GraphEdges(
+    x_node: Signal<usize>,
+    children_widths: ReadSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
+    container_visibility: RwSignal<bool>,
+) -> impl IntoView {
+    let graph = expect_context::<state::Graph>();
+    let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
+    let container_preview_height = expect_context::<ContainerPreviewHeight>();
+
+    let container_height = Signal::derive(move || {
+        container_preview_height.with(|preview_height| CONTAINER_HEADER_HEIGHT + preview_height)
+    });
 
     let line_points = {
         let x_node = x_node.clone();
-        let children = children.clone();
-        let container_height = container_height.clone();
-        move |sibling_index: ReadSignal<usize>, subtree_width: ReadSignal<NonZeroUsize>| {
-            let x_node = x_node.clone();
-            move || {
-                let parent_x = x_node() + CONTAINER_WIDTH / 2;
-                let parent_y = container_height();
-                let midway_y = cmp::max(
-                    container_height() as i32 + (PADDING_Y_CHILDREN / 2) as i32,
-                    0,
-                );
-                let child_y = container_height().checked_add(PADDING_Y_CHILDREN).unwrap();
-                let child_x_offset =
-                    children.with(|children| x_child_offset(sibling_index.get(), children));
-                let child_x = (child_x_offset + subtree_width.get().get() / 2)
-                    * (CONTAINER_WIDTH + PADDING_X_SIBLING)
-                    + CONTAINER_WIDTH / 2;
-                format!(
-                    "{},{} {},{} {},{} {},{}",
-                    parent_x, parent_y, parent_x, midway_y, child_x, midway_y, child_x, child_y,
-                )
-            }
+        move |(start, end): (usize, usize)| {
+            let parent_x = x_node() + CONTAINER_WIDTH / 2;
+            let parent_y = container_height.get();
+            let midway_y = cmp::max(
+                container_height.get() as i32 + (PADDING_Y_CHILDREN / 2) as i32,
+                0,
+            );
+            let child_y = container_height
+                .get()
+                .checked_add(PADDING_Y_CHILDREN)
+                .unwrap();
+
+            let child_x = start * (CONTAINER_WIDTH + PADDING_X_SIBLING)
+                + ((end - start - 1) * (CONTAINER_WIDTH + PADDING_X_SIBLING) + CONTAINER_WIDTH) / 2;
+
+            format!(
+                "{},{} {},{} {},{} {},{}",
+                parent_x, parent_y, parent_x, midway_y, child_x, midway_y, child_x, child_y,
+            )
         }
     };
 
-    let visibility_toggle_line_coordiantes = {
-        let x_node = x_node.clone();
-        let container_height = container_height.clone();
-        move || {
-            let x = x_node() + CONTAINER_WIDTH / 2;
-            let y1 = container_height();
-            let y2 = cmp::max(container_height() + (PADDING_Y_CHILDREN / 2), 0);
+    let visibility_toggle_line_coordiantes = move || {
+        let x = x_node.get() + CONTAINER_WIDTH / 2;
+        let y1 = container_height.get();
+        let y2 = cmp::max(container_height.get() + (PADDING_Y_CHILDREN / 2), 0);
 
-            (x.to_string(), y1.to_string(), x.to_string(), y2.to_string())
-        }
+        (x.to_string(), y1.to_string(), x.to_string(), y2.to_string())
     };
 
-    let connector_lines_center = {
-        let x_node = x_node.clone();
-        let container_height = container_height.clone();
-        move || {
-            let x = x_node() + CONTAINER_WIDTH / 2;
-            let y = cmp::max(container_height() + (PADDING_Y_CHILDREN / 2), 0);
+    let connector_lines_center = Signal::derive(move || {
+        let x = x_node.get() + CONTAINER_WIDTH / 2;
+        let y = cmp::max(container_height.get() + (PADDING_Y_CHILDREN / 2), 0);
 
-            (x, y)
-        }
-    };
+        (x, y)
+    });
 
     let toggle_container_visibility = move |e: MouseEvent| {
         if e.button() != types::MouseButton::Primary {
@@ -688,195 +910,114 @@ fn Graph(root: state::graph::Node) -> impl IntoView {
         }
     };
 
-    // let _ = watch(
-    //     move || container_node.get(),
-    //     move |container_node, _, _| {
-    //         if let Some(container_node) = container_node {
-    //             let options = web_sys::ResizeObserverOptions::new();
-    //             options.set_box(web_sys::ResizeObserverBoxOptions::ContentBox);
-    //             container_resize_observer
-    //                 .observe_with_options(container_node.dyn_ref().unwrap(), &options)
-    //         }
-    //     },
-    //     true,
-    // );
+    let x_children = Signal::derive(move || {
+        children_widths.with(|widths| {
+            widths
+                .iter()
+                .scan((0_usize, 0_usize), |(start, end), (_, width)| {
+                    *start = *end;
+                    *end += width.get().get();
+                    Some((*start, *end))
+                })
+                .collect::<Vec<_>>()
+        })
+    });
 
-    const PLUS_SCALE: f32 = 0.7;
     view! {
-        <svg width=width height=height x=x y=y>
+        <g>
+            <g class:hidden=move || {
+                !container_visibility()
+            }>
+                {move || {
+                    x_children
+                        .with(|x_children| {
+                            x_children
+                                .iter()
+                                .cloned()
+                                .map(|x| {
+                                    view! {
+                                        <polyline
+                                            fill="none"
+                                            class="stroke-secondary-400 dark:stroke-secondary-500"
+                                            points=move || line_points(x)
+                                        ></polyline>
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                }}
+            </g>
             <g>
-                <g class:hidden=move || !container_visibility()>
-                    <For each=children key=child_key.clone() let:child>
-                        <polyline
-                            fill="none"
-                            class="stroke-secondary-400 dark:stroke-secondary-500"
-                            points=line_points(child.sibling_index(), child.subtree_width())
-                        ></polyline>
-                    </For>
-                </g>
-                <g>
-                    {move || {
-                        if children.with(|children| children.len()) > 0 {
-                            let (x1, y1, x2, y2) = visibility_toggle_line_coordiantes();
-                            view! {
-                                <line
-                                    x1=x1
-                                    y1=y1
-                                    x2=x2
-                                    y2=y2
-                                    class="stroke-secondary-400 dark:stroke-secondary-500"
-                                ></line>
-                            }
-                                .into_view()
-                        } else {
-                            view! {}.into_view()
-                        }
-                    }}
-                    <g class="group cursor-pointer">
-                        {move || {
-                            let (cx, cy) = connector_lines_center();
-                            view! {
-                                <circle
-                                    r=RADIUS_TOGGLE_VIEW_INDICATOR
-                                    cx=cx
-                                    cy=cy
-                                    class="stroke-secondary-400 fill-secondary-400 dark:stroke-secondary-500 \
-                                    dark:fill-secondary-500 transition-opacity transition-delay-200 hover:opacity-0"
-                                ></circle>
-                                <g
-                                    on:mousedown=toggle_container_visibility
-                                    class="group-[:not(:hover)]:hidden"
-                                >
-                                    <circle
-                                        r=RADIUS_CANVAS_BUTTON
-                                        cx=cx
-                                        cy=cy
-                                        class="stroke-black dark:stroke-white fill-white \
-                                        dark:fill-secondary-700 stroke-2 transition-opacity transition-delay-200 \
-                                        opacity:0 hover:opacity-1"
-                                    ></circle>
+                {move || {
+                    if children_widths.with(|children| children.len()) > 0 {
+                        let (x1, y1, x2, y2) = visibility_toggle_line_coordiantes();
+                        view! {
+                            <line
+                                x1=x1
+                                y1=y1
+                                x2=x2
+                                y2=y2
+                                class="stroke-secondary-400 dark:stroke-secondary-500"
+                            ></line>
+
+                            {move || {
+                                let (cx, cy) = connector_lines_center.get();
+                                view! {
                                     <svg
-                                        x=move || {
-                                            cx as f64 - (CONTAINER_VISIBLITY_ICON_SIZE as f64) / 2.0
-                                        }
-                                        y=move || {
-                                            cy as f64 - (CONTAINER_VISIBLITY_ICON_SIZE as f64) / 2.0
-                                        }
-                                        width=CONTAINER_VISIBLITY_ICON_SIZE
-                                        height=CONTAINER_VISIBLITY_ICON_SIZE
+                                        x=move || cx - CANVAS_BUTTON_RADIUS - CANVAS_BUTTON_STROKE
+                                        y=move || cy - CANVAS_BUTTON_RADIUS - CANVAS_BUTTON_STROKE
+                                        width=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
+                                        height=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
+                                        on:mousedown=toggle_container_visibility
+                                        class="group cursor-pointer"
                                     >
-                                        {move || {
-                                            if container_visibility() {
-                                                view! {
-                                                    <Icon
-                                                        icon=components::icon::Eye
-                                                        width=CONTAINER_VISIBLITY_ICON_SIZE.to_string()
-                                                        height=CONTAINER_VISIBLITY_ICON_SIZE.to_string()
-                                                    />
-                                                }
-                                            } else {
-                                                view! {
-                                                    <Icon
-                                                        icon=components::icon::EyeClosed
-                                                        width=CONTAINER_VISIBLITY_ICON_SIZE.to_string()
-                                                        height=CONTAINER_VISIBLITY_ICON_SIZE.to_string()
-                                                    />
-                                                }
-                                            }
-                                        }}
+                                        <circle
+                                            r=TOGGLE_VIEW_INDICATOR_RADIUS
+                                            cx=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                                            cy=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                                            class="stroke-secondary-400 fill-secondary-400 dark:stroke-secondary-500 \
+                                            dark:fill-secondary-500 transition-opacity transition-delay-200 hover:opacity-0"
+                                        ></circle>
+                                        <g class="group-[:not(:hover)]:hidden">
+                                            <circle
+                                                r=CANVAS_BUTTON_RADIUS
+                                                cx=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                                                cy=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                                                class="stroke-black dark:stroke-white fill-white \
+                                                dark:fill-secondary-700 stroke-2 transition-opacity transition-delay-200 \
+                                                opacity:0 hover:opacity-1"
+                                            ></circle>
+
+                                            <svg
+                                                x=CANVAS_BUTTON_STROKE
+                                                y=CANVAS_BUTTON_STROKE
+                                                width=CANVAS_BUTTON_RADIUS * 2
+                                                height=CANVAS_BUTTON_RADIUS * 2
+                                            >
+                                                <Icon
+                                                    icon=Signal::derive(move || {
+                                                        if container_visibility() {
+                                                            components::icon::Eye
+                                                        } else {
+                                                            components::icon::EyeClosed
+                                                        }
+                                                    })
+                                                    width=(CANVAS_BUTTON_RADIUS * 2).to_string()
+                                                    height=(CANVAS_BUTTON_RADIUS * 2).to_string()
+                                                />
+                                            </svg>
+                                        </g>
                                     </svg>
-                                </g>
-                            }
-                        }}
-                    </g>
-                </g>
+                                }
+                            }}
+                        }
+                            .into_view()
+                    } else {
+                        view! {}.into_view()
+                    }
+                }}
             </g>
-            <g class="group">
-                <foreignObject width=CONTAINER_WIDTH height=container_height x=x_node.clone() y=0>
-                    <ContainerView node_ref=container_node container=root.clone() />
-                </foreignObject>
-                <g
-                    on:mousedown=create_child_dialog_show
-                    class="group-[:not(:hover)]:hidden cursor-pointer"
-                >
-                    <circle
-                        cx={
-                            let x_node = x_node.clone();
-                            move || { x_node() + CONTAINER_WIDTH / 2 }
-                        }
-
-                        cy=container_height.clone()
-                        r=RADIUS_CANVAS_BUTTON
-                        class="stroke-black dark:stroke-white fill-white dark:fill-secondary-700 stroke-2"
-                    ></circle>
-                    <line
-                        x1={
-                            let x_node = x_node.clone();
-                            move || {
-                                (x_node() + CONTAINER_WIDTH / 2) as f32
-                                    - RADIUS_CANVAS_BUTTON as f32 * PLUS_SCALE
-                            }
-                        }
-
-                        x2={
-                            let x_node = x_node.clone();
-                            move || {
-                                (x_node() + CONTAINER_WIDTH / 2) as f32
-                                    + RADIUS_CANVAS_BUTTON as f32 * PLUS_SCALE
-                            }
-                        }
-
-                        y1=move || container_height()
-                        y2=move || container_height()
-                        class="stroke-black dark:stroke-white stroke-2 linecap-round"
-                    ></line>
-                    <line
-                        x1={
-                            let x_node = x_node.clone();
-                            move || { x_node() + CONTAINER_WIDTH / 2 }
-                        }
-
-                        x2={
-                            let x_node = x_node.clone();
-                            move || { x_node() + CONTAINER_WIDTH / 2 }
-                        }
-
-                        y1=move || {
-                            container_height() as f32 - RADIUS_CANVAS_BUTTON as f32 * PLUS_SCALE
-                        }
-                        y2=move || {
-                            container_height() as f32 + RADIUS_CANVAS_BUTTON as f32 * PLUS_SCALE
-                        }
-                        class="stroke-black dark:stroke-white stroke-2 linecap-round"
-                    ></line>
-                </g>
-            </g>
-            <g class:hidden=move || !container_visibility()>
-                <For each=children key=child_key.clone() let:child>
-                    <Graph root=child />
-                </For>
-
-            </g>
-        </svg>
-
-        {move || {
-            if let Some(mount) = portal_ref.get() {
-                let mount = (*mount).clone();
-                view! {
-                    <Portal mount clone:root>
-                        <ModalDialog node_ref=create_child_ref clone:root>
-                            <CreateChildContainer
-                                parent=root.clone()
-                                parent_ref=create_child_ref.clone()
-                            />
-                        </ModalDialog>
-                    </Portal>
-                }
-                    .into_view()
-            } else {
-                ().into_view()
-            }
-        }}
+        </g>
     }
 }
 

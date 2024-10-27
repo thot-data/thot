@@ -251,7 +251,7 @@ fn ContainerLayerTitleOk(
     });
 
     let container_visibility = workspace_graph_state
-        .container_visibility_get(graph.path(&container).unwrap())
+        .container_visibility_get(&container)
         .unwrap();
 
     let toggle_container_visibility = move |e: MouseEvent| {

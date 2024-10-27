@@ -11,7 +11,7 @@ use leptos::*;
 use leptos_icons::*;
 use leptos_router::*;
 use serde::Serialize;
-use std::{io, path::PathBuf, str::FromStr};
+use std::{io, path::PathBuf, rc::Rc, str::FromStr};
 use syre_core::{self as core, types::ResourceId};
 use syre_desktop_lib as lib;
 use syre_local::{self as local, types::AnalysisKind};
@@ -1017,23 +1017,18 @@ fn handle_event_graph_graph_inserted(
     // Downstream components expect a visibility signal to be present.
     let subgraph = state::Graph::new(subgraph.clone());
     let base_path = common::normalize_path_sep(parent).join(subgraph.root().name().get_untracked());
-    let container_visibility_new = subgraph.nodes().with_untracked(|nodes| {
+    let visibility_inserted = subgraph.nodes().with_untracked(|nodes| {
         nodes
             .iter()
-            .map(|container| {
-                let path = subgraph.path(container).unwrap();
-                (
-                    lib::utils::join_path_absolute(&base_path, common::normalize_path_sep(path)),
-                    create_rw_signal(true),
-                )
-            })
+            .cloned()
+            .map(|container| (container, create_rw_signal(true)))
             .collect::<Vec<_>>()
     });
 
     workspace_graph_state
         .container_visiblity()
-        .update(|container_visibility| {
-            container_visibility.extend(container_visibility_new);
+        .update(|visibilities| {
+            visibilities.extend(visibility_inserted);
         });
 
     graph
@@ -1051,25 +1046,6 @@ fn handle_event_graph_graph_renamed(
     else {
         panic!("invalid event kind");
     };
-
-    // NB: Must create visibility signals first before inserting nodes into graph.
-    // Downstream components expect a visibility signal to be present.
-    workspace_graph_state
-        .container_visiblity()
-        .update(|container_visibility| {
-            let mut to_path = from.clone();
-            to_path.set_file_name(to);
-
-            let renamed = container_visibility
-                .extract_if(|path, _| path.starts_with(from))
-                .map(|(path, visibility)| {
-                    let path = path.strip_prefix(from).unwrap();
-                    (to_path.join(path), visibility)
-                })
-                .collect::<Vec<_>>();
-
-            container_visibility.extend(renamed);
-        });
 
     graph.rename(from, to).unwrap();
 }
@@ -1091,8 +1067,12 @@ fn handle_event_graph_graph_removed(
     graph.remove(&path).unwrap();
     workspace_graph_state
         .container_visiblity()
-        .update(|container_visibility| {
-            container_visibility.retain(|container, _| !container.starts_with(&path));
+        .update(|visibilities| {
+            visibilities.retain(|(container, _)| {
+                graph
+                    .nodes()
+                    .with_untracked(|nodes| nodes.iter().any(|node| Rc::ptr_eq(node, container)))
+            });
         });
 }
 
