@@ -484,137 +484,11 @@ fn CanvasView(
     }
 }
 
-type DisplayNode = Rc<DisplayData>;
-
-#[derive(Clone)]
-struct DisplayData {
-    container: state::graph::Node,
-    visibility: ReadSignal<bool>,
-    children: RwSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
-}
-
-impl DisplayData {
-    pub fn children(&self) -> ReadSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>> {
-        self.children.read_only()
-    }
-
-    pub fn width(&self) -> Signal<NonZeroUsize> {
-        Signal::derive({
-            let visibility = self.visibility;
-            let children = self.children.read_only();
-            move || {
-                children.with(|children| {
-                    let children_widths = children
-                        .iter()
-                        .map(|(data, width)| width)
-                        .collect::<Vec<_>>();
-
-                    if visibility.get() && !children_widths.is_empty() {
-                        let width = children_widths
-                            .iter()
-                            .fold(0, |width, child_width| width + child_width.get().get());
-
-                        NonZeroUsize::new(width).unwrap()
-                    } else {
-                        NonZeroUsize::new(1).unwrap()
-                    }
-                })
-            }
-        })
-    }
-}
-
-#[derive(Clone)]
-struct DisplayGraph {
-    nodes: RwSignal<Vec<DisplayNode>>,
-    children: ReadSignal<state::graph::Children>,
-}
-
-impl DisplayGraph {
-    pub fn from(
-        graph: &state::Graph,
-        visibilities: ReadSignal<state::workspace_graph::ContainerVisibility>,
-    ) -> Self {
-        let children = graph.edges();
-        let nodes = children.with_untracked(|children| {
-            children
-                .iter()
-                .map(|(container, _)| {
-                    let visibility = visibilities
-                        .with_untracked(|visibilities| {
-                            visibilities.iter().find_map(|(node, visibility)| {
-                                Rc::ptr_eq(node, container).then_some(visibility.read_only())
-                            })
-                        })
-                        .unwrap();
-
-                    DisplayNode::new(DisplayData {
-                        container: container.clone(),
-                        visibility,
-                        children: create_rw_signal(vec![]),
-                    })
-                })
-                .collect::<Vec<_>>()
-        });
-
-        nodes.iter().for_each(|data| {
-            let container_children = children.with_untracked(|children| {
-                children
-                    .iter()
-                    .find_map(|(parent, children)| {
-                        Rc::ptr_eq(parent, &data.container).then_some(children.read_only())
-                    })
-                    .unwrap()
-            });
-
-            let display_children = container_children.with_untracked(|container_children| {
-                container_children
-                    .iter()
-                    .map(|container_child| {
-                        nodes
-                            .iter()
-                            .find_map(|node| {
-                                Rc::ptr_eq(&node.container, container_child)
-                                    .then_some((node.container.clone(), node.width()))
-                            })
-                            .unwrap()
-                    })
-                    .collect::<Vec<_>>()
-            });
-
-            data.children
-                .update_untracked(|children| children.extend(display_children))
-        });
-
-        Self {
-            nodes: create_rw_signal(nodes),
-            children,
-        }
-    }
-
-    pub fn get(&self, container: &state::graph::Node) -> Option<DisplayNode> {
-        self.nodes.with_untracked(|nodes| {
-            nodes
-                .iter()
-                .find(|node| Rc::ptr_eq(&node.container, container))
-                .cloned()
-        })
-    }
-
-    pub fn width(&self, container: &state::graph::Node) -> Option<Signal<NonZeroUsize>> {
-        self.nodes.with_untracked(|nodes| {
-            nodes
-                .iter()
-                .find_map(|node| Rc::ptr_eq(&node.container, container).then_some(node.width()))
-        })
-    }
-}
-
 #[component]
 fn Graph() -> impl IntoView {
     let graph = expect_context::<state::Graph>();
     let workspace_graph_state = expect_context::<state::workspace_graph::State>();
-    provide_context(DisplayGraph::from(
+    provide_context(display::State::from(
         &graph,
         workspace_graph_state.container_visiblity().read_only(),
     ));
@@ -627,7 +501,7 @@ fn Graph() -> impl IntoView {
 fn GraphView(root: state::graph::Node) -> impl IntoView {
     let graph = expect_context::<state::Graph>();
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
-    let display_graph = expect_context::<DisplayGraph>();
+    let display_state = expect_context::<display::State>();
     let container_preview_height = expect_context::<ContainerPreviewHeight>();
     let portal_ref = expect_context::<PortalRef>();
     let create_child_ref = NodeRef::<html::Dialog>::new();
@@ -666,7 +540,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
         }
     };
 
-    let display_data = display_graph.get(&root).unwrap();
+    let display_data = display_state.get(&root).unwrap();
 
     let container_height = Signal::derive(move || {
         container_preview_height.with(|preview_height| CONTAINER_HEADER_HEIGHT + preview_height)
@@ -703,7 +577,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
     let older_sibling_widths = Signal::derive({
         let root = root.clone();
         let graph = graph.clone();
-        let display_nodes = display_graph.nodes.read_only();
+        let display_nodes = display_state.nodes();
 
         move || {
             siblings()
@@ -718,7 +592,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
                                         display_nodes
                                             .iter()
                                             .find_map(|data| {
-                                                Rc::ptr_eq(&data.container, sibling)
+                                                Rc::ptr_eq(data.container(), sibling)
                                                     .then(|| data.width())
                                             })
                                             .unwrap()
@@ -864,8 +738,8 @@ fn GraphEdges(
                 .checked_add(PADDING_Y_CHILDREN)
                 .unwrap();
 
-            let child_x = start * (CONTAINER_WIDTH + PADDING_X_SIBLING)
-                + ((end - start - 1) * (CONTAINER_WIDTH + PADDING_X_SIBLING) + CONTAINER_WIDTH) / 2;
+            let child_x =
+                ((start + end - 1) * (CONTAINER_WIDTH + PADDING_X_SIBLING) + CONTAINER_WIDTH) / 2;
 
             format!(
                 "{},{} {},{} {},{} {},{}",
@@ -2328,4 +2202,144 @@ async fn remove_asset(
     )
     .await
     .map_err(|err| err.into())
+}
+
+mod display {
+    use super::state;
+    use leptos::*;
+    use std::{num::NonZeroUsize, rc::Rc};
+
+    type Node = Rc<Data>;
+
+    #[derive(Clone)]
+    pub struct Data {
+        container: state::graph::Node,
+        visibility: ReadSignal<bool>,
+        children: RwSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
+    }
+
+    impl Data {
+        pub fn container(&self) -> &state::graph::Node {
+            &self.container
+        }
+
+        pub fn children(&self) -> ReadSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>> {
+            self.children.read_only()
+        }
+
+        pub fn width(&self) -> Signal<NonZeroUsize> {
+            Signal::derive({
+                let visibility = self.visibility;
+                let children = self.children.read_only();
+                move || {
+                    children.with(|children| {
+                        let children_widths = children
+                            .iter()
+                            .map(|(data, width)| width)
+                            .collect::<Vec<_>>();
+
+                        if visibility.get() && !children_widths.is_empty() {
+                            let width = children_widths
+                                .iter()
+                                .fold(0, |width, child_width| width + child_width.get().get());
+
+                            NonZeroUsize::new(width).unwrap()
+                        } else {
+                            NonZeroUsize::new(1).unwrap()
+                        }
+                    })
+                }
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct State {
+        nodes: RwSignal<Vec<Node>>,
+        children: ReadSignal<state::graph::Children>,
+    }
+
+    impl State {
+        pub fn from(
+            graph: &state::Graph,
+            visibilities: ReadSignal<state::workspace_graph::ContainerVisibility>,
+        ) -> Self {
+            let children = graph.edges();
+            let nodes = children.with_untracked(|children| {
+                children
+                    .iter()
+                    .map(|(container, _)| {
+                        let visibility = visibilities
+                            .with_untracked(|visibilities| {
+                                visibilities.iter().find_map(|(node, visibility)| {
+                                    Rc::ptr_eq(node, container).then_some(visibility.read_only())
+                                })
+                            })
+                            .unwrap();
+
+                        Node::new(Data {
+                            container: container.clone(),
+                            visibility,
+                            children: create_rw_signal(vec![]),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            });
+
+            nodes.iter().for_each(|data| {
+                let container_children = children.with_untracked(|children| {
+                    children
+                        .iter()
+                        .find_map(|(parent, children)| {
+                            Rc::ptr_eq(parent, &data.container).then_some(children.read_only())
+                        })
+                        .unwrap()
+                });
+
+                let display_children = container_children.with_untracked(|container_children| {
+                    container_children
+                        .iter()
+                        .map(|container_child| {
+                            nodes
+                                .iter()
+                                .find_map(|node| {
+                                    Rc::ptr_eq(&node.container, container_child)
+                                        .then_some((node.container.clone(), node.width()))
+                                })
+                                .unwrap()
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+                data.children
+                    .update_untracked(|children| children.extend(display_children))
+            });
+
+            Self {
+                nodes: create_rw_signal(nodes),
+                children,
+            }
+        }
+
+        pub fn nodes(&self) -> ReadSignal<Vec<Node>> {
+            self.nodes.read_only()
+        }
+
+        pub fn get(&self, container: &state::graph::Node) -> Option<Node> {
+            self.nodes.with_untracked(|nodes| {
+                nodes
+                    .iter()
+                    .find(|node| Rc::ptr_eq(&node.container, container))
+                    .cloned()
+            })
+        }
+
+        pub fn width(&self, container: &state::graph::Node) -> Option<Signal<NonZeroUsize>> {
+            self.nodes.with_untracked(|nodes| {
+                nodes
+                    .iter()
+                    .find_map(|node| Rc::ptr_eq(&node.container, container).then_some(node.width()))
+            })
+        }
+    }
 }
