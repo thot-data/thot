@@ -502,7 +502,7 @@ pub mod graph {
 
     #[derive(Clone)]
     pub struct State {
-        nodes: RwSignal<Vec<Node>>,
+        nodes: RwSignal<Vec<Node>>, // NOTE: `nodes` is redundant with `children`, could be removed.
         root: Node,
         children: RwSignal<Children>,
         parents: Rc<RefCell<Vec<(Node, RwSignal<Node>)>>>,

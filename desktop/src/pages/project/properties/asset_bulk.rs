@@ -961,7 +961,6 @@ mod metadata {
 
                             Ok(asset_results) => {
                                 assert_eq!(asset_results.len(), expected_results_len);
-                                let mut all_ok = true;
                                 let errors = asset_results
                                     .into_iter()
                                     .filter_map(|err| err.err())

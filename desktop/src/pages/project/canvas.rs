@@ -488,13 +488,11 @@ fn CanvasView(
 fn Graph() -> impl IntoView {
     let graph = expect_context::<state::Graph>();
     let workspace_graph_state = expect_context::<state::workspace_graph::State>();
-    provide_context(display::State::from(
-        &graph,
-        workspace_graph_state.container_visiblity().read_only(),
-    ));
-    let root = graph.root();
 
-    view! { <GraphView root=root.clone() /> }
+    let visibilities = workspace_graph_state.container_visiblity().read_only();
+    let display_state = display::State::from(graph.root().clone(), graph.edges(), visibilities);
+    provide_context(display_state.clone());
+    view! { <GraphView root=graph.root().clone() /> }
 }
 
 #[component]
@@ -550,6 +548,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
         let width = display_data.width();
         move || {
             width.with(|width| {
+                tracing::debug!(?width);
                 width.get() * (CONTAINER_WIDTH + PADDING_X_SIBLING) - PADDING_X_SIBLING
             })
         }
@@ -2209,16 +2208,87 @@ mod display {
     use leptos::*;
     use std::{num::NonZeroUsize, rc::Rc};
 
+    // TODO: May be unnecesasry to wrap in `Rc`.
     type Node = Rc<Data>;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct Data {
         container: state::graph::Node,
         visibility: ReadSignal<bool>,
         children: RwSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
+
+        /// Updates internal state when `children` changes.
+        update: Effect<()>,
     }
 
     impl Data {
+        fn from(
+            container: state::graph::Node,
+            visibility: ReadSignal<bool>,
+            children: ReadSignal<Vec<state::graph::Node>>,
+            nodes: ReadSignal<Vec<Node>>,
+            reactive_owner: Owner,
+        ) -> Self {
+            let state_children = children;
+            let children = with_owner(reactive_owner, || create_rw_signal(vec![]));
+
+            let update = Effect::new(move |_| {
+                let (removed, added) = state_children.with(|state_children| {
+                    let removed = children.with_untracked(|children| {
+                        children
+                            .iter()
+                            .filter(|(child, _)| {
+                                !state_children
+                                    .iter()
+                                    .any(|state_child| Rc::ptr_eq(state_child, child))
+                            })
+                            .map(|(child, _)| child)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                    });
+
+                    let added = state_children
+                        .iter()
+                        .filter(|state_child| {
+                            children.with_untracked(|children| {
+                                !children
+                                    .iter()
+                                    .any(|(child, _)| Rc::ptr_eq(child, state_child))
+                            })
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>();
+
+                    (removed, added)
+                });
+
+                children.update(|children| {
+                    children.retain(|(child, _)| {
+                        !removed.iter().any(|removed| Rc::ptr_eq(removed, child))
+                    });
+
+                    let added = added.iter().map(|added| {
+                        nodes.with_untracked(|nodes| {
+                            let node = nodes
+                                .iter()
+                                .find(|node| Rc::ptr_eq(&node.container, added))
+                                .unwrap();
+
+                            (node.container.clone(), node.width())
+                        })
+                    });
+                    children.extend(added);
+                });
+            });
+
+            Self {
+                container,
+                visibility,
+                children,
+                update,
+            }
+        }
+
         pub fn container(&self) -> &state::graph::Node {
             &self.container
         }
@@ -2253,22 +2323,29 @@ mod display {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct State {
         nodes: RwSignal<Vec<Node>>,
+        root: state::graph::Node,
         children: ReadSignal<state::graph::Children>,
+
+        /// Updates internal state when `children` changes.
+        update: Effect<()>,
     }
 
     impl State {
         pub fn from(
-            graph: &state::Graph,
+            root: state::graph::Node,
+            edges: ReadSignal<state::graph::Children>,
             visibilities: ReadSignal<state::workspace_graph::ContainerVisibility>,
         ) -> Self {
-            let children = graph.edges();
-            let nodes = children.with_untracked(|children| {
+            let reactive_owner = Owner::current().unwrap(); // Needed so signals created in the effect aren't disposed of when the effect runs again.
+            let nodes = create_rw_signal(vec![]);
+
+            let data_nodes = edges.with_untracked(|children| {
                 children
                     .iter()
-                    .map(|(container, _)| {
+                    .map(|(container, state_children)| {
                         let visibility = visibilities
                             .with_untracked(|visibilities| {
                                 visibilities.iter().find_map(|(node, visibility)| {
@@ -2277,17 +2354,19 @@ mod display {
                             })
                             .unwrap();
 
-                        Node::new(Data {
-                            container: container.clone(),
+                        Node::new(Data::from(
+                            container.clone(),
                             visibility,
-                            children: create_rw_signal(vec![]),
-                        })
+                            state_children.read_only(),
+                            nodes.read_only(),
+                            reactive_owner,
+                        ))
                     })
                     .collect::<Vec<_>>()
             });
 
-            nodes.iter().for_each(|data| {
-                let container_children = children.with_untracked(|children| {
+            data_nodes.iter().for_each(|data| {
+                let container_children = edges.with_untracked(|children| {
                     children
                         .iter()
                         .find_map(|(parent, children)| {
@@ -2300,7 +2379,7 @@ mod display {
                     container_children
                         .iter()
                         .map(|container_child| {
-                            nodes
+                            data_nodes
                                 .iter()
                                 .find_map(|node| {
                                     Rc::ptr_eq(&node.container, container_child)
@@ -2315,9 +2394,228 @@ mod display {
                     .update_untracked(|children| children.extend(display_children))
             });
 
+            nodes.update_untracked(|nodes| nodes.extend(data_nodes));
+            let update = Effect::new({
+                move |_| {
+                    edges.with(|edges| {
+                        // nodes.update(|nodes| {
+                        //     let removed = nodes
+                        //         .extract_if(|node| {
+                        //             !edges
+                        //                 .iter()
+                        //                 .any(|(parent, _)| Rc::ptr_eq(parent, &node.container))
+                        //         })
+                        //         .map(|data| data.container.clone())
+                        //         .collect::<Vec<_>>();
+                        //     tracing::debug!("1a");
+
+                        //     if !removed.is_empty() {
+                        //         nodes.iter().for_each(|data| {
+                        //             tracing::debug!("1c");
+                        //             let removed_from = data.children.with_untracked(|children| {
+                        //                 children
+                        //                     .iter()
+                        //                     .filter_map(|(container, _)| {
+                        //                         removed
+                        //                             .iter()
+                        //                             .any(|removed| Rc::ptr_eq(removed, container))
+                        //                             .then_some(container)
+                        //                     })
+                        //                     .cloned()
+                        //                     .collect::<Vec<_>>()
+                        //             });
+
+                        //             if !removed_from.is_empty() {
+                        //                 data.children.update(|children| {
+                        //                     children.retain(|(container, _)| {
+                        //                         !removed_from
+                        //                             .iter()
+                        //                             .any(|removed| Rc::ptr_eq(removed, container))
+                        //                     });
+                        //                     tracing::debug!("1g");
+                        //                 });
+                        //                 tracing::debug!("1b");
+                        //             }
+                        //         });
+                        //     }
+                        // });
+                        tracing::debug!("1");
+
+                        let added_state = edges
+                            .iter()
+                            .filter(|(parent, _)| {
+                                nodes.with_untracked(|nodes| {
+                                    !nodes.iter().any(|node| Rc::ptr_eq(&node.container, parent))
+                                })
+                            })
+                            .collect::<Vec<_>>();
+
+                        let added_data = added_state
+                            .iter()
+                            .map(|(parent, state_children)| {
+                                let visibility = visibilities.with_untracked(|visibilities| {
+                                    visibilities
+                                        .iter()
+                                        .find_map(|(container, visibility)| {
+                                            Rc::ptr_eq(container, parent)
+                                                .then_some(visibility.read_only())
+                                        })
+                                        .unwrap()
+                                });
+
+                                Node::new(Data::from(
+                                    parent.clone(),
+                                    visibility,
+                                    state_children.read_only(),
+                                    nodes.read_only(),
+                                    reactive_owner,
+                                ))
+                            })
+                            .collect::<Vec<_>>();
+
+                        added_data.iter().for_each(|data| {
+                            let state_children = added_state
+                                .iter()
+                                .find_map(|(parent, children)| {
+                                    Rc::ptr_eq(parent, &data.container)
+                                        .then_some(children.read_only())
+                                })
+                                .unwrap();
+
+                            let children_width = state_children.with_untracked(|state_children| {
+                                state_children
+                                    .iter()
+                                    .map(|state_child| {
+                                        let data_child = added_data
+                                            .iter()
+                                            .find(|data_child| {
+                                                Rc::ptr_eq(&data_child.container, state_child)
+                                            })
+                                            .unwrap();
+
+                                        (state_child.clone(), data_child.width())
+                                    })
+                                    .collect::<Vec<_>>()
+                            });
+
+                            data.children
+                                .update_untracked(|children| children.extend(children_width))
+                        });
+
+                        nodes.with_untracked(|nodes| {
+                            nodes.iter().for_each(|data| {
+                                let state_children = edges
+                                    .iter()
+                                    .find_map(|(parent, children)| {
+                                        Rc::ptr_eq(parent, &data.container)
+                                            .then_some(children.read_only())
+                                    })
+                                    .unwrap();
+
+                                // REMOVE
+                                {
+                                    let sn = state_children.with_untracked(|s| {
+                                        s.iter()
+                                            .map(|s| s.name().get_untracked())
+                                            .collect::<Vec<_>>()
+                                    });
+                                    let nn = data.children.with_untracked(|c| {
+                                        c.iter()
+                                            .map(|(c, _)| c.name().get_untracked())
+                                            .collect::<Vec<_>>()
+                                    });
+                                    tracing::debug!(?sn, ?nn);
+                                }
+
+                                let data_children_len =
+                                    data.children.with_untracked(|children| children.len());
+                                let state_children_len =
+                                    state_children.with_untracked(|children| children.len());
+                                if data_children_len != state_children_len {
+                                    assert_eq!(state_children_len, data_children_len + 1);
+
+                                    let missing_child = state_children
+                                        .with_untracked(|state_children| {
+                                            state_children
+                                                .iter()
+                                                .find(|state_child| {
+                                                    data.children.with_untracked(|data_children| {
+                                                        !data_children.iter().any(
+                                                            |(data_child, _)| {
+                                                                Rc::ptr_eq(data_child, state_child)
+                                                            },
+                                                        )
+                                                    })
+                                                })
+                                                .cloned()
+                                        })
+                                        .unwrap();
+
+                                    // REMOVE
+                                    {
+                                        let m_name = missing_child.name().get_untracked();
+                                        let dn = added_data
+                                            .iter()
+                                            .map(|d| d.container.name().get_untracked())
+                                            .collect::<Vec<_>>();
+                                        tracing::debug!(?m_name, ?dn);
+                                    }
+                                    let root = added_data
+                                        .iter()
+                                        .find(|added| Rc::ptr_eq(&added.container, &missing_child))
+                                        .unwrap();
+
+                                    data.children.update(|children| {
+                                        children.push((root.container.clone(), root.width()));
+                                    });
+                                }
+                            });
+                        });
+
+                        nodes.update(|nodes| nodes.extend(added_data));
+
+                        // NOTE: This is purely a safety check to ensure
+                        // the graph and display states are equal.
+                        // No state is modified.
+                        nodes.with_untracked(|nodes| {
+                            assert_eq!(nodes.len(), edges.len());
+                            for data in nodes.iter() {
+                                let state_children = edges
+                                    .iter()
+                                    .find_map(|(parent, children)| {
+                                        Rc::ptr_eq(parent, &data.container)
+                                            .then_some(children.read_only())
+                                    })
+                                    .unwrap();
+
+                                let data_children_len =
+                                    data.children.with_untracked(|children| children.len());
+                                let state_children_len =
+                                    state_children.with_untracked(|children| children.len());
+                                assert_eq!(data_children_len, state_children_len);
+                                data.children.with_untracked(|data_children| {
+                                    for (data_child, _) in data_children {
+                                        state_children.with_untracked(|state_children| {
+                                            state_children
+                                                .iter()
+                                                .find(|state_child| {
+                                                    Rc::ptr_eq(state_child, data_child)
+                                                })
+                                                .unwrap();
+                                        });
+                                    }
+                                });
+                            }
+                        })
+                    })
+                }
+            });
+
             Self {
-                nodes: create_rw_signal(nodes),
-                children,
+                nodes,
+                root,
+                children: edges,
+                update,
             }
         }
 
