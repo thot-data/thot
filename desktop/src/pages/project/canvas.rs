@@ -548,7 +548,6 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
         let width = display_data.width();
         move || {
             width.with(|width| {
-                tracing::debug!(?width);
                 width.get() * (CONTAINER_WIDTH + PADDING_X_SIBLING) - PADDING_X_SIBLING
             })
         }
@@ -2398,48 +2397,27 @@ mod display {
             let update = Effect::new({
                 move |_| {
                     edges.with(|edges| {
-                        // nodes.update(|nodes| {
-                        //     let removed = nodes
-                        //         .extract_if(|node| {
-                        //             !edges
-                        //                 .iter()
-                        //                 .any(|(parent, _)| Rc::ptr_eq(parent, &node.container))
-                        //         })
-                        //         .map(|data| data.container.clone())
-                        //         .collect::<Vec<_>>();
-                        //     tracing::debug!("1a");
+                        let removed = nodes.with_untracked(|nodes| {
+                            nodes
+                                .iter()
+                                .filter(|data| {
+                                    !edges
+                                        .iter()
+                                        .any(|(parent, _)| Rc::ptr_eq(parent, &data.container))
+                                })
+                                .map(|data| data.container.clone())
+                                .collect::<Vec<_>>()
+                        });
 
-                        //     if !removed.is_empty() {
-                        //         nodes.iter().for_each(|data| {
-                        //             tracing::debug!("1c");
-                        //             let removed_from = data.children.with_untracked(|children| {
-                        //                 children
-                        //                     .iter()
-                        //                     .filter_map(|(container, _)| {
-                        //                         removed
-                        //                             .iter()
-                        //                             .any(|removed| Rc::ptr_eq(removed, container))
-                        //                             .then_some(container)
-                        //                     })
-                        //                     .cloned()
-                        //                     .collect::<Vec<_>>()
-                        //             });
-
-                        //             if !removed_from.is_empty() {
-                        //                 data.children.update(|children| {
-                        //                     children.retain(|(container, _)| {
-                        //                         !removed_from
-                        //                             .iter()
-                        //                             .any(|removed| Rc::ptr_eq(removed, container))
-                        //                     });
-                        //                     tracing::debug!("1g");
-                        //                 });
-                        //                 tracing::debug!("1b");
-                        //             }
-                        //         });
-                        //     }
-                        // });
-                        tracing::debug!("1");
+                        if !removed.is_empty() {
+                            nodes.update(|nodes| {
+                                nodes.retain(|data| {
+                                    !removed
+                                        .iter()
+                                        .any(|removed| Rc::ptr_eq(removed, &data.container))
+                                });
+                            });
+                        }
 
                         let added_state = edges
                             .iter()
@@ -2512,21 +2490,6 @@ mod display {
                                     })
                                     .unwrap();
 
-                                // REMOVE
-                                {
-                                    let sn = state_children.with_untracked(|s| {
-                                        s.iter()
-                                            .map(|s| s.name().get_untracked())
-                                            .collect::<Vec<_>>()
-                                    });
-                                    let nn = data.children.with_untracked(|c| {
-                                        c.iter()
-                                            .map(|(c, _)| c.name().get_untracked())
-                                            .collect::<Vec<_>>()
-                                    });
-                                    tracing::debug!(?sn, ?nn);
-                                }
-
                                 let data_children_len =
                                     data.children.with_untracked(|children| children.len());
                                 let state_children_len =
@@ -2551,15 +2514,6 @@ mod display {
                                         })
                                         .unwrap();
 
-                                    // REMOVE
-                                    {
-                                        let m_name = missing_child.name().get_untracked();
-                                        let dn = added_data
-                                            .iter()
-                                            .map(|d| d.container.name().get_untracked())
-                                            .collect::<Vec<_>>();
-                                        tracing::debug!(?m_name, ?dn);
-                                    }
                                     let root = added_data
                                         .iter()
                                         .find(|added| Rc::ptr_eq(&added.container, &missing_child))
