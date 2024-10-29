@@ -1442,23 +1442,45 @@ fn Asset(asset: state::Asset) -> impl IntoView {
         remove.dispatch(())
     };
 
+    let icon = Signal::derive({
+        let path = asset.path().read_only();
+        move || path.with(|path| components::icon::file_type_icon(path))
+    });
+    let icon_color = Signal::derive({
+        let path = asset.path().read_only();
+        move || path.with(|path| components::icon::file_type_icon_color(path))
+    });
+    let icon_class = Signal::derive(move || {
+        icon_color.with(|color| format!("inline-flex items-center {color}"))
+    });
+
     view! {
         <div
             on:mousedown=mousedown
             on:contextmenu=contextmenu
             title=asset_title_closure(&asset)
-            class=("bg-secondary-400", selected)
-            class="flex gap-2 cursor-pointer px-2 py-0.5 border border-transparent hover:border-secondary-600"
+            class=(["bg-secondary-300", "dark:bg-secondary-600"], selected)
+            class="flex gap-2 cursor-pointer px-2 py-0.5 border border-transparent \
+              hover:border-secondary-600 dark:hover:border-secondary-400"
             data-resource=DATA_KEY_ASSET
             data-rid=rid
         >
-            <TruncateLeft class="grow">{title}</TruncateLeft>
-            <button
-                on:mousedown=remove_asset
-                class="aspect-square h-full rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-800"
-            >
-                <Icon icon=components::icon::Remove />
-            </button>
+            <div class="grow inline-flex gap-1 items-center">
+                <span class=icon_class>
+                    <Icon icon />
+                </span>
+                <TruncateLeft class="grow" inner_class="align-middle">
+                    {title}
+                </TruncateLeft>
+            </div>
+            <div>
+                <button
+                    on:mousedown=remove_asset
+                    class="align-middle rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-800"
+                >
+                    <Icon icon=components::icon::Remove />
+                </button>
+            </div>
         </div>
     }
 }
