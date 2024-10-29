@@ -31,15 +31,24 @@ use leptos::*;
 // }
 
 #[component]
-pub fn TruncateLeft(children: Children, #[prop(optional, into)] class: TextProp) -> impl IntoView {
+pub fn TruncateLeft(
+    children: Children,
+    #[prop(optional, into)] class: TextProp,
+    #[prop(optional, into)] inner_class: TextProp,
+) -> impl IntoView {
     let classes = {
         let class = class.clone();
         move || format!("truncate-rtl {}", class.get())
     };
 
+    let inner_classes = {
+        let class = inner_class.clone();
+        move || format!("ltr inline-block {}", class.get())
+    };
+
     view! {
         <div class=classes>
-            <span class="ltr inline-block">{children()}</span>
+            <span class=inner_classes>{children()}</span>
         </div>
     }
 }

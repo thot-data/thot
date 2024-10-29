@@ -443,16 +443,17 @@ fn ContainerLayerTitleOk(
             </div>
             <div class="grow inline-flex gap-2">
                 <div class="grow inline-flex gap-1">
-                    <span class="pr-1">
-                        <Icon icon=icondata::FaFolderRegular />
-                    </span>
                     <TruncateLeft>{title}</TruncateLeft>
                 </div>
                 <div>
                     {move || {
                         if num_children() > 0 {
                             view! {
-                                <button type="button" on:mousedown=toggle_container_visibility>
+                                <button
+                                    type="button"
+                                    on:mousedown=toggle_container_visibility
+                                    class="align-middle"
+                                >
                                     {move || {
                                         container_visibility
                                             .with(|visible| {
@@ -519,7 +520,7 @@ fn AssetsLayerOk(assets: ReadSignal<Vec<state::Asset>>, depth: usize) -> impl In
     };
 
     view! {
-        <div>
+        <div class="group/assets">
             <Show
                 when=move || assets.with(|assets| !assets.is_empty())
                 fallback=move || view! { <NoData depth /> }
@@ -530,7 +531,7 @@ fn AssetsLayerOk(assets: ReadSignal<Vec<state::Asset>>, depth: usize) -> impl In
                             <ToggleExpand expanded />
                         </span>
                     </div>
-                    <div class="inline-flex grow">
+                    <div class="inline-flex grow items-center">
                         <span class="pr-1">
                             <Icon icon=icondata::BsFiles />
                         </span>
@@ -549,7 +550,7 @@ fn AssetsLayerOk(assets: ReadSignal<Vec<state::Asset>>, depth: usize) -> impl In
 
 #[component]
 fn NoData(depth: usize) -> impl IntoView {
-    view! { <div style:padding-left=move || { depth_to_padding(depth + 1) }>"(no data)"</div> }
+    view! { <div style:padding-left=move || { depth_to_padding(depth + 2) }>"(no data)"</div> }
 }
 
 #[component]
@@ -613,13 +614,24 @@ fn AssetLayer(asset: state::Asset, depth: usize) -> impl IntoView {
         }
     };
 
+    let icon = Signal::derive({
+        let path = asset.path().read_only();
+        move || path.with(|path| components::icon::file_type_icon(path))
+    });
+    let icon_color = Signal::derive({
+        let path = asset.path().read_only();
+        move || path.with(|path| components::icon::file_type_icon_color(path))
+    });
+    let icon_class = Signal::derive(move || {
+        icon_color.with(|color| format!("inline-flex items-center {color}"))
+    });
+
     view! {
         <div
             on:mousedown=mousedown
             on:contextmenu=contextmenu
             title=asset_title_closure(&asset)
             style:padding-left=move || { depth_to_padding(depth + 2) }
-            class="cursor-pointer border-y border-transparent hover:border-secondary-400"
             class=(
                 ["bg-primary-200", "dark:bg-secondary-900"],
                 {
@@ -627,9 +639,21 @@ fn AssetLayer(asset: state::Asset, depth: usize) -> impl IntoView {
                     move || selected()
                 },
             )
+            class="cursor-pointer border-y border-transparent hover:border-secondary-400"
         >
-
-            <TruncateLeft>{title}</TruncateLeft>
+            <div
+                style:padding-left=move || { depth_to_padding(1) }
+                class="flex gap-1 border-l border-transparent group-hover/assets:border-secondary-200 dark:group-hover/assets:border-secondary-600"
+            >
+                <div class=icon_class>
+                    <Icon icon />
+                </div>
+                <div>
+                    <TruncateLeft class="align-center" inner_class="align-middle">
+                        {title}
+                    </TruncateLeft>
+                </div>
+            </div>
         </div>
     }
 }
