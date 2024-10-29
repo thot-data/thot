@@ -5,12 +5,26 @@ use syre_core::types::ResourceId;
 use syre_local_database::{self as db, state::ConfigState};
 use tauri::{Listener, Manager};
 
+const DB_CONNECTION_ATTEMPTS: usize = 50;
+const DB_CONNECTION_DELAY_MS: u64 = 100;
+
 /// Runs setup tasks:
 /// 1. Launches the local database if needed.
 /// 2. Launches the update listener.
 /// 3. Creates the inital app state.
 pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     if let Some((_rx, _child)) = crate::db::start_database_if_needed(app.handle()) {
+        tracing::trace!("initializing local database");
+        let mut attempt = 0;
+        while !db::Client::server_available() {
+            attempt += 1;
+            if attempt > DB_CONNECTION_ATTEMPTS {
+                panic!("could not connect to database");
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(DB_CONNECTION_DELAY_MS));
+        }
+
         tracing::debug!("initialized local database");
     } else {
         tracing::debug!("database already running");
