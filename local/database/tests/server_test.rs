@@ -1,7 +1,7 @@
 #![feature(assert_matches)]
 use crossbeam::channel::Sender;
 use rand::Rng;
-use std::{assert_matches::assert_matches, fs, io, path::Path, thread, time::Duration};
+use std::{assert_matches::assert_matches, fs, io, thread, time::Duration};
 use syre_core::{
     project::{Asset, Script},
     types::ResourceId,
@@ -16,7 +16,7 @@ use syre_local::{
     },
     types::AnalysisKind,
 };
-use syre_local_database::{event, server::config, state, types::PortNumber, Update};
+use syre_local_database::{self as db, event, server::config, state, types::PortNumber, Update};
 
 const RECV_TIMEOUT: Duration = Duration::from_millis(500);
 const ACTION_SLEEP_TIME: Duration = Duration::from_millis(200);
@@ -677,7 +677,10 @@ fn test_server_state_and_updates_basics() {
     else {
         panic!();
     };
-    assert_eq!(path, std::path::Component::RootDir);
+    assert_eq!(
+        path.components().next().unwrap(),
+        std::path::Component::RootDir
+    );
     assert_matches!(update, event::DataResource::Created(Err(IoSerde::Serde(_))));
 
     let settings_path = syre_local::common::container_settings_file_of(project.data_root_path());
@@ -724,7 +727,10 @@ fn test_server_state_and_updates_basics() {
     else {
         panic!();
     };
-    assert_eq!(path, std::path::Component::RootDir);
+    assert_eq!(
+        path.components().next().unwrap(),
+        std::path::Component::RootDir
+    );
     assert_matches!(update, event::DataResource::Created(Err(IoSerde::Serde(_))));
 
     let assets_path = syre_local::common::assets_file_of(project.data_root_path());
@@ -771,7 +777,10 @@ fn test_server_state_and_updates_basics() {
     else {
         panic!();
     };
-    assert_eq!(path, std::path::Component::RootDir);
+    assert_eq!(
+        path.components().next().unwrap(),
+        std::path::Component::RootDir
+    );
     assert_matches!(update, event::DataResource::Created(Err(IoSerde::Serde(_))));
 
     fs::remove_dir_all(syre_local::common::app_dir_of(project.data_root_path())).unwrap();
@@ -992,6 +1001,7 @@ fn test_server_state_and_updates_basics() {
         .container()
         .get(project.rid().clone(), "/")
         .unwrap()
+        .unwrap()
         .unwrap();
 
     let state::DataResource::Ok(container_id) = container_state.rid() else {
@@ -1035,6 +1045,7 @@ fn test_server_state_and_updates_basics() {
     let container_state = db
         .container()
         .get(project.rid().clone(), "/")
+        .unwrap()
         .unwrap()
         .unwrap();
 
@@ -1271,6 +1282,7 @@ fn test_server_state_and_updates_graph() {
         .container()
         .get(project.rid().clone(), "/")
         .unwrap()
+        .unwrap()
         .unwrap();
 
     assert_eq!(container_state.rid().unwrap(), root_container.rid());
@@ -1309,6 +1321,7 @@ fn test_server_state_and_updates_graph() {
     let container_state = db
         .container()
         .get(project.rid().clone(), &c1_graph_path)
+        .unwrap()
         .unwrap()
         .unwrap();
 
@@ -1352,6 +1365,7 @@ fn test_server_state_and_updates_graph() {
     let container_state = db
         .container()
         .get(project.rid().clone(), &c2_graph_path)
+        .unwrap()
         .unwrap()
         .unwrap();
 
@@ -1401,11 +1415,13 @@ fn test_server_state_and_updates_graph() {
         .container()
         .get(project.rid().clone(), &c2_graph_path)
         .unwrap()
+        .unwrap()
         .is_none());
 
     let container_state = db
         .container()
         .get(project.rid().clone(), &c2_new_graph_path)
+        .unwrap()
         .unwrap()
         .unwrap();
 
@@ -1447,6 +1463,7 @@ fn test_server_state_and_updates_graph() {
         .container()
         .get(project.rid().clone(), &c2_graph_path)
         .unwrap()
+        .unwrap()
         .unwrap();
 
     assert_eq!(container_state.rid().unwrap(), c2.rid());
@@ -1487,6 +1504,7 @@ fn test_server_state_and_updates_graph() {
     let container_state = db
         .container()
         .get(project.rid().clone(), &c2_graph_path)
+        .unwrap()
         .unwrap()
         .unwrap();
 

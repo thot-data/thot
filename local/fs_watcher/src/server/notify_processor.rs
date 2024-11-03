@@ -1005,16 +1005,17 @@ impl FsWatcher {
             })
             .collect::<Vec<_>>();
 
-        events.retain(|event| {
-            if matches!(event.kind, EventKind::Modify(_)) {
+        events.retain(|event| match event.kind {
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => true,
+            EventKind::Modify(_) => {
                 let [path] = &event.paths[..] else {
                     panic!("invalid paths");
                 };
 
                 !create_events.iter().any(|create_path| path == create_path)
-            } else {
-                true
             }
+
+            _ => true,
         });
         tracing::trace!("filtered {} nested events", len_orig - events.len());
 
