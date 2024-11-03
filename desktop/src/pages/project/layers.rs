@@ -232,23 +232,24 @@ fn ContainerLayerTitleOk(
         }
     };
 
-    let selected = create_memo({
-        let container = container.clone();
-        let workspace_graph_state = workspace_graph_state.clone();
-        move |_| {
-            container.properties().with(|properties| {
-                if let db::state::DataResource::Ok(properties) = properties {
-                    workspace_graph_state.selection().with(|selection| {
-                        properties
-                            .rid()
-                            .with(|rid| selection.iter().any(|resource| resource.rid() == rid))
+    let selected = workspace_graph_state
+        .selection()
+        .with_untracked(|selection| {
+            selection
+                .iter()
+                .find(|resource| {
+                    resource.rid().with_untracked(|resource_id| {
+                        container.properties().with_untracked(|properties| {
+                            let properties = properties.as_ref().unwrap();
+                            properties
+                                .rid()
+                                .with_untracked(|container_id| container_id == resource_id)
+                        })
                     })
-                } else {
-                    false
-                }
-            })
-        }
-    });
+                })
+                .cloned()
+                .unwrap()
+        });
 
     let container_visibility = workspace_graph_state
         .container_visibility_get(&container)
@@ -290,31 +291,27 @@ fn ContainerLayerTitleOk(
     };
 
     let click = {
+        let selected = selected.clone();
         let properties = properties.clone();
         move |e: &MouseEvent| {
-            if e.button() == types::MouseButton::Primary {
-                e.stop_propagation();
-                properties().rid().with_untracked(|rid| {
-                    let action = workspace_graph_state
-                        .selection()
-                        .with_untracked(|selection| {
-                            interpret_resource_selection_action(rid, e, selection)
-                        });
-                    match action {
-                        SelectionAction::Remove => workspace_graph_state.select_remove(&rid),
-                        SelectionAction::Add => workspace_graph_state.select_add(
-                            rid.clone(),
-                            state::workspace_graph::ResourceKind::Container,
-                        ),
-                        SelectionAction::SelectOnly => workspace_graph_state.select_only(
-                            rid.clone(),
-                            state::workspace_graph::ResourceKind::Container,
-                        ),
-
-                        SelectionAction::Clear => workspace_graph_state.select_clear(),
-                    }
-                });
+            if e.button() != types::MouseButton::Primary {
+                return;
             }
+            e.stop_propagation();
+
+            properties().rid().with_untracked(|rid| {
+                let action = workspace_graph_state
+                    .selection()
+                    .with_untracked(|selection| {
+                        interpret_resource_selection_action(&selected, selection, e.shift_key())
+                    });
+                match action {
+                    SelectionAction::Unselect => selected.selected().set(false),
+                    SelectionAction::Select => selected.selected().set(true),
+                    SelectionAction::SelectOnly => workspace_graph_state.select_only(rid),
+                    SelectionAction::Clear => workspace_graph_state.select_clear(),
+                }
+            });
         }
     };
 
@@ -428,13 +425,7 @@ fn ContainerLayerTitleOk(
             prop:title=tooltip
             style:padding-left=move || { depth_to_padding(depth) }
             class="flex gap-1 cursor-pointer border-y border-transparent hover:border-secondary-400"
-            class=(
-                ["bg-primary-200", "dark:bg-secondary-900"],
-                {
-                    let selected = selected.clone();
-                    move || selected()
-                },
-            )
+            class=(["bg-primary-200", "dark:bg-secondary-900"], selected.selected().read_only())
         >
             <div class="inline-flex gap-1">
                 <span>
@@ -561,42 +552,47 @@ fn AssetLayer(asset: state::Asset, depth: usize) -> impl IntoView {
 
     let title = asset_title_closure(&asset);
 
+    let selected = workspace_graph_state
+        .selection()
+        .with_untracked(|selected| {
+            selected
+                .iter()
+                .find(|resource| {
+                    resource.rid().with_untracked(|resource_id| {
+                        asset
+                            .rid()
+                            .with_untracked(|asset_id| asset_id == resource_id)
+                    })
+                })
+                .cloned()
+                .unwrap()
+        });
+
     let mousedown = {
         let rid = asset.rid().read_only();
+        let selected = selected.clone();
         let workspace_graph_state = workspace_graph_state.clone();
         move |e: MouseEvent| {
-            if e.button() == types::MouseButton::Primary {
-                e.stop_propagation();
-                rid.with_untracked(|rid| {
-                    let action = workspace_graph_state
-                        .selection()
-                        .with_untracked(|selection| {
-                            interpret_resource_selection_action(rid, &e, selection)
-                        });
+            if e.button() != types::MouseButton::Primary {
+                return;
+            }
+            e.stop_propagation();
 
-                    match action {
-                        SelectionAction::Remove => workspace_graph_state.select_remove(&rid),
-                        SelectionAction::Add => workspace_graph_state
-                            .select_add(rid.clone(), state::workspace_graph::ResourceKind::Asset),
-                        SelectionAction::SelectOnly => workspace_graph_state
-                            .select_only(rid.clone(), state::workspace_graph::ResourceKind::Asset),
-
-                        SelectionAction::Clear => workspace_graph_state.select_clear(),
-                    }
+            let action = workspace_graph_state
+                .selection()
+                .with_untracked(|selection| {
+                    interpret_resource_selection_action(&selected, selection, e.shift_key())
                 });
+            match action {
+                SelectionAction::Unselect => selected.selected().set(false),
+                SelectionAction::Select => selected.selected().set(true),
+                SelectionAction::SelectOnly => {
+                    rid.with_untracked(|rid| workspace_graph_state.select_only(rid))
+                }
+                SelectionAction::Clear => workspace_graph_state.select_clear(),
             }
         }
     };
-
-    let selected = create_memo({
-        let rid = asset.rid().read_only();
-        let workspace_graph_state = workspace_graph_state.clone();
-        move |_| {
-            workspace_graph_state.selection().with(|selection| {
-                rid.with(|rid| selection.iter().any(|resource| resource.rid() == rid))
-            })
-        }
-    });
 
     let contextmenu = {
         let asset = asset.clone();
@@ -632,13 +628,7 @@ fn AssetLayer(asset: state::Asset, depth: usize) -> impl IntoView {
             on:contextmenu=contextmenu
             title=asset_title_closure(&asset)
             style:padding-left=move || { depth_to_padding(depth + 2) }
-            class=(
-                ["bg-primary-200", "dark:bg-secondary-900"],
-                {
-                    let selected = selected.clone();
-                    move || selected()
-                },
-            )
+            class=(["bg-primary-200", "dark:bg-secondary-900"], selected.selected().read_only())
             class="cursor-pointer border-y border-transparent hover:border-secondary-400"
         >
             <div

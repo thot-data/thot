@@ -1,4 +1,4 @@
-use super::state::workspace_graph::SelectedResource;
+use super::state::workspace_graph::ResourceSelection;
 use crate::pages::project::state;
 use leptos::{ev::MouseEvent, *};
 use syre_core::types::ResourceId;
@@ -8,23 +8,25 @@ use syre_core::types::ResourceId;
 pub const FS_RESOURCE_ACTION_NOTIFY_THRESHOLD: u64 = 5_000_000;
 
 pub fn interpret_resource_selection_action(
-    resource: &ResourceId,
-    event: &MouseEvent,
-    selection: &Vec<SelectedResource>,
+    resource: &ResourceSelection,
+    selection: &Vec<ResourceSelection>,
+    shift_key: bool,
 ) -> SelectionAction {
-    if event.shift_key() {
-        let is_selected = selection
-            .iter()
-            .any(|s_resource| s_resource.rid() == resource);
-
-        if is_selected {
-            SelectionAction::Remove
+    if shift_key {
+        if resource.selected().get_untracked() {
+            SelectionAction::Unselect
         } else {
-            SelectionAction::Add
+            SelectionAction::Select
         }
     } else {
-        let is_only_selected = if let [s_resource] = &selection[..] {
-            s_resource.rid() == resource
+        let selected = selection.iter().filter(|resource| resource.selected().get_untracked()).collect::<Vec<_>>();
+
+        let is_only_selected = if let [s_resource] = &selected[..] {
+            resource.rid().with_untracked(|resource_id| {
+                s_resource.rid().with_untracked(|selected_id| {
+                    resource_id == selected_id
+                })
+            })
         } else {
             false
         };
@@ -39,10 +41,10 @@ pub fn interpret_resource_selection_action(
 
 pub enum SelectionAction {
     /// resource should be removed from the selection.
-    Remove,
+    Unselect,
 
     /// Resource should be added to the selection.
-    Add,
+    Select,
 
     /// Resource should be the only selected.
     SelectOnly,

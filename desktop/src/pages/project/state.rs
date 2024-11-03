@@ -95,17 +95,52 @@ pub mod workspace_graph {
         rc::Rc,
     };
     use syre_core::types::ResourceId;
+    use syre_local_database as db;
 
     pub type ContainerVisibility = Vec<(super::graph::Node, RwSignal<bool>)>;
 
     #[derive(Clone, Debug)]
     pub struct State {
-        selection: RwSignal<Vec<SelectedResource>>,
+        /// All selection resources.
+        selection_resources: RwSignal<Vec<ResourceSelection>>,
         container_visibility: RwSignal<ContainerVisibility>,
     }
 
     impl State {
         pub fn new(graph: &super::graph::State) -> Self {
+            let selection_resources = graph.nodes().with_untracked(|nodes| {
+                nodes
+                    .iter()
+                    .flat_map(|node| {
+                        let mut resources = vec![];
+                        node.properties().with_untracked(|properties| {
+                            if let db::state::DataResource::Ok(properties) = properties {
+                                resources.push(ResourceSelection::new(
+                                    properties.rid().read_only(),
+                                    ResourceKind::Container,
+                                ));
+                            }
+                        });
+
+                        node.assets().with_untracked(|assets| {
+                            if let db::state::DataResource::Ok(assets) = assets {
+                                assets.with_untracked(|assets| {
+                                    let assets = assets.iter().map(|asset| {
+                                        ResourceSelection::new(
+                                            asset.rid().read_only(),
+                                            ResourceKind::Asset,
+                                        )
+                                    });
+                                    resources.extend(assets);
+                                })
+                            }
+                        });
+
+                        resources
+                    })
+                    .collect()
+            });
+
             let container_visibility = graph.nodes().with_untracked(|nodes| {
                 nodes
                     .iter()
@@ -115,49 +150,59 @@ pub mod workspace_graph {
             });
 
             Self {
-                selection: RwSignal::new(vec![]),
+                selection_resources: RwSignal::new(selection_resources),
                 container_visibility: RwSignal::new(container_visibility),
             }
         }
 
-        pub fn selection(&self) -> ReadSignal<Vec<SelectedResource>> {
-            self.selection.read_only()
+        pub fn selection(&self) -> &RwSignal<Vec<ResourceSelection>> {
+            &self.selection_resources
         }
 
         /// Clear all selected resources.
         pub fn select_clear(&self) {
-            if self.selection.with(|selection| !selection.is_empty()) {
-                self.selection.update(|selection| {
-                    selection.clear();
-                })
-            }
-        }
-
-        /// Set the selection to be only the given resource.
-        pub fn select_only(&self, rid: ResourceId, kind: ResourceKind) {
-            self.selection.update(|selection| {
-                selection.clear();
-                selection.push(SelectedResource { rid, kind });
-            });
-        }
-
-        /// Add a selected resource if it isn't already.
-        pub fn select_add(&self, rid: ResourceId, kind: ResourceKind) {
-            self.selection.update(|selection| {
-                if !selection.iter().any(|resource| *resource.rid() == rid) {
-                    selection.push(SelectedResource { rid, kind });
+            self.selection_resources.with_untracked(|selection| {
+                for resource in selection {
+                    if resource.selected.get_untracked() {
+                        resource.selected.set(false);
+                    }
                 }
             });
         }
 
-        /// Remove the selected resource if it is selected.
-        pub fn select_remove(&self, rid: &ResourceId) {
-            self.selection
-                .update(|selection| selection.retain(|resource| resource.rid() != rid));
+        /// Set the selection to be only the given resource.
+        pub fn select_only(&self, rid: &ResourceId) {
+            self.selection_resources.with_untracked(|selection| {
+                for resource in selection {
+                    let is_selected = resource.selected.get_untracked();
+                    resource.rid.with_untracked(|resource_id| {
+                        if resource_id != rid && is_selected {
+                            resource.selected.set(false);
+                        } else if resource_id == rid && !is_selected {
+                            resource.selected.set(true);
+                        }
+                    })
+                }
+            });
         }
 
-        pub fn container_visiblity(&self) -> RwSignal<ContainerVisibility> {
-            self.container_visibility.clone()
+        /// # Returns
+        /// `Signal` of selected resources.
+        pub fn selected(&self) -> Signal<Vec<ResourceSelection>> {
+            let selection = self.selection_resources.read_only();
+            Signal::derive(move || {
+                selection.with(|selection| {
+                    selection
+                        .iter()
+                        .filter(|selection| selection.selected().get())
+                        .cloned()
+                        .collect()
+                })
+            })
+        }
+
+        pub fn container_visiblity(&self) -> &RwSignal<ContainerVisibility> {
+            &self.container_visibility
         }
 
         /// Get the visibility signal for a specific container.
@@ -183,26 +228,32 @@ pub mod workspace_graph {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
-    pub struct SelectedResource {
-        rid: ResourceId,
+    #[derive(Clone, Debug)]
+    pub struct ResourceSelection {
+        rid: ReadSignal<ResourceId>,
         kind: ResourceKind,
+        selected: RwSignal<bool>,
     }
 
-    impl SelectedResource {
-        pub fn rid(&self) -> &ResourceId {
+    impl ResourceSelection {
+        pub fn new(rid: ReadSignal<ResourceId>, kind: ResourceKind) -> Self {
+            Self {
+                rid,
+                kind,
+                selected: create_rw_signal(false),
+            }
+        }
+
+        pub fn rid(&self) -> &ReadSignal<ResourceId> {
             &self.rid
         }
 
         pub fn kind(&self) -> &ResourceKind {
             &self.kind
         }
-    }
 
-    impl Deref for SelectedResource {
-        type Target = ResourceId;
-        fn deref(&self) -> &Self::Target {
-            &self.rid
+        pub fn selected(&self) -> &RwSignal<bool> {
+            &self.selected
         }
     }
 

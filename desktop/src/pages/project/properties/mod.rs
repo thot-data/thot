@@ -1,5 +1,5 @@
 use super::{
-    state::{self, workspace_graph::SelectedResource},
+    state::{self, workspace_graph::ResourceSelection},
     workspace,
 };
 use crate::types;
@@ -39,7 +39,7 @@ pub enum EditorKind {
     Asset(state::Asset),
     ContainerBulk(Signal<Vec<ResourceId>>),
     AssetBulk(Signal<Vec<ResourceId>>),
-    MixedBulk(Memo<Vec<SelectedResource>>),
+    MixedBulk(Signal<Vec<ResourceSelection>>),
 }
 
 impl Default for EditorKind {
@@ -71,12 +71,8 @@ pub fn PropertiesBar() -> impl IntoView {
     })));
 
     create_effect({
-        let graph = graph.clone();
-        move |_| {
-            let editor_kind =
-                active_editor_from_selection(workspace_graph_state.selection(), &graph);
-            active_editor.set(editor_kind.into())
-        }
+        let editor_kind = active_editor_from_selection(workspace_graph_state.selected(), graph);
+        move |_| active_editor.set(editor_kind.get().into())
     });
 
     let widget = move || {
@@ -128,70 +124,71 @@ fn sort_resource_kind(
 }
 
 fn active_editor_from_selection(
-    selection: ReadSignal<Vec<SelectedResource>>,
-    graph: &state::Graph,
-) -> EditorKind {
+    selection: Signal<Vec<ResourceSelection>>,
+    graph: state::Graph,
+) -> Signal<EditorKind> {
     use state::workspace_graph::ResourceKind;
 
-    selection.with(|selected| match &selected[..] {
-        [] => EditorKind::Analyses,
-        [resource] => match resource.kind() {
-            ResourceKind::Container => {
-                let container = graph.find_by_id(resource.rid()).unwrap();
-                EditorKind::Container(container.state().clone())
-            }
-            ResourceKind::Asset => {
-                let asset = graph.find_asset_by_id(resource.rid()).unwrap();
-                EditorKind::Asset(asset)
-            }
-        },
+    Signal::derive(move || {
+        selection.with(|selected| match &selected[..] {
+            [] => EditorKind::Analyses,
+            [resource] => match resource.kind() {
+                ResourceKind::Container => {
+                    let container = resource
+                        .rid()
+                        .with_untracked(|rid| graph.find_by_id(rid).unwrap());
+                    EditorKind::Container(container.state().clone())
+                }
+                ResourceKind::Asset => {
+                    let asset = resource
+                        .rid()
+                        .with(|rid| graph.find_asset_by_id(rid).unwrap());
+                    EditorKind::Asset(asset)
+                }
+            },
 
-        _ => {
-            let mut kinds = selected
-                .iter()
-                .map(|resource| resource.kind())
-                .collect::<Vec<_>>();
-            kinds.sort_by(|a, b| sort_resource_kind(a, b));
-            kinds.dedup();
+            _ => {
+                let mut kinds = selected
+                    .iter()
+                    .map(|resource| resource.kind())
+                    .collect::<Vec<_>>();
+                kinds.sort_by(|a, b| sort_resource_kind(a, b));
+                kinds.dedup();
 
-            match kinds[..] {
-                [] => panic!("invalid state"),
-                [kind] => match kind {
-                    ResourceKind::Container => {
-                        let containers = {
-                            let selection = selected.clone();
-                            move || {
-                                selection
-                                    .iter()
-                                    .map(|resource| resource.rid().clone())
-                                    .collect()
-                            }
-                        };
+                match kinds[..] {
+                    [] => panic!("invalid state"),
+                    [kind] => match kind {
+                        ResourceKind::Container => {
+                            let containers = {
+                                let selection = selected.clone();
+                                Signal::derive(move || {
+                                    selection
+                                        .iter()
+                                        .map(|resource| resource.rid().get_untracked())
+                                        .collect()
+                                })
+                            };
 
-                        let containers = Signal::derive(containers);
-                        EditorKind::ContainerBulk(containers)
-                    }
-                    ResourceKind::Asset => {
-                        let assets = {
-                            let selection = selected.clone();
-                            move || {
-                                selection
-                                    .iter()
-                                    .map(|resource| resource.rid().clone())
-                                    .collect()
-                            }
-                        };
+                            EditorKind::ContainerBulk(containers)
+                        }
+                        ResourceKind::Asset => {
+                            let assets = {
+                                let selection = selected.clone();
+                                Signal::derive(move || {
+                                    selection
+                                        .iter()
+                                        .map(|resource| resource.rid().get_untracked())
+                                        .collect()
+                                })
+                            };
 
-                        let assets = Signal::derive(assets);
-                        EditorKind::AssetBulk(assets)
-                    }
-                },
-                _ => {
-                    let resources = create_memo(move |_| selection.get());
-                    EditorKind::MixedBulk(resources)
+                            EditorKind::AssetBulk(assets)
+                        }
+                    },
+                    _ => EditorKind::MixedBulk(selection),
                 }
             }
-        }
+        })
     })
 }
 

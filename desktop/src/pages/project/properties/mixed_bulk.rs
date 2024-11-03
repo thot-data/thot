@@ -3,7 +3,7 @@ use crate::{
     components,
     pages::project::{
         self,
-        state::workspace_graph::{ResourceKind, SelectedResource},
+        state::workspace_graph::{ResourceKind, ResourceSelection},
     },
     types,
 };
@@ -30,7 +30,7 @@ enum Widget {
 
 mod state {
     use super::super::common::bulk;
-    use crate::pages::project::state::{self, workspace_graph::SelectedResource};
+    use crate::pages::project::state::{self, workspace_graph::ResourceSelection};
     use leptos::*;
     use std::collections::HashMap;
     use syre_local_database as db;
@@ -178,16 +178,16 @@ mod state {
     }
 
     #[derive(derive_more::Deref, Clone)]
-    pub struct ActiveResources(Memo<Vec<SelectedResource>>);
+    pub struct ActiveResources(Signal<Vec<ResourceSelection>>);
     impl ActiveResources {
-        pub fn new(resources: Memo<Vec<SelectedResource>>) -> Self {
+        pub fn new(resources: Signal<Vec<ResourceSelection>>) -> Self {
             Self(resources)
         }
     }
 }
 
 #[component]
-pub fn Editor(resources: Memo<Vec<SelectedResource>>) -> impl IntoView {
+pub fn Editor(resources: Signal<Vec<ResourceSelection>>) -> impl IntoView {
     assert!(resources.with(|resources| resources.len()) > 1);
     let graph = expect_context::<project::state::Graph>();
     let popout_portal = expect_context::<PopoutPortal>();
@@ -204,12 +204,20 @@ pub fn Editor(resources: Memo<Vec<SelectedResource>>) -> impl IntoView {
 
             let containers = containers
                 .iter()
-                .map(|rid| graph.find_by_id(rid).unwrap())
+                .map(|&resource| {
+                    resource
+                        .rid()
+                        .with_untracked(|rid| graph.find_by_id(rid).unwrap())
+                })
                 .collect::<Vec<_>>();
 
             let assets = assets
                 .iter()
-                .map(|rid| graph.find_asset_by_id(rid).unwrap())
+                .map(|resource| {
+                    resource
+                        .rid()
+                        .with_untracked(|rid| graph.find_asset_by_id(rid).unwrap())
+                })
                 .collect::<Vec<_>>();
 
             (containers, assets)
@@ -868,8 +876,8 @@ async fn update_properties_invoke(
 
 /// Partition resources into (containers, assets).
 fn partition_resources<'a>(
-    resources: &'a Vec<SelectedResource>,
-) -> (Vec<&'a SelectedResource>, Vec<&'a SelectedResource>) {
+    resources: &'a Vec<ResourceSelection>,
+) -> (Vec<&'a ResourceSelection>, Vec<&'a ResourceSelection>) {
     resources
         .iter()
         .partition(|resource| match resource.kind() {
@@ -881,7 +889,7 @@ fn partition_resources<'a>(
 /// Transforms a list of asset [`ResourceId`]s into
 /// [`ContainerAssets`](lib::command::asset::bulk::ContainerAssets).
 fn container_assets(
-    assets: Vec<&ResourceId>,
+    assets: &Vec<ResourceId>,
     graph: &project::state::Graph,
 ) -> Vec<lib::command::asset::bulk::ContainerAssets> {
     let mut asset_ids = Vec::<(PathBuf, Vec<ResourceId>)>::new();
@@ -902,7 +910,7 @@ fn container_assets(
 }
 
 fn resources_to_update_args(
-    resources: &Vec<SelectedResource>,
+    resources: &Vec<ResourceSelection>,
     graph: &project::state::Graph,
 ) -> (
     Vec<PathBuf>,
@@ -912,11 +920,16 @@ fn resources_to_update_args(
     let containers = containers
         .iter()
         .map(|container| {
-            let node = graph.find_by_id(container.rid()).unwrap();
+            let node = container
+                .rid()
+                .with_untracked(|rid| graph.find_by_id(rid).unwrap());
             graph.path(&node).unwrap()
         })
         .collect();
-    let asset_ids = assets.iter().map(|resource| resource.rid()).collect();
-    let asset_ids = container_assets(asset_ids, &graph);
+    let asset_ids = assets
+        .iter()
+        .map(|resource| resource.rid().get_untracked())
+        .collect();
+    let asset_ids = container_assets(&asset_ids, &graph);
     (containers, asset_ids)
 }

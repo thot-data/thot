@@ -492,6 +492,7 @@ fn Graph() -> impl IntoView {
     let visibilities = workspace_graph_state.container_visiblity().read_only();
     let display_state = display::State::from(graph.root().clone(), graph.edges(), visibilities);
     provide_context(display_state.clone());
+
     view! { <GraphView root=graph.root().clone() /> }
 }
 
@@ -1054,63 +1055,55 @@ fn ContainerOk(
         }
     };
 
+    let selected = workspace_graph_state
+        .selection()
+        .with_untracked(|selection| {
+            selection
+                .iter()
+                .find(|resource| {
+                    resource.rid().with_untracked(|resource_id| {
+                        container.properties().with_untracked(|properties| {
+                            let properties = properties.as_ref().unwrap();
+                            properties
+                                .rid()
+                                .with_untracked(|container_id| resource_id == container_id)
+                        })
+                    })
+                })
+                .cloned()
+                .unwrap()
+        });
+
     let mousedown = {
         let container = container.clone();
+        let selected = selected.clone();
         let workspace_graph_state = workspace_graph_state.clone();
         move |e: MouseEvent| {
-            let button = e.button();
-            if button == types::MouseButton::Primary {
-                e.stop_propagation();
-                container.properties().with_untracked(|properties| {
-                    if let db::state::DataResource::Ok(properties) = properties {
-                        properties.rid().with_untracked(|rid| {
-                            let action =
-                                workspace_graph_state
-                                    .selection()
-                                    .with_untracked(|selection| {
-                                        interpret_resource_selection_action(rid, &e, selection)
-                                    });
-                            match action {
-                                SelectionAction::Remove => {
-                                    workspace_graph_state.select_remove(&rid)
-                                }
-                                SelectionAction::Add => workspace_graph_state.select_add(
-                                    rid.clone(),
-                                    state::workspace_graph::ResourceKind::Container,
-                                ),
-                                SelectionAction::SelectOnly => workspace_graph_state.select_only(
-                                    rid.clone(),
-                                    state::workspace_graph::ResourceKind::Container,
-                                ),
+            if e.button() != types::MouseButton::Primary {
+                return;
+            }
+            e.stop_propagation();
 
-                                SelectionAction::Clear => workspace_graph_state.select_clear(),
-                            }
-                        });
-                    }
+            let action = workspace_graph_state
+                .selection()
+                .with_untracked(|selection| {
+                    interpret_resource_selection_action(&selected, selection, e.shift_key())
                 });
+            match action {
+                SelectionAction::Unselect => selected.selected().set(false),
+                SelectionAction::Select => selected.selected().set(true),
+                SelectionAction::SelectOnly => container.properties().with(|properties| {
+                    let properties = properties.as_ref().unwrap();
+                    properties
+                        .rid()
+                        .with_untracked(|rid| workspace_graph_state.select_only(rid))
+                }),
+                SelectionAction::Clear => workspace_graph_state.select_clear(),
             }
         }
     };
 
-    let selected = create_memo({
-        let container = container.clone();
-        let workspace_graph_state = workspace_graph_state.clone();
-        move |_| {
-            container.properties().with(|properties| {
-                if let db::state::DataResource::Ok(properties) = properties {
-                    workspace_graph_state.selection().with(|selection| {
-                        properties
-                            .rid()
-                            .with(|rid| selection.iter().any(|resource| resource.rid() == rid))
-                    })
-                } else {
-                    false
-                }
-            })
-        }
-    });
-
-    let highlight = move || selected() || drag_over() > 0;
+    let highlight = move || selected.selected().get() || drag_over() > 0;
     let contextmenu = {
         let graph = graph.clone();
         let container = container.clone();
@@ -1345,44 +1338,49 @@ fn Asset(asset: state::Asset) -> impl IntoView {
         move || rid.with(|rid| rid.to_string())
     };
 
+    let selected = workspace_graph_state
+        .selection()
+        .with_untracked(|selection| {
+            selection
+                .iter()
+                .find(|resource| {
+                    resource.rid().with_untracked(|resource_id| {
+                        asset
+                            .rid()
+                            .with_untracked(|asset_id| resource_id == asset_id)
+                    })
+                })
+                .cloned()
+                .unwrap()
+        });
+
     let title = asset_title_closure(&asset);
 
     let mousedown = {
         let workspace_graph_state = workspace_graph_state.clone();
-        let rid = asset.rid();
+        let rid = asset.rid().read_only();
+        let selected = selected.clone();
         move |e: MouseEvent| {
-            if e.button() == types::MouseButton::Primary {
-                e.stop_propagation();
-                rid.with_untracked(|rid| {
-                    let action = workspace_graph_state
-                        .selection()
-                        .with_untracked(|selection| {
-                            interpret_resource_selection_action(rid, &e, selection)
-                        });
-                    match action {
-                        SelectionAction::Remove => workspace_graph_state.select_remove(&rid),
-                        SelectionAction::Add => workspace_graph_state
-                            .select_add(rid.clone(), state::workspace_graph::ResourceKind::Asset),
-                        SelectionAction::SelectOnly => workspace_graph_state
-                            .select_only(rid.clone(), state::workspace_graph::ResourceKind::Asset),
-                        SelectionAction::Clear => workspace_graph_state.select_clear(),
-                    }
+            if e.button() != types::MouseButton::Primary {
+                return;
+            }
+            e.stop_propagation();
+
+            let action = workspace_graph_state
+                .selection()
+                .with_untracked(|selection| {
+                    interpret_resource_selection_action(&selected, selection, e.shift_key())
                 });
+            match action {
+                SelectionAction::Unselect => selected.selected().set(false),
+                SelectionAction::Select => selected.selected().set(true),
+                SelectionAction::SelectOnly => {
+                    rid.with_untracked(|rid| workspace_graph_state.select_only(rid))
+                }
+                SelectionAction::Clear => workspace_graph_state.select_clear(),
             }
         }
     };
-
-    let selected = create_memo({
-        let asset = asset.clone();
-        let workspace_graph_state = workspace_graph_state.clone();
-        move |_| {
-            workspace_graph_state.selection().with(|selection| {
-                asset
-                    .rid()
-                    .with(|rid| selection.iter().any(|resource| resource.rid() == rid))
-            })
-        }
-    });
 
     let contextmenu = {
         let asset = asset.clone();
@@ -1459,9 +1457,9 @@ fn Asset(asset: state::Asset) -> impl IntoView {
             on:mousedown=mousedown
             on:contextmenu=contextmenu
             title=asset_title_closure(&asset)
-            class=(["bg-secondary-300", "dark:bg-secondary-600"], selected)
+            class=(["bg-secondary-300", "dark:bg-secondary-600"], selected.selected().read_only())
             class="flex gap-2 cursor-pointer px-2 py-0.5 border border-transparent \
-              hover:border-secondary-600 dark:hover:border-secondary-400"
+            hover:border-secondary-600 dark:hover:border-secondary-400"
             data-resource=DATA_KEY_ASSET
             data-rid=rid
         >
