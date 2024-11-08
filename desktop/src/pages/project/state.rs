@@ -88,12 +88,7 @@ pub mod workspace {
 
 pub mod workspace_graph {
     use leptos::*;
-    use std::{
-        collections::BTreeMap,
-        ops::Deref,
-        path::{Path, PathBuf},
-        rc::Rc,
-    };
+    use std::rc::Rc;
     use syre_core::types::ResourceId;
     use syre_local_database as db;
 
@@ -102,7 +97,7 @@ pub mod workspace_graph {
     #[derive(Clone, Debug)]
     pub struct State {
         /// All selection resources.
-        selection_resources: RwSignal<Vec<ResourceSelection>>,
+        selection_resources: SelectionResources,
         container_visibility: RwSignal<ContainerVisibility>,
     }
 
@@ -138,7 +133,7 @@ pub mod workspace_graph {
 
                         resources
                     })
-                    .collect()
+                    .collect::<Vec<_>>()
             });
 
             let container_visibility = graph.nodes().with_untracked(|nodes| {
@@ -150,55 +145,13 @@ pub mod workspace_graph {
             });
 
             Self {
-                selection_resources: RwSignal::new(selection_resources),
+                selection_resources: SelectionResources::new(selection_resources),
                 container_visibility: RwSignal::new(container_visibility),
             }
         }
 
-        pub fn selection(&self) -> &RwSignal<Vec<ResourceSelection>> {
+        pub fn selection_resources(&self) -> &SelectionResources {
             &self.selection_resources
-        }
-
-        /// Clear all selected resources.
-        pub fn select_clear(&self) {
-            self.selection_resources.with_untracked(|selection| {
-                for resource in selection {
-                    if resource.selected.get_untracked() {
-                        resource.selected.set(false);
-                    }
-                }
-            });
-        }
-
-        /// Set the selection to be only the given resource.
-        pub fn select_only(&self, rid: &ResourceId) {
-            self.selection_resources.with_untracked(|selection| {
-                for resource in selection {
-                    let is_selected = resource.selected.get_untracked();
-                    resource.rid.with_untracked(|resource_id| {
-                        if resource_id != rid && is_selected {
-                            resource.selected.set(false);
-                        } else if resource_id == rid && !is_selected {
-                            resource.selected.set(true);
-                        }
-                    })
-                }
-            });
-        }
-
-        /// # Returns
-        /// `Signal` of selected resources.
-        pub fn selected(&self) -> Signal<Vec<ResourceSelection>> {
-            let selection = self.selection_resources.read_only();
-            Signal::derive(move || {
-                selection.with(|selection| {
-                    selection
-                        .iter()
-                        .filter(|selection| selection.selected().get())
-                        .cloned()
-                        .collect()
-                })
-            })
         }
 
         pub fn container_visiblity(&self) -> &RwSignal<ContainerVisibility> {
@@ -228,6 +181,229 @@ pub mod workspace_graph {
         }
     }
 
+    #[derive(Debug, Clone)]
+    pub struct SelectionResources {
+        resources: RwSignal<Vec<ResourceSelection>>,
+        selected: RwSignal<Vec<Resource>>,
+    }
+
+    impl SelectionResources {
+        pub fn new(resources: Vec<ResourceSelection>) -> Self {
+            let selected = resources
+                .iter()
+                .filter_map(|resource| {
+                    resource.selected.get_untracked().then_some(Resource {
+                        rid: resource.rid.clone(),
+                        kind: resource.kind,
+                    })
+                })
+                .collect();
+
+            Self {
+                resources: create_rw_signal(resources),
+                selected: create_rw_signal(selected),
+            }
+        }
+
+        pub fn selected(&self) -> ReadSignal<Vec<Resource>> {
+            self.selected.read_only()
+        }
+
+        /// Get a resources selection state.
+        pub fn get(&self, rid: &ResourceId) -> Option<ReadSignal<bool>> {
+            self.resources.with_untracked(|resources| {
+                resources.iter().find_map(|resource| {
+                    resource
+                        .rid
+                        .with_untracked(|resource_id| resource_id == rid)
+                        .then_some(resource.selected.read_only())
+                })
+            })
+        }
+
+        /// Set whether a resource is selected.
+        ///
+        /// # Returns
+        /// `Err` if a resource with the given id is not found.
+        pub fn set(&self, rid: &ResourceId, selected: bool) -> Result<(), ()> {
+            self.resources
+                .with_untracked(|resources| {
+                    resources
+                        .iter()
+                        .find(|resource| {
+                            resource
+                                .rid
+                                .with_untracked(|resource_id| resource_id == rid)
+                        })
+                        .map(|resource| {
+                            if resource
+                                .selected
+                                .with_untracked(|resource| *resource != selected)
+                            {
+                                resource.selected.set(selected);
+                                self.selected.update(|resources| {
+                                    if selected {
+                                        resources.push(Resource {
+                                            rid: resource.rid,
+                                            kind: resource.kind,
+                                        })
+                                    } else {
+                                        resources.retain(|selected| {
+                                            selected.rid.with_untracked(|selected| selected != rid)
+                                        })
+                                    }
+                                })
+                            }
+                        })
+                })
+                .ok_or(())
+        }
+
+        /// Set all resources to be unselected.
+        pub fn clear(&self) {
+            self.resources.with_untracked(|resources| {
+                resources.iter().for_each(|resource| {
+                    if resource.selected.get_untracked() {
+                        resource.selected.set(false);
+                    }
+                });
+            });
+
+            self.selected.update(|selected| selected.clear());
+        }
+
+        /// Set the selection to be only the given resource.
+        ///
+        /// # Returns
+        /// `Err` if a resource with the given id is not found.
+        /// REgardless of whether the resource is found or not, all other resources are deselected.
+        pub fn select_only(&self, rid: &ResourceId) -> Result<(), ()> {
+            let resource = self
+                .resources
+                .with_untracked(|resources| {
+                    let mut found_resource = None;
+                    resources.iter().for_each(|resource| {
+                        let is_selected = resource.selected.get_untracked();
+                        resource.rid.with_untracked(|resource_id| {
+                            if resource_id != rid && is_selected {
+                                resource.selected.set(false);
+                            } else if resource_id == rid {
+                                if !is_selected {
+                                    resource.selected.set(true);
+                                }
+
+                                let _ = found_resource.insert(resource);
+                            }
+                        })
+                    });
+
+                    found_resource.cloned()
+                })
+                .ok_or(())?;
+
+            self.selected.update(|selected| {
+                selected.retain(|selected| selected.rid.with_untracked(|selected| selected == rid));
+                if selected.len() != 1 {
+                    assert!(selected.is_empty());
+
+                    selected.push(Resource {
+                        rid: resource.rid,
+                        kind: resource.kind,
+                    })
+                }
+            });
+
+            Ok(())
+        }
+    }
+
+    impl SelectionResources {
+        pub fn push(&self, resource: ResourceSelection) {
+            let selected = resource.selected.get_untracked().then_some(Resource {
+                rid: resource.rid,
+                kind: resource.kind,
+            });
+
+            self.resources.update(|resources| resources.push(resource));
+            if let Some(selected) = selected {
+                self.selected.update(|resources| resources.push(selected));
+            }
+        }
+
+        pub fn extend(&self, resources: Vec<ResourceSelection>) {
+            if resources.is_empty() {
+                return;
+            }
+
+            let selected = resources
+                .iter()
+                .filter_map(|resource| {
+                    resource.selected.get_untracked().then_some(Resource {
+                        rid: resource.rid,
+                        kind: resource.kind,
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            self.resources
+                .update(|selection| selection.extend(resources));
+
+            if !selected.is_empty() {
+                self.selected.update(|resources| resources.extend(selected));
+            }
+        }
+
+        pub fn remove(&self, rids: &Vec<ResourceId>) {
+            if rids.is_empty() {
+                return;
+            }
+
+            let selected = self.selected.with_untracked(|selected| {
+                rids.iter()
+                    .filter(|&rid| {
+                        selected
+                            .iter()
+                            .any(|selected| selected.rid.with_untracked(|selected| selected == rid))
+                    })
+                    .collect::<Vec<_>>()
+            });
+
+            if !selected.is_empty() {
+                self.selected.update(|resources| {
+                    resources.retain(|resource| {
+                        resource
+                            .rid
+                            .with_untracked(|resource| !selected.contains(&resource))
+                    })
+                });
+            }
+
+            self.resources.update(|resources| {
+                resources.retain(|resource| resource.rid.with_untracked(|rid| !rids.contains(rid)));
+            });
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct Resource {
+        rid: ReadSignal<ResourceId>,
+        kind: ResourceKind,
+    }
+
+    impl Resource {
+        pub fn new(rid: ReadSignal<ResourceId>, kind: ResourceKind) -> Self {
+            Self { rid, kind }
+        }
+
+        pub fn rid(&self) -> &ReadSignal<ResourceId> {
+            &self.rid
+        }
+
+        pub fn kind(&self) -> &ResourceKind {
+            &self.kind
+        }
+    }
+
     #[derive(Clone, Debug)]
     pub struct ResourceSelection {
         rid: ReadSignal<ResourceId>,
@@ -243,21 +419,9 @@ pub mod workspace_graph {
                 selected: create_rw_signal(false),
             }
         }
-
-        pub fn rid(&self) -> &ReadSignal<ResourceId> {
-            &self.rid
-        }
-
-        pub fn kind(&self) -> &ResourceKind {
-            &self.kind
-        }
-
-        pub fn selected(&self) -> &RwSignal<bool> {
-            &self.selected
-        }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(PartialEq, Clone, Copy, Debug)]
     pub enum ResourceKind {
         Container,
         Asset,
@@ -456,6 +620,7 @@ pub mod graph {
     use std::{
         cell::RefCell,
         ffi::OsString,
+        iter,
         num::NonZeroUsize,
         ops::Deref,
         path::{Component, Path, PathBuf},
@@ -862,7 +1027,7 @@ pub mod graph {
                         if let db::state::DataResource::Ok(assets) = assets {
                             assets.with_untracked(|assets| {
                                 assets.iter().find_map(|asset| {
-                                    if asset.rid().with(|aid| aid == rid) {
+                                    if asset.rid().with_untracked(|aid| aid == rid) {
                                         Some(asset.clone())
                                     } else {
                                         None
@@ -1000,7 +1165,7 @@ pub mod graph {
         ///
         /// # Notes
         /// + Parent node signals are not updated.
-        pub fn remove(&self, path: impl AsRef<Path>) -> Result<(), error::Remove> {
+        pub fn remove(&self, path: impl AsRef<Path>) -> Result<Vec<Node>, error::Remove> {
             use std::cmp;
 
             let Some(root) = self.find(path.as_ref())? else {
@@ -1023,30 +1188,6 @@ pub mod graph {
                 root_width
             };
 
-            let delta_height = cmp::max(
-                root.graph.subtree_height.with_untracked(|height| {
-                    let sibling_height_max = parent.with_untracked(|parent| {
-                        self.children(parent).unwrap().with_untracked(|siblings| {
-                            siblings
-                                .iter()
-                                .filter_map(|sibling| {
-                                    if Node::ptr_eq(sibling, &root) {
-                                        None
-                                    } else {
-                                        Some(sibling.graph.subtree_height.get_untracked())
-                                    }
-                                })
-                                .max()
-                                .map(|sibling_max_height| sibling_max_height.get())
-                                .unwrap_or(0)
-                        })
-                    });
-
-                    height.get() as isize - sibling_height_max as isize
-                }),
-                0,
-            ) as usize;
-
             parent.with_untracked(|parent| {
                 self.children(parent).unwrap().with_untracked(|siblings| {
                     root.graph.sibling_index.with_untracked(|root_index| {
@@ -1068,13 +1209,36 @@ pub mod graph {
                 }
             }
 
-            if delta_height > 0 {
-                for ancestor in self.ancestors(&root).iter().skip(1) {
-                    ancestor.graph.subtree_height.update(|height| {
-                        let val = height.get() - delta_height;
-                        *height = NonZeroUsize::new(val).unwrap()
-                    });
+            let ancestors = self.ancestors(&root);
+            for (parent, ancestor) in iter::zip(ancestors.iter().skip(1), ancestors.iter()) {
+                let delta_height = cmp::max(
+                    root.graph.subtree_height.with_untracked(|height| {
+                        let sibling_height_max =
+                            self.children(parent).unwrap().with_untracked(|siblings| {
+                                siblings
+                                    .iter()
+                                    .filter_map(|sibling| {
+                                        (!Node::ptr_eq(sibling, &ancestor))
+                                            .then_some(sibling.graph.subtree_height.get_untracked())
+                                    })
+                                    .max()
+                                    .map(|sibling_max_height| sibling_max_height.get())
+                                    .unwrap_or(0)
+                            });
+
+                        height.get() as isize - sibling_height_max as isize
+                    }),
+                    0,
+                ) as usize;
+
+                if delta_height == 0 {
+                    break;
                 }
+
+                parent.graph.subtree_height.update(|height| {
+                    let val = height.get() - delta_height;
+                    *height = NonZeroUsize::new(val).unwrap()
+                });
             }
 
             // NB: Parents do not update signal when child is removed.
@@ -1095,7 +1259,7 @@ pub mod graph {
             parent.with_untracked(|parent| {
                 self.children(&parent)
                     .unwrap()
-                    .update(|siblings| siblings.retain(|sibling| !Node::ptr_eq(sibling, &root)))
+                    .update(|siblings| siblings.retain(|sibling| !Node::ptr_eq(sibling, &root)));
             });
 
             self.nodes.update(|nodes| {
@@ -1106,7 +1270,7 @@ pub mod graph {
                 })
             });
 
-            Ok(())
+            Ok(descendants)
         }
 
         pub fn rename(

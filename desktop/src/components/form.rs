@@ -135,7 +135,8 @@ pub mod debounced {
         #[prop(into, optional)] placeholder: MaybeProp<String>,
         #[prop(into, optional)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let (input_value, set_input_value) = create_signal(value::State::set_from_state(value()));
+        let (input_value, set_input_value) =
+            create_signal(value::State::set_from_state(value.get_untracked()));
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
         let _ = watch(
@@ -166,7 +167,7 @@ pub mod debounced {
                 class=class
             >
 
-                {input_value.with(|value| value.value().clone())}
+                {move || input_value.with(|value| value.value().clone())}
             </textarea>
         }
     }

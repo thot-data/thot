@@ -1,4 +1,4 @@
-use super::{properties, state, workspace::PropertiesEditor};
+use super::{properties, state};
 use crate::{components, types};
 use leptos::{ev::MouseEvent, *};
 use leptos_icons::Icon;
@@ -334,14 +334,14 @@ async fn analyze(
 #[component]
 fn ProjectInfo() -> impl IntoView {
     let project = expect_context::<state::Project>();
-    let properties_editor = expect_context::<RwSignal<PropertiesEditor>>();
+    let properties_editor = expect_context::<RwSignal<properties::EditorKind>>();
 
     let mousedown = move |e: MouseEvent| {
         if e.button() != types::MouseButton::Primary {
             return;
         }
 
-        if properties_editor.with(|editor| matches!(**editor, properties::EditorKind::Project)) {
+        if properties_editor.with(|editor| matches!(*editor, properties::EditorKind::Project)) {
             // TODO: Return properties to widget based on graph selection.
             // Currenlty the graph and selection state contexts are descendants, so can not access them.
             properties_editor.set(properties::EditorKind::Analyses.into());

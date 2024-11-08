@@ -16,7 +16,7 @@ use leptos::{
 };
 use leptos_icons::*;
 use serde::Serialize;
-use std::{cmp, collections::HashMap, io, iter, num::NonZeroUsize, path::PathBuf, rc::Rc};
+use std::{cmp, io, num::NonZeroUsize, path::PathBuf, rc::Rc};
 use syre_core::{project::AnalysisAssociation, types::ResourceId};
 use syre_desktop_lib as lib;
 use syre_local as local;
@@ -367,7 +367,7 @@ fn CanvasView(
     let mouseup = move |e: MouseEvent| {
         if e.button() == types::MouseButton::Primary && pan_drag.with(|c| c.is_some()) {
             if !was_dragged() {
-                workspace_graph_state.select_clear();
+                workspace_graph_state.selection_resources().clear();
             }
 
             set_pan_drag(None);
@@ -575,7 +575,6 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
 
     let older_sibling_widths = Signal::derive({
         let root = root.clone();
-        let graph = graph.clone();
         let display_nodes = display_state.nodes();
 
         move || {
@@ -605,15 +604,11 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
         }
     });
 
-    let x = {
-        let root = root.clone();
-        let graph = graph.clone();
-        move || {
-            let x = older_sibling_widths
-                .with(|widths| widths.iter().fold(0, |x, width| x + width.get().get()));
+    let x = move || {
+        let x = older_sibling_widths
+            .with(|widths| widths.iter().fold(0, |x, width| x + width.get().get()));
 
-            x * (CONTAINER_WIDTH + PADDING_X_SIBLING)
-        }
+        x * (CONTAINER_WIDTH + PADDING_X_SIBLING)
     };
 
     let y = {
@@ -715,8 +710,6 @@ fn GraphEdges(
     children_widths: ReadSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
     container_visibility: RwSignal<bool>,
 ) -> impl IntoView {
-    let graph = expect_context::<state::Graph>();
-    let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
     let container_preview_height = expect_context::<ContainerPreviewHeight>();
 
     let container_height = Signal::derive(move || {
@@ -769,18 +762,6 @@ fn GraphEdges(
         e.stop_propagation();
 
         container_visibility.set(!container_visibility());
-    };
-
-    let child_key = {
-        let graph = graph.clone();
-        move |child: &state::graph::Node| {
-            child.properties().with(|properties| {
-                properties
-                    .as_ref()
-                    .map(|properties| properties.rid().with(|rid| rid.to_string()))
-                    .unwrap_or_else(|_| graph.path(child).unwrap().to_string_lossy().to_string())
-            })
-        }
     };
 
     let x_children = Signal::derive(move || {
@@ -1034,76 +1015,67 @@ fn ContainerOk(
     provide_context(Container(container.clone()));
 
     let title = {
-        let container = container.clone();
-        move || {
-            container
-                .properties()
-                .with(|properties| properties.as_ref().unwrap().name())
-        }
+        let properties = container.properties().read_only();
+        move || properties.with(|properties| properties.as_ref().unwrap().name())
     };
 
     let rid = {
-        let container = container.clone();
+        let properties = container.properties().read_only();
         move || {
-            container.properties().with(|properties| {
-                let db::state::DataResource::Ok(properties) = properties else {
-                    panic!("invalid container state");
-                };
-
-                properties.rid().with(|rid| rid.to_string())
+            properties.with(|properties| {
+                properties
+                    .as_ref()
+                    .unwrap()
+                    .rid()
+                    .with(|rid| rid.to_string())
             })
         }
     };
 
-    let selected = workspace_graph_state
-        .selection()
-        .with_untracked(|selection| {
-            selection
-                .iter()
-                .find(|resource| {
-                    resource.rid().with_untracked(|resource_id| {
-                        container.properties().with_untracked(|properties| {
-                            let properties = properties.as_ref().unwrap();
-                            properties
-                                .rid()
-                                .with_untracked(|container_id| resource_id == container_id)
-                        })
-                    })
-                })
-                .cloned()
-                .unwrap()
-        });
+    let selection_resource = container
+        .properties()
+        .with_untracked(|properties| {
+            let properties = properties.as_ref().unwrap();
+            properties.rid().with_untracked(|container_id| {
+                workspace_graph_state
+                    .selection_resources()
+                    .get(container_id)
+            })
+        })
+        .unwrap();
 
     let mousedown = {
-        let container = container.clone();
-        let selected = selected.clone();
-        let workspace_graph_state = workspace_graph_state.clone();
+        let rid = container
+            .properties()
+            .with_untracked(|properties| properties.as_ref().unwrap().rid().read_only());
+        let selection_resources = workspace_graph_state.selection_resources().clone();
         move |e: MouseEvent| {
             if e.button() != types::MouseButton::Primary {
                 return;
             }
             e.stop_propagation();
 
-            let action = workspace_graph_state
-                .selection()
-                .with_untracked(|selection| {
-                    interpret_resource_selection_action(&selected, selection, e.shift_key())
-                });
+            let action = rid.with_untracked(|rid| {
+                selection_resources.selected().with_untracked(|selected| {
+                    interpret_resource_selection_action(rid, selected, e.shift_key())
+                })
+            });
             match action {
-                SelectionAction::Unselect => selected.selected().set(false),
-                SelectionAction::Select => selected.selected().set(true),
-                SelectionAction::SelectOnly => container.properties().with(|properties| {
-                    let properties = properties.as_ref().unwrap();
-                    properties
-                        .rid()
-                        .with_untracked(|rid| workspace_graph_state.select_only(rid))
-                }),
-                SelectionAction::Clear => workspace_graph_state.select_clear(),
+                SelectionAction::Unselect => {
+                    rid.with_untracked(|rid| selection_resources.set(rid, false).unwrap())
+                }
+                SelectionAction::Select => {
+                    rid.with_untracked(|rid| selection_resources.set(rid, true).unwrap())
+                }
+                SelectionAction::SelectOnly => {
+                    rid.with_untracked(|rid| selection_resources.select_only(rid).unwrap())
+                }
+                SelectionAction::Clear => selection_resources.clear(),
             }
         }
     };
 
-    let highlight = move || selected.selected().get() || drag_over() > 0;
+    let highlight = move || selection_resource.get() || drag_over() > 0;
     let contextmenu = {
         let graph = graph.clone();
         let container = container.clone();
@@ -1338,46 +1310,38 @@ fn Asset(asset: state::Asset) -> impl IntoView {
         move || rid.with(|rid| rid.to_string())
     };
 
-    let selected = workspace_graph_state
-        .selection()
-        .with_untracked(|selection| {
-            selection
-                .iter()
-                .find(|resource| {
-                    resource.rid().with_untracked(|resource_id| {
-                        asset
-                            .rid()
-                            .with_untracked(|asset_id| resource_id == asset_id)
-                    })
-                })
-                .cloned()
-                .unwrap()
-        });
+    let selection_resource = asset
+        .rid()
+        .with_untracked(|rid| workspace_graph_state.selection_resources().get(rid))
+        .unwrap();
 
     let title = asset_title_closure(&asset);
 
     let mousedown = {
-        let workspace_graph_state = workspace_graph_state.clone();
+        let selection_resources = workspace_graph_state.selection_resources().clone();
         let rid = asset.rid().read_only();
-        let selected = selected.clone();
         move |e: MouseEvent| {
             if e.button() != types::MouseButton::Primary {
                 return;
             }
             e.stop_propagation();
 
-            let action = workspace_graph_state
-                .selection()
-                .with_untracked(|selection| {
-                    interpret_resource_selection_action(&selected, selection, e.shift_key())
-                });
+            let action = rid.with_untracked(|rid| {
+                selection_resources.selected().with_untracked(|selected| {
+                    interpret_resource_selection_action(rid, selected, e.shift_key())
+                })
+            });
             match action {
-                SelectionAction::Unselect => selected.selected().set(false),
-                SelectionAction::Select => selected.selected().set(true),
-                SelectionAction::SelectOnly => {
-                    rid.with_untracked(|rid| workspace_graph_state.select_only(rid))
+                SelectionAction::Unselect => {
+                    rid.with_untracked(|rid| selection_resources.set(rid, false).unwrap())
                 }
-                SelectionAction::Clear => workspace_graph_state.select_clear(),
+                SelectionAction::Select => {
+                    rid.with_untracked(|rid| selection_resources.set(rid, true).unwrap())
+                }
+                SelectionAction::SelectOnly => {
+                    rid.with_untracked(|rid| selection_resources.select_only(rid).unwrap())
+                }
+                SelectionAction::Clear => selection_resources.clear(),
             }
         }
     };
@@ -1457,7 +1421,7 @@ fn Asset(asset: state::Asset) -> impl IntoView {
             on:mousedown=mousedown
             on:contextmenu=contextmenu
             title=asset_title_closure(&asset)
-            class=(["bg-secondary-300", "dark:bg-secondary-600"], selected.selected().read_only())
+            class=(["bg-secondary-300", "dark:bg-secondary-600"], selection_resource)
             class="flex gap-2 cursor-pointer px-2 py-0.5 border border-transparent \
             hover:border-secondary-600 dark:hover:border-secondary-400"
             data-resource=DATA_KEY_ASSET
@@ -2236,68 +2200,73 @@ mod display {
         visibility: ReadSignal<bool>,
         children: RwSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
 
+        // TODO: Use trigger?
         /// Updates internal state when `children` changes.
         update: Effect<()>,
+        reactive_owner: Owner,
     }
 
     impl Data {
         fn from(
             container: state::graph::Node,
-            visibility: ReadSignal<bool>,
             children: ReadSignal<Vec<state::graph::Node>>,
+            visibility: ReadSignal<bool>,
             nodes: ReadSignal<Vec<Node>>,
             reactive_owner: Owner,
         ) -> Self {
             let state_children = children;
             let children = with_owner(reactive_owner, || create_rw_signal(vec![]));
 
-            let update = Effect::new(move |_| {
-                let (removed, added) = state_children.with(|state_children| {
-                    let removed = children.with_untracked(|children| {
-                        children
-                            .iter()
-                            .filter(|(child, _)| {
-                                !state_children
-                                    .iter()
-                                    .any(|state_child| Rc::ptr_eq(state_child, child))
-                            })
-                            .map(|(child, _)| child)
-                            .cloned()
-                            .collect::<Vec<_>>()
-                    });
-
-                    let added = state_children
-                        .iter()
-                        .filter(|state_child| {
-                            children.with_untracked(|children| {
-                                !children
-                                    .iter()
-                                    .any(|(child, _)| Rc::ptr_eq(child, state_child))
-                            })
-                        })
-                        .cloned()
-                        .collect::<Vec<_>>();
-
-                    (removed, added)
-                });
-
-                children.update(|children| {
-                    children.retain(|(child, _)| {
-                        !removed.iter().any(|removed| Rc::ptr_eq(removed, child))
-                    });
-
-                    let added = added.iter().map(|added| {
-                        nodes.with_untracked(|nodes| {
-                            let node = nodes
+            let c_name = container.name();
+            let update = with_owner(reactive_owner, || {
+                Effect::new(move |_| {
+                    let (removed, added) = state_children.with(|state_children| {
+                        let removed = children.with_untracked(|children| {
+                            children
                                 .iter()
-                                .find(|node| Rc::ptr_eq(&node.container, added))
-                                .unwrap();
+                                .filter(|(child, _)| {
+                                    !state_children
+                                        .iter()
+                                        .any(|state_child| Rc::ptr_eq(state_child, child))
+                                })
+                                .map(|(child, _)| child)
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        });
 
-                            (node.container.clone(), node.width())
-                        })
+                        let added = state_children
+                            .iter()
+                            .filter(|state_child| {
+                                children.with_untracked(|children| {
+                                    !children
+                                        .iter()
+                                        .any(|(child, _)| Rc::ptr_eq(child, state_child))
+                                })
+                            })
+                            .cloned()
+                            .collect::<Vec<_>>();
+
+                        (removed, added)
                     });
-                    children.extend(added);
-                });
+
+                    children.update(|children| {
+                        children.retain(|(child, _)| {
+                            !removed.iter().any(|removed| Rc::ptr_eq(removed, child))
+                        });
+
+                        let added = added.iter().map(|added| {
+                            nodes.with_untracked(|nodes| {
+                                let node = nodes
+                                    .iter()
+                                    .find(|node| Rc::ptr_eq(&node.container, added))
+                                    .unwrap();
+
+                                (node.container.clone(), node.width())
+                            })
+                        });
+                        children.extend(added);
+                    });
+                })
             });
 
             Self {
@@ -2305,6 +2274,7 @@ mod display {
                 visibility,
                 children,
                 update,
+                reactive_owner,
             }
         }
 
@@ -2317,27 +2287,29 @@ mod display {
         }
 
         pub fn width(&self) -> Signal<NonZeroUsize> {
-            Signal::derive({
-                let visibility = self.visibility;
-                let children = self.children.read_only();
-                move || {
-                    children.with(|children| {
-                        let children_widths = children
-                            .iter()
-                            .map(|(data, width)| width)
-                            .collect::<Vec<_>>();
-
-                        if visibility.get() && !children_widths.is_empty() {
-                            let width = children_widths
+            with_owner(self.reactive_owner, || {
+                Signal::derive({
+                    let visibility = self.visibility;
+                    let children = self.children.read_only();
+                    move || {
+                        children.with(|children| {
+                            let children_widths = children
                                 .iter()
-                                .fold(0, |width, child_width| width + child_width.get().get());
+                                .map(|(_data, width)| width)
+                                .collect::<Vec<_>>();
 
-                            NonZeroUsize::new(width).unwrap()
-                        } else {
-                            NonZeroUsize::new(1).unwrap()
-                        }
-                    })
-                }
+                            if visibility.get() && !children_widths.is_empty() {
+                                let width = children_widths
+                                    .iter()
+                                    .fold(0, |width, child_width| width + child_width.get().get());
+
+                                NonZeroUsize::new(width).unwrap()
+                            } else {
+                                NonZeroUsize::new(1).unwrap()
+                            }
+                        })
+                    }
+                })
             })
         }
     }
@@ -2348,6 +2320,7 @@ mod display {
         root: state::graph::Node,
         children: ReadSignal<state::graph::Children>,
 
+        // TODO: Use trigger?
         /// Updates internal state when `children` changes.
         update: Effect<()>,
     }
@@ -2375,8 +2348,8 @@ mod display {
 
                         Node::new(Data::from(
                             container.clone(),
-                            visibility,
                             state_children.read_only(),
+                            visibility,
                             nodes.read_only(),
                             reactive_owner,
                         ))
@@ -2439,7 +2412,7 @@ mod display {
                             });
                         }
 
-                        let added_state = edges
+                        let added_states = edges
                             .iter()
                             .filter(|(parent, _)| {
                                 nodes.with_untracked(|nodes| {
@@ -2448,7 +2421,7 @@ mod display {
                             })
                             .collect::<Vec<_>>();
 
-                        let added_data = added_state
+                        let added_data = added_states
                             .iter()
                             .map(|(parent, state_children)| {
                                 let visibility = visibilities.with_untracked(|visibilities| {
@@ -2463,8 +2436,8 @@ mod display {
 
                                 Node::new(Data::from(
                                     parent.clone(),
-                                    visibility,
                                     state_children.read_only(),
+                                    visibility,
                                     nodes.read_only(),
                                     reactive_owner,
                                 ))
@@ -2472,7 +2445,7 @@ mod display {
                             .collect::<Vec<_>>();
 
                         added_data.iter().for_each(|data| {
-                            let state_children = added_state
+                            let state_children = added_states
                                 .iter()
                                 .find_map(|(parent, children)| {
                                     Rc::ptr_eq(parent, &data.container)
@@ -2551,6 +2524,7 @@ mod display {
                         // NOTE: This is purely a safety check to ensure
                         // the graph and display states are equal.
                         // No state is modified.
+                        #[cfg(debug_assertions)]
                         nodes.with_untracked(|nodes| {
                             assert_eq!(nodes.len(), edges.len());
                             for data in nodes.iter() {

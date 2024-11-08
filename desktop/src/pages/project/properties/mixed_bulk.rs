@@ -1,10 +1,7 @@
 use super::{errors_to_list_view, InputDebounce, PopoutPortal};
 use crate::{
     components,
-    pages::project::{
-        self,
-        state::workspace_graph::{ResourceKind, ResourceSelection},
-    },
+    pages::project::{self, state::workspace_graph},
     types,
 };
 use description::Editor as Description;
@@ -30,7 +27,7 @@ enum Widget {
 
 mod state {
     use super::super::common::bulk;
-    use crate::pages::project::state::{self, workspace_graph::ResourceSelection};
+    use crate::pages::project::state::{self, workspace_graph};
     use leptos::*;
     use std::collections::HashMap;
     use syre_local_database as db;
@@ -65,7 +62,7 @@ mod state {
             containers
                 .iter()
                 .map(|state| {
-                    state.properties().with(|properties| {
+                    state.properties().with_untracked(|properties| {
                         let db::state::DataResource::Ok(properties) = properties else {
                             panic!("invalid state");
                         };
@@ -99,7 +96,10 @@ mod state {
             Signal::derive({
                 let kinds = self.kinds.clone();
                 move || {
-                    let mut values = kinds.iter().map(|kind| kind.get()).collect::<Vec<_>>();
+                    let mut values = kinds
+                        .iter()
+                        .map(|kind| kind.get_untracked())
+                        .collect::<Vec<_>>();
                     values.sort();
                     values.dedup();
 
@@ -177,18 +177,13 @@ mod state {
         }
     }
 
-    #[derive(derive_more::Deref, Clone)]
-    pub struct ActiveResources(Signal<Vec<ResourceSelection>>);
-    impl ActiveResources {
-        pub fn new(resources: Signal<Vec<ResourceSelection>>) -> Self {
-            Self(resources)
-        }
-    }
+    #[derive(derive_more::Deref, derive_more::From, Clone)]
+    pub struct ActiveResources(ReadSignal<Vec<workspace_graph::Resource>>);
 }
 
 #[component]
-pub fn Editor(resources: Signal<Vec<ResourceSelection>>) -> impl IntoView {
-    assert!(resources.with(|resources| resources.len()) > 1);
+pub fn Editor(resources: ReadSignal<Vec<workspace_graph::Resource>>) -> impl IntoView {
+    assert!(resources.with_untracked(|resources| resources.len()) > 1);
     let graph = expect_context::<project::state::Graph>();
     let popout_portal = expect_context::<PopoutPortal>();
     let (widget, set_widget) = create_signal(None);
@@ -226,7 +221,7 @@ pub fn Editor(resources: Signal<Vec<ResourceSelection>>) -> impl IntoView {
         State::from_states(containers, assets)
     }));
 
-    provide_context(ActiveResources::new(resources.clone()));
+    provide_context::<ActiveResources>(resources.into());
 
     let resource_lengths = move || {
         resources.with(|resources| {
@@ -876,13 +871,16 @@ async fn update_properties_invoke(
 
 /// Partition resources into (containers, assets).
 fn partition_resources<'a>(
-    resources: &'a Vec<ResourceSelection>,
-) -> (Vec<&'a ResourceSelection>, Vec<&'a ResourceSelection>) {
+    resources: &'a Vec<workspace_graph::Resource>,
+) -> (
+    Vec<&'a workspace_graph::Resource>,
+    Vec<&'a workspace_graph::Resource>,
+) {
     resources
         .iter()
         .partition(|resource| match resource.kind() {
-            ResourceKind::Container => true,
-            ResourceKind::Asset => false,
+            workspace_graph::ResourceKind::Container => true,
+            workspace_graph::ResourceKind::Asset => false,
         })
 }
 
@@ -896,9 +894,9 @@ fn container_assets(
     for asset in assets {
         let node = graph.find_by_asset_id(asset).unwrap();
         let container = graph.path(&node).unwrap();
-        if let Some((container_id, ref mut container_assets)) = asset_ids
+        if let Some(ref mut container_assets) = asset_ids
             .iter_mut()
-            .find(|(container_id, _)| *container_id == container)
+            .find_map(|(container_id, assets)| (*container_id == container).then_some(assets))
         {
             container_assets.push(asset.clone());
         } else {
@@ -910,7 +908,7 @@ fn container_assets(
 }
 
 fn resources_to_update_args(
-    resources: &Vec<ResourceSelection>,
+    resources: &Vec<workspace_graph::Resource>,
     graph: &project::state::Graph,
 ) -> (
     Vec<PathBuf>,
@@ -926,6 +924,7 @@ fn resources_to_update_args(
             graph.path(&node).unwrap()
         })
         .collect();
+
     let asset_ids = assets
         .iter()
         .map(|resource| resource.rid().get_untracked())

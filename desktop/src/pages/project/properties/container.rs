@@ -383,7 +383,8 @@ mod name {
         let messages = expect_context::<types::Messages>();
         let input_debounce = expect_context::<InputDebounce>();
 
-        let (input_value, set_input_value) = create_signal(value::State::set_from_state(value()));
+        let (input_value, set_input_value) =
+            create_signal(value::State::set_from_state(value.get_untracked()));
         let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
         let (error, set_error) = create_signal(false);
 

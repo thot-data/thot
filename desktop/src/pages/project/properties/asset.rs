@@ -150,10 +150,10 @@ mod name {
         let messages = expect_context::<types::Messages>();
         let input_debounce = expect_context::<InputDebounce>();
 
-        let input_value = {
+        let input_value = Signal::derive({
             let value = asset.name().read_only();
             move || value.with(|value| value.clone().unwrap_or(String::new()))
-        };
+        });
 
         let oninput = Callback::new({
             let messages = messages.write_only();
@@ -186,14 +186,7 @@ mod name {
             }
         });
 
-        view! {
-            <InputText
-                value=Signal::derive(input_value)
-                oninput
-                debounce=*input_debounce
-                class="input-compact"
-            />
-        }
+        view! { <InputText value=input_value oninput debounce=*input_debounce class="input-compact" /> }
     }
 }
 

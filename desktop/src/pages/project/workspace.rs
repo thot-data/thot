@@ -42,9 +42,6 @@ impl DragOverWorkspaceResource {
     }
 }
 
-#[derive(derive_more::Deref, derive_more::From, Clone, Default)]
-pub struct PropertiesEditor(properties::EditorKind);
-
 #[component]
 pub fn Workspace() -> impl IntoView {
     let params = use_params_map();
@@ -158,7 +155,7 @@ fn WorkspaceView(
     provide_context(state::Workspace::new());
     provide_context(project.clone());
     provide_context(DragOverWorkspaceResource::new());
-    provide_context(create_rw_signal(PropertiesEditor::default()));
+    provide_context(create_rw_signal(properties::EditorKind::default()));
     let user_settings = types::settings::User::new(lib::settings::User::default());
     provide_context(user_settings.clone());
 
@@ -969,7 +966,9 @@ fn handle_event_graph(
         db::event::Project::Graph(_) => {
             handle_event_graph_graph(event, graph, workspace_graph_state)
         }
-        db::event::Project::Container { .. } => handle_event_graph_container(event, graph),
+        db::event::Project::Container { .. } => {
+            handle_event_graph_container(event, graph, workspace_graph_state.selection_resources())
+        }
         db::event::Project::Asset { .. } => handle_event_graph_asset(event, graph),
         db::event::Project::AssetFile(_) => handle_event_graph_asset_file(event, graph),
         db::event::Project::Flag { .. } => todo!(),
@@ -990,9 +989,7 @@ fn handle_event_graph_graph(
         db::event::Graph::Inserted { .. } => {
             handle_event_graph_graph_inserted(event, graph, workspace_graph_state)
         }
-        db::event::Graph::Renamed { from, to } => {
-            handle_event_graph_graph_renamed(event, graph, workspace_graph_state)
-        }
+        db::event::Graph::Renamed { from, to } => handle_event_graph_graph_renamed(event, graph),
         db::event::Graph::Moved { from, to } => todo!(),
         db::event::Graph::Removed(_) => {
             handle_event_graph_graph_removed(event, graph, workspace_graph_state)
@@ -1013,10 +1010,51 @@ fn handle_event_graph_graph_inserted(
         panic!("invalid event kind");
     };
 
-    // NB: Must create visibility signals first before inserting nodes into graph.
+    // NB: Must create visibility and selection resource signals first before inserting nodes into graph.
     // Downstream components expect a visibility signal to be present.
     let subgraph = state::Graph::new(subgraph.clone());
-    let base_path = common::normalize_path_sep(parent).join(subgraph.root().name().get_untracked());
+
+    let selection_resources = subgraph.nodes().with_untracked(|nodes| {
+        nodes
+            .iter()
+            .flat_map(|node| {
+                let mut resources = vec![];
+                node.properties().with_untracked(|properties| {
+                    if let db::state::DataResource::Ok(properties) = properties {
+                        resources.push(state::workspace_graph::ResourceSelection::new(
+                            properties.rid().read_only(),
+                            state::workspace_graph::ResourceKind::Container,
+                        ))
+                    }
+                });
+
+                node.assets().with_untracked(|assets| {
+                    if let db::state::DataResource::Ok(assets) = assets {
+                        let assets = assets.with_untracked(|assets| {
+                            assets
+                                .iter()
+                                .map(|asset| {
+                                    state::workspace_graph::ResourceSelection::new(
+                                        asset.rid().read_only(),
+                                        state::workspace_graph::ResourceKind::Asset,
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                        });
+
+                        resources.extend(assets);
+                    }
+                });
+
+                resources
+            })
+            .collect::<Vec<_>>()
+    });
+
+    workspace_graph_state
+        .selection_resources()
+        .extend(selection_resources);
+
     let visibility_inserted = subgraph.nodes().with_untracked(|nodes| {
         nodes
             .iter()
@@ -1036,11 +1074,7 @@ fn handle_event_graph_graph_inserted(
         .unwrap();
 }
 
-fn handle_event_graph_graph_renamed(
-    event: lib::Event,
-    graph: state::Graph,
-    workspace_graph_state: state::WorkspaceGraph,
-) {
+fn handle_event_graph_graph_renamed(event: lib::Event, graph: state::Graph) {
     let lib::EventKind::Project(db::event::Project::Graph(db::event::Graph::Renamed { from, to })) =
         event.kind()
     else {
@@ -1064,7 +1098,35 @@ fn handle_event_graph_graph_removed(
     // NB: Must remove nodes first, then remove visibility signals.
     // Downstream components expect a visibility signal to be present.
     let path = common::normalize_path_sep(path);
-    graph.remove(&path).unwrap();
+    let removed = graph.remove(&path).unwrap();
+
+    let removed_ids = removed
+        .iter()
+        .flat_map(|node| {
+            let mut resources = vec![];
+            node.properties().with_untracked(|properties| {
+                if let db::state::DataResource::Ok(properties) = properties {
+                    resources.push(properties.rid().get_untracked());
+                }
+            });
+
+            node.assets().with_untracked(|assets| {
+                if let db::state::DataResource::Ok(assets) = assets {
+                    assets.with_untracked(|assets| {
+                        let assets = assets.iter().map(|asset| asset.rid().get_untracked());
+
+                        resources.extend(assets);
+                    })
+                }
+            });
+
+            resources
+        })
+        .collect::<Vec<_>>();
+    workspace_graph_state
+        .selection_resources()
+        .remove(&removed_ids);
+
     workspace_graph_state
         .container_visiblity()
         .update(|visibilities| {
@@ -1076,21 +1138,31 @@ fn handle_event_graph_graph_removed(
         });
 }
 
-fn handle_event_graph_container(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph_container(
+    event: lib::Event,
+    graph: state::Graph,
+    selection_resources: &state::workspace_graph::SelectionResources,
+) {
     let lib::EventKind::Project(db::event::Project::Container { update, .. }) = event.kind() else {
         panic!("invalid event kind");
     };
 
     match update {
         db::event::Container::Properties(_) => {
-            handle_event_graph_container_properties(event, graph)
+            handle_event_graph_container_properties(event, graph, selection_resources)
         }
         db::event::Container::Settings(_) => handle_event_graph_container_settings(event, graph),
-        db::event::Container::Assets(_) => handle_event_graph_container_assets(event, graph),
+        db::event::Container::Assets(_) => {
+            handle_event_graph_container_assets(event, graph, selection_resources)
+        }
     }
 }
 
-fn handle_event_graph_container_properties(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph_container_properties(
+    event: lib::Event,
+    graph: state::Graph,
+    selection_resources: &state::workspace_graph::SelectionResources,
+) {
     let lib::EventKind::Project(db::event::Project::Container {
         update: db::event::Container::Properties(update),
         ..
@@ -1101,14 +1173,14 @@ fn handle_event_graph_container_properties(event: lib::Event, graph: state::Grap
 
     match update {
         db::event::DataResource::Created(_) => {
-            handle_event_graph_container_properties_created(event, graph)
+            handle_event_graph_container_properties_created(event, graph, selection_resources)
         }
         db::event::DataResource::Removed => todo!(),
         db::event::DataResource::Corrupted(_) => {
-            handle_event_graph_container_properties_corrupted(event, graph)
+            handle_event_graph_container_properties_corrupted(event, graph, selection_resources)
         }
         db::event::DataResource::Repaired(_) => {
-            handle_event_graph_container_properties_repaired(event, graph)
+            handle_event_graph_container_properties_repaired(event, graph, selection_resources)
         }
         db::event::DataResource::Modified(_) => {
             handle_event_graph_container_properties_modified(event, graph)
@@ -1116,7 +1188,11 @@ fn handle_event_graph_container_properties(event: lib::Event, graph: state::Grap
     }
 }
 
-fn handle_event_graph_container_properties_created(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph_container_properties_created(
+    event: lib::Event,
+    graph: state::Graph,
+    selection_resources: &state::workspace_graph::SelectionResources,
+) {
     let lib::EventKind::Project(db::event::Project::Container {
         path,
         update: db::event::Container::Properties(db::event::DataResource::Created(update)),
@@ -1135,11 +1211,18 @@ fn handle_event_graph_container_properties_created(event: lib::Event, graph: sta
                 .properties()
                 .with_untracked(|properties| properties.is_err())
             {
-                container.properties().update(|properties| {
-                    *properties = db::state::DataResource::Ok(state::container::Properties::new(
-                        update.rid.clone(),
-                        update.properties.clone(),
-                    ));
+                let properties = state::container::Properties::new(
+                    update.rid.clone(),
+                    update.properties.clone(),
+                );
+
+                selection_resources.push(state::workspace_graph::ResourceSelection::new(
+                    properties.rid().read_only(),
+                    state::workspace_graph::ResourceKind::Container,
+                ));
+
+                container.properties().update(|container_properties| {
+                    *container_properties = db::state::DataResource::Ok(properties);
                 });
             } else {
                 update_container_properties(container, update);
@@ -1174,7 +1257,11 @@ fn handle_event_graph_container_properties_created(event: lib::Event, graph: sta
     }
 }
 
-fn handle_event_graph_container_properties_repaired(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph_container_properties_repaired(
+    event: lib::Event,
+    graph: state::Graph,
+    selection_resources: &state::workspace_graph::SelectionResources,
+) {
     let lib::EventKind::Project(db::event::Project::Container {
         path,
         update: db::event::Container::Properties(db::event::DataResource::Repaired(update)),
@@ -1191,15 +1278,24 @@ fn handle_event_graph_container_properties_repaired(event: lib::Event, graph: st
         .properties()
         .with_untracked(|properties| properties.is_err()));
 
-    container.properties().update(|properties| {
-        *properties = db::state::DataResource::Ok(state::container::Properties::new(
-            update.rid.clone(),
-            update.properties.clone(),
-        ));
+    let properties =
+        state::container::Properties::new(update.rid.clone(), update.properties.clone());
+
+    selection_resources.push(state::workspace_graph::ResourceSelection::new(
+        properties.rid().read_only(),
+        state::workspace_graph::ResourceKind::Container,
+    ));
+
+    container.properties().update(|container_properties| {
+        *container_properties = db::state::DataResource::Ok(properties);
     });
 }
 
-fn handle_event_graph_container_properties_corrupted(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph_container_properties_corrupted(
+    event: lib::Event,
+    graph: state::Graph,
+    selection_resources: &state::workspace_graph::SelectionResources,
+) {
     let lib::EventKind::Project(db::event::Project::Container {
         path,
         update: db::event::Container::Properties(db::event::DataResource::Corrupted(update)),
@@ -1215,6 +1311,11 @@ fn handle_event_graph_container_properties_corrupted(event: lib::Event, graph: s
     assert!(container
         .properties()
         .with_untracked(|properties| properties.is_ok()));
+
+    let rid = container
+        .properties()
+        .with_untracked(|properties| properties.as_ref().unwrap().rid().get_untracked());
+    selection_resources.remove(&vec![rid]);
 
     container.properties().update(|properties| {
         *properties = db::state::DataResource::Err(update.clone());
@@ -1403,9 +1504,13 @@ fn handle_event_graph_container_settings(event: lib::Event, graph: state::Graph)
     }
 }
 
-fn handle_event_graph_container_assets(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph_container_assets(
+    event: lib::Event,
+    graph: state::Graph,
+    selection_resources: &state::workspace_graph::SelectionResources,
+) {
     let lib::EventKind::Project(db::event::Project::Container {
-        path,
+        path: _path,
         update: db::event::Container::Assets(update),
     }) = event.kind()
     else {
@@ -1414,22 +1519,26 @@ fn handle_event_graph_container_assets(event: lib::Event, graph: state::Graph) {
 
     match update {
         db::event::DataResource::Created(_) => {
-            handle_event_graph_container_assets_created(event, graph)
+            handle_event_graph_container_assets_created(event, graph, selection_resources)
         }
         db::event::DataResource::Removed => todo!(),
         db::event::DataResource::Corrupted(_) => {
-            handle_event_graph_container_assets_corrupted(event, graph)
+            handle_event_graph_container_assets_corrupted(event, graph, selection_resources)
         }
         db::event::DataResource::Repaired(_) => {
-            handle_event_graph_container_assets_repaired(event, graph)
+            handle_event_graph_container_assets_repaired(event, graph, selection_resources)
         }
         db::event::DataResource::Modified(_) => {
-            handle_event_graph_container_assets_modified(event, graph)
+            handle_event_graph_container_assets_modified(event, graph, selection_resources)
         }
     }
 }
 
-fn handle_event_graph_container_assets_created(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph_container_assets_created(
+    event: lib::Event,
+    graph: state::Graph,
+    selection_resources: &state::workspace_graph::SelectionResources,
+) {
     let lib::EventKind::Project(db::event::Project::Container {
         path,
         update: db::event::Container::Assets(db::event::DataResource::Created(update)),
@@ -1455,12 +1564,66 @@ fn handle_event_graph_container_assets_created(event: lib::Event, graph: state::
                 let assets = update
                     .iter()
                     .map(|asset| state::Asset::new(asset.clone()))
-                    .collect();
+                    .collect::<Vec<_>>();
+
+                let resources = assets
+                    .iter()
+                    .map(|asset| {
+                        state::workspace_graph::ResourceSelection::new(
+                            asset.rid().read_only(),
+                            state::workspace_graph::ResourceKind::Asset,
+                        )
+                    })
+                    .collect::<Vec<state::workspace_graph::ResourceSelection>>();
+                selection_resources.extend(resources);
 
                 container
                     .assets()
                     .set(db::state::DataResource::Ok(create_rw_signal(assets)));
             } else {
+                let removed = container.assets().with_untracked(|assets| {
+                    assets.as_ref().unwrap().with_untracked(|assets| {
+                        assets
+                            .iter()
+                            .filter_map(|asset| {
+                                (!update.iter().any(|update| {
+                                    asset.rid().with_untracked(|rid| update.rid() == rid)
+                                }))
+                                .then_some(asset.rid().read_only())
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                });
+
+                let (modified, added): (Vec<_>, Vec<_>) = update.iter().partition(|update| {
+                    container.assets().with_untracked(|assets| {
+                        assets.as_ref().unwrap().with_untracked(|assets| {
+                            assets
+                                .iter()
+                                .any(|asset| asset.rid().with_untracked(|rid| update.rid() == rid))
+                        })
+                    })
+                });
+
+                let added = added
+                    .into_iter()
+                    .map(|update| state::Asset::new(update.clone()))
+                    .collect::<Vec<_>>();
+
+                let removed_ids = removed.iter().map(|asset| asset.get_untracked()).collect();
+                selection_resources.remove(&removed_ids);
+
+                let added_selection_resources = added
+                    .iter()
+                    .map(|asset| {
+                        state::workspace_graph::ResourceSelection::new(
+                            asset.rid().read_only(),
+                            state::workspace_graph::ResourceKind::Asset,
+                        )
+                    })
+                    .collect();
+                selection_resources.extend(added_selection_resources);
+
                 container.assets().update(|assets| {
                     let db::state::DataResource::Ok(assets) = assets else {
                         panic!("invalid state");
@@ -1468,20 +1631,24 @@ fn handle_event_graph_container_assets_created(event: lib::Event, graph: state::
 
                     assets.update(|assets| {
                         assets.retain(|asset| {
-                            update
-                                .iter()
-                                .any(|update| asset.rid().with_untracked(|rid| update.rid() == rid))
+                            !removed.iter().any(|removed| {
+                                removed.with_untracked(|removed| {
+                                    asset.rid().with_untracked(|asset| removed == asset)
+                                })
+                            })
                         });
 
-                        for asset_update in update.iter() {
-                            if let Some(asset) = assets.iter().find(|asset| {
-                                asset.rid().with_untracked(|rid| rid == asset_update.rid())
-                            }) {
-                                update_asset(asset, asset_update);
-                            } else {
-                                assets.push(state::Asset::new(asset_update.clone()));
-                            }
-                        }
+                        modified.into_iter().for_each(|update| {
+                            let Some(asset) = assets.iter().find(|asset| {
+                                asset.rid().with_untracked(|rid| rid == update.rid())
+                            }) else {
+                                panic!("invalid state");
+                            };
+
+                            update_asset(asset, update);
+                        });
+
+                        assets.extend(added);
                     });
                 });
             }
@@ -1489,7 +1656,11 @@ fn handle_event_graph_container_assets_created(event: lib::Event, graph: state::
     }
 }
 
-fn handle_event_graph_container_assets_modified(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph_container_assets_modified(
+    event: lib::Event,
+    graph: state::Graph,
+    selection_resources: &state::workspace_graph::SelectionResources,
+) {
     let lib::EventKind::Project(db::event::Project::Container {
         path,
         update: db::event::Container::Assets(db::event::DataResource::Modified(update)),
@@ -1519,23 +1690,61 @@ fn handle_event_graph_container_assets_modified(event: lib::Event, graph: state:
             })
         });
 
-    container.assets().update(|assets| {
+    let assets_new = assets_new
+        .into_iter()
+        .map(|asset| state::Asset::new(asset.clone()))
+        .collect::<Vec<_>>();
+
+    let removed = container.assets().with_untracked(|assets| {
+        let db::state::DataResource::Ok(assets) = assets else {
+            panic!("invalid state");
+        };
+
+        assets.with_untracked(|assets| {
+            assets
+                .iter()
+                .filter_map(|asset| {
+                    (!update
+                        .iter()
+                        .any(|update| asset.rid().with_untracked(|rid| update.rid() == rid)))
+                    .then_some(asset.rid().read_only())
+                })
+                .collect::<Vec<_>>()
+        })
+    });
+
+    let removed_ids = removed
+        .iter()
+        .map(|removed| removed.get_untracked())
+        .collect();
+    selection_resources.remove(&removed_ids);
+
+    let selection_resources_new = assets_new
+        .iter()
+        .map(|asset| {
+            state::workspace_graph::ResourceSelection::new(
+                asset.rid().read_only(),
+                state::workspace_graph::ResourceKind::Asset,
+            )
+        })
+        .collect();
+    selection_resources.extend(selection_resources_new);
+
+    container.assets().with_untracked(|assets| {
         let db::state::DataResource::Ok(assets) = assets else {
             panic!("invalid state");
         };
 
         assets.update(|assets| {
             assets.retain(|asset| {
-                update
-                    .iter()
-                    .any(|update| asset.rid().with_untracked(|rid| update.rid() == rid))
+                !removed.iter().any(|removed| {
+                    asset
+                        .rid()
+                        .with_untracked(|rid| removed.with_untracked(|removed| removed == rid))
+                })
             });
 
-            let new = assets_new
-                .into_iter()
-                .map(|asset| state::Asset::new(asset.clone()))
-                .collect::<Vec<_>>();
-            assets.extend(new);
+            assets.extend(assets_new);
         });
     });
 
@@ -1636,16 +1845,11 @@ fn update_asset(asset: &state::Asset, update: &db::state::Asset) {
     update_metadata(asset.metadata(), &update.properties.metadata);
 }
 
-/// Workspace resource that is currently dragged over.
-#[derive(derive_more::Deref, derive_more::From, Clone)]
-struct DragOverCanvasResource(Option<WorkspaceResource>);
-impl DragOverCanvasResource {
-    pub fn new() -> Self {
-        Self(None)
-    }
-}
-
-fn handle_event_graph_container_assets_corrupted(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph_container_assets_corrupted(
+    event: lib::Event,
+    graph: state::Graph,
+    selection_resources: &state::workspace_graph::SelectionResources,
+) {
     let lib::EventKind::Project(db::event::Project::Container {
         path,
         update: db::event::Container::Assets(db::event::DataResource::Corrupted(err)),
@@ -1659,12 +1863,26 @@ fn handle_event_graph_container_assets_corrupted(event: lib::Event, graph: state
         .unwrap()
         .unwrap();
 
+    let rids = container.assets().with_untracked(|assets| {
+        assets.as_ref().unwrap().with_untracked(|assets| {
+            assets
+                .iter()
+                .map(|asset| asset.rid().get_untracked())
+                .collect::<Vec<_>>()
+        })
+    });
+    selection_resources.remove(&rids);
+
     container.assets().update(|container_assets| {
         *container_assets = db::state::DataResource::Err(err.clone());
     });
 }
 
-fn handle_event_graph_container_assets_repaired(event: lib::Event, graph: state::Graph) {
+fn handle_event_graph_container_assets_repaired(
+    event: lib::Event,
+    graph: state::Graph,
+    selection_resources: &state::workspace_graph::SelectionResources,
+) {
     let lib::EventKind::Project(db::event::Project::Container {
         path,
         update: db::event::Container::Assets(db::event::DataResource::Repaired(assets)),
@@ -1673,15 +1891,26 @@ fn handle_event_graph_container_assets_repaired(event: lib::Event, graph: state:
         panic!("invalid event kind");
     };
 
-    let assets = assets
-        .into_iter()
-        .map(|asset| state::Asset::new(asset.clone()))
-        .collect();
-
     let container = graph
         .find(common::normalize_path_sep(path))
         .unwrap()
         .unwrap();
+
+    let assets = assets
+        .into_iter()
+        .map(|asset| state::Asset::new(asset.clone()))
+        .collect::<Vec<_>>();
+
+    let selections = assets
+        .iter()
+        .map(|asset| {
+            state::workspace_graph::ResourceSelection::new(
+                asset.rid().read_only(),
+                state::workspace_graph::ResourceKind::Asset,
+            )
+        })
+        .collect::<Vec<_>>();
+    selection_resources.extend(selections);
 
     container.assets().update(|container_assets| {
         *container_assets = db::state::DataResource::Ok(create_rw_signal(assets));

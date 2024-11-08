@@ -1,5 +1,5 @@
 pub mod kind {
-    use crate::components::{self, form::debounced::InputText};
+    use crate::components::form::debounced::InputText;
     use leptos::*;
 
     #[component]
@@ -9,8 +9,10 @@ pub mod kind {
         #[prop(into)] debounce: MaybeSignal<f64>,
         #[prop(into, optional)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let (processed_value, set_processed_value) = create_signal(value());
-        let input_value = move || value.with(|value| value.clone().unwrap_or(String::new()));
+        let (processed_value, set_processed_value) = create_signal(value.get_untracked());
+        let input_value = Signal::derive(move || {
+            value.with(|value| value.as_ref().cloned().unwrap_or(String::new()))
+        });
         let oninput_text = {
             move |value: String| {
                 let value = value.trim();
@@ -28,7 +30,7 @@ pub mod kind {
             oninput(processed_value());
         });
 
-        view! { <InputText value=Signal::derive(input_value) oninput=oninput_text debounce class /> }
+        view! { <InputText value=input_value oninput=oninput_text debounce class /> }
     }
 }
 
@@ -43,7 +45,7 @@ pub mod description {
         #[prop(into)] debounce: MaybeSignal<f64>,
         #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let (processed_value, set_processed_value) = create_signal(value());
+        let (processed_value, set_processed_value) = create_signal(value.get_untracked());
 
         let input_value = move || value.with(|value| value.clone().unwrap_or(String::new()));
 
@@ -79,8 +81,8 @@ pub mod tags {
         #[prop(into)] debounce: MaybeSignal<f64>,
         #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let (processed_value, set_processed_value) = create_signal(value());
-        let input_value = move || value.with(|value| value.join(", "));
+        let (processed_value, set_processed_value) = create_signal(value.get_untracked());
+        let input_value = Signal::derive(move || value.with(|value| value.join(", ")));
 
         let oninput_text = {
             move |value: String| {
@@ -111,7 +113,7 @@ pub mod tags {
             oninput(processed_value());
         });
 
-        view! { <InputText value=Signal::derive(input_value) oninput=oninput_text debounce class /> }
+        view! { <InputText value=input_value oninput=oninput_text debounce class /> }
     }
 }
 

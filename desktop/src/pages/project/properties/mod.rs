@@ -1,11 +1,7 @@
-use super::{
-    state::{self, workspace_graph::ResourceSelection},
-    workspace,
-};
+use super::state::{self, workspace_graph};
 use crate::types;
 use leptos::*;
 use std::fmt;
-use syre_core::types::ResourceId;
 use syre_desktop_lib as lib;
 
 mod analyses;
@@ -31,15 +27,15 @@ pub const ANALYSES_ID: &'static str = "analyses";
 #[derive(Clone, Copy, derive_more::Deref)]
 struct PopoutPortal(NodeRef<html::Div>);
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum EditorKind {
     Project,
     Analyses,
-    Container(state::Container),
-    Asset(state::Asset),
-    ContainerBulk(Signal<Vec<ResourceId>>),
-    AssetBulk(Signal<Vec<ResourceId>>),
-    MixedBulk(Signal<Vec<ResourceSelection>>),
+    Container,
+    Asset,
+    ContainerBulk,
+    AssetBulk,
+    MixedBulk,
 }
 
 impl Default for EditorKind {
@@ -56,7 +52,7 @@ pub fn PropertiesBar() -> impl IntoView {
     let user_settings = expect_context::<types::settings::User>();
     let graph = expect_context::<state::Graph>();
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
-    let active_editor = expect_context::<RwSignal<workspace::PropertiesEditor>>();
+    let active_editor = expect_context::<RwSignal<EditorKind>>();
     let popout_portal = NodeRef::<html::Div>::new();
     provide_context(PopoutPortal(popout_portal));
     provide_context(InputDebounce(Signal::derive(move || {
@@ -71,33 +67,74 @@ pub fn PropertiesBar() -> impl IntoView {
     })));
 
     create_effect({
-        let editor_kind = active_editor_from_selection(workspace_graph_state.selected(), graph);
-        move |_| active_editor.set(editor_kind.get().into())
+        let selected = workspace_graph_state.selection_resources().selected();
+        move |_| active_editor.set(active_editor_from_selection(selected).into())
     });
 
-    let widget = move || {
-        active_editor.with(|active_editor| match &**active_editor {
-            EditorKind::Project => view! { <Project /> }.into_view(),
-            EditorKind::Analyses => view! {
-                <div id=ANALYSES_ID class="h-full">
-                    <Analyses />
-                </div>
-            }
-            .into_view(),
-            EditorKind::Container(container) => {
-                view! { <Container container=container.clone() /> }.into_view()
-            }
-            EditorKind::Asset(asset) => view! { <Asset asset=asset.clone() /> }.into_view(),
-            EditorKind::ContainerBulk(containers) => {
-                view! { <ContainerBulk containers=containers.clone() /> }.into_view()
-            }
-            EditorKind::AssetBulk(assets) => {
-                view! { <AssetBulk assets=assets.clone() /> }.into_view()
-            }
-            EditorKind::MixedBulk(resources) => {
-                view! { <MixedBulk resources=resources.clone() /> }.into_view()
-            }
-        })
+    let widget = {
+        let selected = workspace_graph_state.selection_resources().selected();
+        move || {
+            active_editor.with(|active_editor| match active_editor {
+                EditorKind::Project => view! { <Project /> }.into_view(),
+                EditorKind::Analyses => view! {
+                    <div id=ANALYSES_ID class="h-full">
+                        <Analyses />
+                    </div>
+                }
+                .into_view(),
+                EditorKind::Container => {
+                    let container = selected.with(|selected| {
+                        let [resource] = &selected[..] else {
+                            panic!("invalid state");
+                        };
+
+                        resource
+                            .rid()
+                            .with_untracked(|rid| graph.find_by_id(rid).unwrap())
+                    });
+
+                    view! { <Container container=container.state().clone() /> }.into_view()
+                }
+                EditorKind::Asset => {
+                    let asset = selected.with(|selected| {
+                        let [resource] = &selected[..] else {
+                            panic!("invalid state");
+                        };
+
+                        resource
+                            .rid()
+                            .with(|rid| graph.find_asset_by_id(rid).unwrap())
+                    });
+
+                    view! { <Asset asset /> }.into_view()
+                }
+                EditorKind::ContainerBulk => {
+                    let containers = Signal::derive(move || {
+                        selected.with(|selected| {
+                            selected
+                                .iter()
+                                .map(|resource| resource.rid().get())
+                                .collect::<Vec<_>>()
+                        })
+                    });
+
+                    view! { <ContainerBulk containers /> }.into_view()
+                }
+                EditorKind::AssetBulk => {
+                    let assets = Signal::derive(move || {
+                        selected.with(|selected| {
+                            selected
+                                .iter()
+                                .map(|resource| resource.rid().get())
+                                .collect::<Vec<_>>()
+                        })
+                    });
+
+                    view! { <AssetBulk assets /> }.into_view()
+                }
+                EditorKind::MixedBulk => view! { <MixedBulk resources=selected /> }.into_view(),
+            })
+        }
     };
 
     view! {
@@ -124,71 +161,32 @@ fn sort_resource_kind(
 }
 
 fn active_editor_from_selection(
-    selection: Signal<Vec<ResourceSelection>>,
-    graph: state::Graph,
-) -> Signal<EditorKind> {
+    selection: ReadSignal<Vec<workspace_graph::Resource>>,
+) -> EditorKind {
     use state::workspace_graph::ResourceKind;
+    selection.with(|selected| match &selected[..] {
+        [] => EditorKind::Analyses,
+        [resource] => match resource.kind() {
+            ResourceKind::Container => EditorKind::Container,
+            ResourceKind::Asset => EditorKind::Asset,
+        },
+        _ => {
+            let mut kinds = selected
+                .iter()
+                .map(|resource| resource.kind())
+                .collect::<Vec<_>>();
+            kinds.sort_by(|a, b| sort_resource_kind(a, b));
+            kinds.dedup();
 
-    Signal::derive(move || {
-        selection.with(|selected| match &selected[..] {
-            [] => EditorKind::Analyses,
-            [resource] => match resource.kind() {
-                ResourceKind::Container => {
-                    let container = resource
-                        .rid()
-                        .with_untracked(|rid| graph.find_by_id(rid).unwrap());
-                    EditorKind::Container(container.state().clone())
-                }
-                ResourceKind::Asset => {
-                    let asset = resource
-                        .rid()
-                        .with(|rid| graph.find_asset_by_id(rid).unwrap());
-                    EditorKind::Asset(asset)
-                }
-            },
-
-            _ => {
-                let mut kinds = selected
-                    .iter()
-                    .map(|resource| resource.kind())
-                    .collect::<Vec<_>>();
-                kinds.sort_by(|a, b| sort_resource_kind(a, b));
-                kinds.dedup();
-
-                match kinds[..] {
-                    [] => panic!("invalid state"),
-                    [kind] => match kind {
-                        ResourceKind::Container => {
-                            let containers = {
-                                let selection = selected.clone();
-                                Signal::derive(move || {
-                                    selection
-                                        .iter()
-                                        .map(|resource| resource.rid().get_untracked())
-                                        .collect()
-                                })
-                            };
-
-                            EditorKind::ContainerBulk(containers)
-                        }
-                        ResourceKind::Asset => {
-                            let assets = {
-                                let selection = selected.clone();
-                                Signal::derive(move || {
-                                    selection
-                                        .iter()
-                                        .map(|resource| resource.rid().get_untracked())
-                                        .collect()
-                                })
-                            };
-
-                            EditorKind::AssetBulk(assets)
-                        }
-                    },
-                    _ => EditorKind::MixedBulk(selection),
-                }
+            match kinds[..] {
+                [] => panic!("invalid state"),
+                [kind] => match kind {
+                    ResourceKind::Container => EditorKind::ContainerBulk,
+                    ResourceKind::Asset => EditorKind::AssetBulk,
+                },
+                _ => EditorKind::MixedBulk,
             }
-        })
+        }
     })
 }
 

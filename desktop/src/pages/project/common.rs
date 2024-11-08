@@ -1,4 +1,4 @@
-use super::state::workspace_graph::ResourceSelection;
+use super::state::workspace_graph;
 use crate::pages::project::state;
 use leptos::{ev::MouseEvent, *};
 use syre_core::types::ResourceId;
@@ -7,26 +7,29 @@ use syre_core::types::ResourceId;
 /// because file system transfer action may take significant time.
 pub const FS_RESOURCE_ACTION_NOTIFY_THRESHOLD: u64 = 5_000_000;
 
+/// # Arguments
+/// + `select_multiple`: Should multiple resources be selected.
+/// Usually indicated by the `shift` key being held.
 pub fn interpret_resource_selection_action(
-    resource: &ResourceSelection,
-    selection: &Vec<ResourceSelection>,
-    shift_key: bool,
+    rid: &ResourceId,
+    selected_resources: &Vec<workspace_graph::Resource>,
+    select_multiple: bool,
 ) -> SelectionAction {
-    if shift_key {
-        if resource.selected().get_untracked() {
+    if select_multiple {
+        if selected_resources
+            .iter()
+            .find(|resource| resource.rid().with(|resource| resource == rid))
+            .is_some()
+        {
             SelectionAction::Unselect
         } else {
             SelectionAction::Select
         }
     } else {
-        let selected = selection.iter().filter(|resource| resource.selected().get_untracked()).collect::<Vec<_>>();
-
-        let is_only_selected = if let [s_resource] = &selected[..] {
-            resource.rid().with_untracked(|resource_id| {
-                s_resource.rid().with_untracked(|selected_id| {
-                    resource_id == selected_id
-                })
-            })
+        let is_only_selected = if let [resource] = &selected_resources[..] {
+            resource
+                .rid()
+                .with_untracked(|selected_id| rid == selected_id)
         } else {
             false
         };

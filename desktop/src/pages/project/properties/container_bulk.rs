@@ -52,7 +52,7 @@ mod state {
             states
                 .iter()
                 .map(|state| {
-                    state.properties().with(|properties| {
+                    state.properties().with_untracked(|properties| {
                         let db::state::DataResource::Ok(properties) = properties else {
                             panic!("invalid state");
                         };

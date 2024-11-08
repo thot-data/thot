@@ -232,24 +232,14 @@ fn ContainerLayerTitleOk(
         }
     };
 
-    let selected = workspace_graph_state
-        .selection()
-        .with_untracked(|selection| {
-            selection
-                .iter()
-                .find(|resource| {
-                    resource.rid().with_untracked(|resource_id| {
-                        container.properties().with_untracked(|properties| {
-                            let properties = properties.as_ref().unwrap();
-                            properties
-                                .rid()
-                                .with_untracked(|container_id| container_id == resource_id)
-                        })
-                    })
-                })
-                .cloned()
-                .unwrap()
-        });
+    let selected = container.properties().with_untracked(|properties| {
+        properties
+            .as_ref()
+            .unwrap()
+            .rid()
+            .with_untracked(|rid| workspace_graph_state.selection_resources().get(rid))
+            .unwrap()
+    });
 
     let container_visibility = workspace_graph_state
         .container_visibility_get(&container)
@@ -291,27 +281,33 @@ fn ContainerLayerTitleOk(
     };
 
     let click = {
-        let selected = selected.clone();
-        let properties = properties.clone();
+        let rid = container
+            .properties()
+            .with_untracked(|properties| properties.as_ref().unwrap().rid().read_only());
+        let selection_resources = workspace_graph_state.selection_resources().clone();
         move |e: &MouseEvent| {
             if e.button() != types::MouseButton::Primary {
                 return;
             }
             e.stop_propagation();
 
-            properties().rid().with_untracked(|rid| {
-                let action = workspace_graph_state
-                    .selection()
-                    .with_untracked(|selection| {
-                        interpret_resource_selection_action(&selected, selection, e.shift_key())
-                    });
-                match action {
-                    SelectionAction::Unselect => selected.selected().set(false),
-                    SelectionAction::Select => selected.selected().set(true),
-                    SelectionAction::SelectOnly => workspace_graph_state.select_only(rid),
-                    SelectionAction::Clear => workspace_graph_state.select_clear(),
-                }
+            let action = rid.with_untracked(|rid| {
+                selection_resources.selected().with_untracked(|selected| {
+                    interpret_resource_selection_action(rid, selected, e.shift_key())
+                })
             });
+            match action {
+                SelectionAction::Unselect => {
+                    rid.with_untracked(|rid| selection_resources.set(rid, false).unwrap())
+                }
+                SelectionAction::Select => {
+                    rid.with_untracked(|rid| selection_resources.set(rid, true).unwrap())
+                }
+                SelectionAction::SelectOnly => {
+                    rid.with_untracked(|rid| selection_resources.select_only(rid).unwrap())
+                }
+                SelectionAction::Clear => selection_resources.clear(),
+            }
         }
     };
 
@@ -425,7 +421,7 @@ fn ContainerLayerTitleOk(
             prop:title=tooltip
             style:padding-left=move || { depth_to_padding(depth) }
             class="flex gap-1 cursor-pointer border-y border-transparent hover:border-secondary-400"
-            class=(["bg-primary-200", "dark:bg-secondary-900"], selected.selected().read_only())
+            class=(["bg-primary-200", "dark:bg-secondary-900"], selected)
         >
             <div class="inline-flex gap-1">
                 <span>
@@ -514,7 +510,7 @@ fn AssetsLayerOk(assets: ReadSignal<Vec<state::Asset>>, depth: usize) -> impl In
         <div class="group/assets">
             <Show
                 when=move || assets.with(|assets| !assets.is_empty())
-                fallback=move || view! { <NoData depth /> }
+                fallback=move || ().into_view()
             >
                 <div style:padding-left=move || { depth_to_padding(depth + 1) } class="flex">
                     <div class="inline-flex gap-1">
@@ -540,11 +536,6 @@ fn AssetsLayerOk(assets: ReadSignal<Vec<state::Asset>>, depth: usize) -> impl In
 }
 
 #[component]
-fn NoData(depth: usize) -> impl IntoView {
-    view! { <div style:padding-left=move || { depth_to_padding(depth + 2) }>"(no data)"</div> }
-}
-
-#[component]
 fn AssetLayer(asset: state::Asset, depth: usize) -> impl IntoView {
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
     let context_menu = expect_context::<ContextMenuAsset>();
@@ -552,44 +543,36 @@ fn AssetLayer(asset: state::Asset, depth: usize) -> impl IntoView {
 
     let title = asset_title_closure(&asset);
 
-    let selected = workspace_graph_state
-        .selection()
-        .with_untracked(|selected| {
-            selected
-                .iter()
-                .find(|resource| {
-                    resource.rid().with_untracked(|resource_id| {
-                        asset
-                            .rid()
-                            .with_untracked(|asset_id| asset_id == resource_id)
-                    })
-                })
-                .cloned()
-                .unwrap()
-        });
+    let selected = asset
+        .rid()
+        .with_untracked(|rid| workspace_graph_state.selection_resources().get(rid))
+        .unwrap();
 
     let mousedown = {
         let rid = asset.rid().read_only();
-        let selected = selected.clone();
-        let workspace_graph_state = workspace_graph_state.clone();
+        let selection_resources = workspace_graph_state.selection_resources().clone();
         move |e: MouseEvent| {
             if e.button() != types::MouseButton::Primary {
                 return;
             }
             e.stop_propagation();
 
-            let action = workspace_graph_state
-                .selection()
-                .with_untracked(|selection| {
-                    interpret_resource_selection_action(&selected, selection, e.shift_key())
-                });
+            let action = rid.with_untracked(|rid| {
+                selection_resources.selected().with_untracked(|selected| {
+                    interpret_resource_selection_action(rid, selected, e.shift_key())
+                })
+            });
             match action {
-                SelectionAction::Unselect => selected.selected().set(false),
-                SelectionAction::Select => selected.selected().set(true),
-                SelectionAction::SelectOnly => {
-                    rid.with_untracked(|rid| workspace_graph_state.select_only(rid))
+                SelectionAction::Unselect => {
+                    rid.with_untracked(|rid| selection_resources.set(rid, false).unwrap())
                 }
-                SelectionAction::Clear => workspace_graph_state.select_clear(),
+                SelectionAction::Select => {
+                    rid.with_untracked(|rid| selection_resources.set(rid, true).unwrap())
+                }
+                SelectionAction::SelectOnly => {
+                    rid.with_untracked(|rid| selection_resources.select_only(rid).unwrap())
+                }
+                SelectionAction::Clear => selection_resources.clear(),
             }
         }
     };
@@ -628,7 +611,7 @@ fn AssetLayer(asset: state::Asset, depth: usize) -> impl IntoView {
             on:contextmenu=contextmenu
             title=asset_title_closure(&asset)
             style:padding-left=move || { depth_to_padding(depth + 2) }
-            class=(["bg-primary-200", "dark:bg-secondary-900"], selected.selected().read_only())
+            class=(["bg-primary-200", "dark:bg-secondary-900"], selected)
             class="cursor-pointer border-y border-transparent hover:border-secondary-400"
         >
             <div
