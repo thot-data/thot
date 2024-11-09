@@ -16,7 +16,7 @@ use leptos::{
 };
 use leptos_icons::*;
 use serde::Serialize;
-use std::{cmp, io, num::NonZeroUsize, path::PathBuf, rc::Rc};
+use std::{cmp, fmt::Display, io, num::NonZeroUsize, path::PathBuf, rc::Rc};
 use syre_core::{project::AnalysisAssociation, types::ResourceId};
 use syre_desktop_lib as lib;
 use syre_local as local;
@@ -350,13 +350,14 @@ fn CanvasView(
         set_container_preview_height(common::clamp(height, 0, MAX_CONTAINER_HEIGHT));
     });
 
-    let (vb_x, set_vb_x) = create_signal(0 as isize);
-    let (vb_y, set_vb_y) = create_signal(0 as isize);
-    let (vb_width, set_vb_width) = create_signal(VB_BASE);
-    let (vb_height, set_vb_height) = create_signal(VB_BASE);
+    let vb_dimensions = ViewboxState::default();
     let (pan_drag, set_pan_drag) = create_signal(None);
     let (was_dragged, set_was_dragged) = create_signal(false);
-    let vb_scale = move || vb_width.with(|width| VB_BASE as f64 / *width as f64);
+    let vb_scale = move || {
+        vb_dimensions
+            .width
+            .with(|width| VB_BASE as f64 / *width as f64)
+    };
 
     let mousedown = move |e: MouseEvent| {
         if e.button() == types::MouseButton::Primary {
@@ -389,25 +390,25 @@ fn CanvasView(
                     set_was_dragged(true);
                 }
 
-                let x = vb_x() - (dx as f64 / vb_scale()) as isize;
-                let y = vb_y() - (dy as f64 / vb_scale()) as isize;
+                let x = vb_dimensions.x.get() - (dx as f64 / vb_scale()) as isize;
+                let y = vb_dimensions.y.get() - (dy as f64 / vb_scale()) as isize;
                 let x_max = (graph.root().subtree_width().get().get()
                     * (CONTAINER_WIDTH + PADDING_X_SIBLING)) as isize
-                    - vb_width() as isize / 2;
+                    - vb_dimensions.width.get() as isize / 2;
                 let y_max = cmp::max(
                     (graph.root().subtree_height().get().get()
                         * (MAX_CONTAINER_HEIGHT + PADDING_Y_CHILDREN)) as isize
-                        - vb_height() as isize / 2,
+                        - vb_dimensions.height.get() as isize / 2,
                     0,
                 );
-                set_vb_x(common::clamp(
+                vb_dimensions.x.set(common::clamp(
                     x,
-                    -TryInto::<isize>::try_into(vb_width() / 2).unwrap(),
+                    -TryInto::<isize>::try_into(vb_dimensions.width.get() / 2).unwrap(),
                     x_max.try_into().unwrap(),
                 ));
-                set_vb_y(common::clamp(
+                vb_dimensions.y.set(common::clamp(
                     y,
-                    -TryInto::<isize>::try_into(vb_height() / 2).unwrap(),
+                    -TryInto::<isize>::try_into(vb_dimensions.height.get() / 2).unwrap(),
                     y_max.try_into().unwrap(),
                 ));
                 set_pan_drag(Some((e.client_x(), e.client_y())));
@@ -426,39 +427,53 @@ fn CanvasView(
         let graph = graph.clone();
         move |e: WheelEvent| {
             if e.ctrl_key() {
-                let (width, height) = calculate_canvas_size(e, vb_width(), vb_height());
-                set_vb_width(width);
-                set_vb_height(height);
+                let ViewboxDimensions {
+                    x,
+                    y,
+                    width,
+                    height,
+                } = calculate_canvas_viewbox_scaling(
+                    e,
+                    vb_dimensions.x.get_untracked(),
+                    vb_dimensions.y.get_untracked(),
+                    vb_dimensions.width.get_untracked(),
+                    vb_dimensions.height.get_untracked(),
+                );
+
+                vb_dimensions.x.set(x);
+                vb_dimensions.y.set(y);
+                vb_dimensions.width.set(width);
+                vb_dimensions.height.set(height);
             } else if e.shift_key() {
                 let (x, y) = calculate_canvas_position_from_wheel_event(
                     e.delta_y(),
                     e.delta_x(),
-                    vb_x(),
-                    vb_y(),
-                    vb_width(),
-                    vb_height(),
+                    vb_dimensions.x.get(),
+                    vb_dimensions.y.get(),
+                    vb_dimensions.width.get(),
+                    vb_dimensions.height.get(),
                     vb_scale(),
                     graph.root().subtree_width().get().get(),
                     graph.root().subtree_height().get().get(),
                 );
 
-                set_vb_x(x);
-                set_vb_y(y);
+                vb_dimensions.x.set(x);
+                vb_dimensions.y.set(y);
             } else {
                 let (x, y) = calculate_canvas_position_from_wheel_event(
                     e.delta_x(),
                     e.delta_y(),
-                    vb_x(),
-                    vb_y(),
-                    vb_width(),
-                    vb_height(),
+                    vb_dimensions.x.get(),
+                    vb_dimensions.y.get(),
+                    vb_dimensions.width.get(),
+                    vb_dimensions.height.get(),
                     vb_scale(),
                     graph.root().subtree_width().get().get(),
                     graph.root().subtree_height().get().get(),
                 );
 
-                set_vb_x(x);
-                set_vb_y(y);
+                vb_dimensions.x.set(x);
+                vb_dimensions.y.set(y);
             }
         }
     };
@@ -472,7 +487,13 @@ fn CanvasView(
                 on:mouseleave=mouseleave
                 on:wheel=wheel
                 viewBox=move || {
-                    format!("{} {} {} {}", vb_x.get(), vb_y.get(), vb_width.get(), vb_height.get())
+                    format!(
+                        "{} {} {} {}",
+                        vb_dimensions.x.get(),
+                        vb_dimensions.y.get(),
+                        vb_dimensions.width.get(),
+                        vb_dimensions.height.get(),
+                    )
                 }
                 class=("cursor-grabbing", move || pan_drag.with(|c| c.is_some()))
             >
@@ -1766,39 +1787,96 @@ fn ContainerErr(
     }
 }
 
+#[derive(Debug, Clone)]
+struct ViewboxState {
+    x: RwSignal<isize>,
+    y: RwSignal<isize>,
+    width: RwSignal<usize>,
+    height: RwSignal<usize>,
+}
+
+impl Default for ViewboxState {
+    fn default() -> Self {
+        Self {
+            x: create_rw_signal(0),
+            y: create_rw_signal(0),
+            width: create_rw_signal(VB_BASE),
+            height: create_rw_signal(VB_BASE),
+        }
+    }
+}
+
+impl Display for ViewboxState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} {} {}",
+            self.x.get_untracked(),
+            self.y.get_untracked(),
+            self.width.get_untracked(),
+            self.height.get_untracked()
+        )
+    }
+}
+
+struct ViewboxDimensions {
+    x: isize,
+    y: isize,
+    width: usize,
+    height: usize,
+}
+
 /// Calculate new canvas viewbox dimensions.
 ///
 /// # Arguments
 /// + `e`: Triggering event.
 /// + `width`: Viewbox width.
 /// + `height`: Viewbox height.
-///
-/// # Returns
-/// Viewbox (width, height).
-fn calculate_canvas_size(e: WheelEvent, width: usize, height: usize) -> (usize, usize) {
+fn calculate_canvas_viewbox_scaling(
+    e: WheelEvent,
+    x: isize,
+    y: isize,
+    width: usize,
+    height: usize,
+) -> ViewboxDimensions {
     let dy = e.delta_y();
     let scale = if dy < 0.0 {
         VB_SCALE_ENLARGE
     } else if dy > 0.0 {
         VB_SCALE_REDUCE
     } else {
-        return (width, height);
+        return ViewboxDimensions {
+            x,
+            y,
+            width,
+            height,
+        };
     };
 
-    let width = (width as f32 * scale).round() as usize;
-    let height = (height as f32 * scale).round() as usize;
-    let width = common::clamp(
-        width.try_into().unwrap(),
+    let width_new = (width as f32 * scale).round() as usize;
+    let height_new = (height as f32 * scale).round() as usize;
+    let width_new = common::clamp(
+        width_new.try_into().unwrap(),
         VB_WIDTH_MIN.try_into().unwrap(),
         VB_WIDTH_MAX.try_into().unwrap(),
     );
-    let height = common::clamp(
-        height.try_into().unwrap(),
+    let height_new = common::clamp(
+        height_new.try_into().unwrap(),
         VB_HEIGHT_MIN.try_into().unwrap(),
         VB_HEIGHT_MAX.try_into().unwrap(),
     );
 
-    (width, height)
+    let dw = width_new as isize - width as isize;
+    let dh = height_new as isize - height as isize;
+    let x_new = x - dw / 2;
+    let y_new = y - dh / 2;
+
+    ViewboxDimensions {
+        x: x_new,
+        y: y_new,
+        width: width_new,
+        height: height_new,
+    }
 }
 
 /// Calculates new canvase viewbox position.

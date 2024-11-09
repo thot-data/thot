@@ -252,11 +252,7 @@ pub fn ignore_file_of(path: impl AsRef<Path>) -> PathBuf {
 pub mod fs {
     //! Function that modify the file system.
     use crate::constants;
-    use std::{
-        ffi::OsString,
-        io,
-        path::{Path, PathBuf},
-    };
+    use std::{ffi::OsString, io, path::Path};
 
     const TEMPFILE_NAME_LEN: usize = 6;
 
@@ -279,29 +275,8 @@ pub mod fs {
         /// # Notes
         /// + No cleanup is performed for the directory.
         pub fn hidden_in(parent: impl AsRef<Path>) -> io::Result<Self> {
-            use std::os::windows::ffi::OsStrExt;
-            use windows_sys::{core::PCWSTR, Win32::Storage::FileSystem};
-
             let dir = Self::create_in(&parent)?;
-            let filename_win = dir
-                .path()
-                .as_os_str()
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect::<Vec<u16>>();
-
-            let res = unsafe {
-                FileSystem::SetFileAttributesW(
-                    filename_win.as_ptr(),
-                    FileSystem::FILE_ATTRIBUTE_HIDDEN,
-                )
-            };
-
-            if res == 0 {
-                Err(io::Error::last_os_error())
-            } else {
-                Ok(dir)
-            }
+            hide_folder(dir.path()).map(|_| dir)
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -343,8 +318,34 @@ pub mod fs {
     impl Drop for TempDir {
         fn drop(&mut self) {
             if let Err(err) = std::fs::remove_dir_all(self.path()) {
-                tracing::error!("could not remove temporary directory {:?}", self.path());
+                tracing::error!(
+                    "could not remove temporary directory {:?}: {err:?}",
+                    self.path()
+                );
             }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn hide_folder(path: impl AsRef<Path>) -> io::Result<()> {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem;
+
+        let filename_win = path
+            .as_ref()
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<u16>>();
+
+        let res = unsafe {
+            FileSystem::SetFileAttributesW(filename_win.as_ptr(), FileSystem::FILE_ATTRIBUTE_HIDDEN)
+        };
+
+        if res == 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
         }
     }
 }

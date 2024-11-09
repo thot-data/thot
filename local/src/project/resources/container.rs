@@ -54,8 +54,16 @@ impl Container {
         let assets_path = <Self as LocalResource<Vec<Asset>>>::path(self);
         let settings_path = <Self as LocalResource<ContainerSettings>>::path(self);
 
-        fs::create_dir_all(properties_path.parent().expect("invalid Container path"))
-            .map_err(error::Save::CreateDir)?;
+        let app_folder = properties_path.parent().expect("invalid Container path");
+        fs::create_dir_all(app_folder).map_err(error::Save::CreateDir)?;
+
+        #[cfg(target_os = "windows")]
+        {
+            if let Err(err) = common::fs::hide_folder(app_folder) {
+                tracing::error!("could not hide folder {app_folder:?}: {err:?}");
+            }
+        }
+
         let properties: StoredContainerProperties = self.container.clone().into();
 
         let save_properties = fs::write(
