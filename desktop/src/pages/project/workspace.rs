@@ -240,6 +240,7 @@ fn WorkspaceGraph(graph: db::state::Graph) -> impl IntoView {
     let workspace_graph_state = state::WorkspaceGraph::new(&graph);
     provide_context(graph.clone());
     provide_context(workspace_graph_state.clone());
+    provide_context(ViewboxState::default());
 
     let (drag_over_event, set_drag_over_event) =
         create_signal(tauri_sys::window::DragDropEvent::Leave);
@@ -470,6 +471,61 @@ pub enum WorkspaceResource {
 
     /// Asset canvas ui.
     Asset(ResourceId),
+}
+
+/// State of an `svg` `viewbox` atribute.
+///
+/// Used for [`Canvas`].
+#[derive(Debug, Clone)]
+pub struct ViewboxState {
+    x: RwSignal<isize>,
+    y: RwSignal<isize>,
+    width: RwSignal<usize>,
+    height: RwSignal<usize>,
+}
+
+impl ViewboxState {
+    pub fn x(&self) -> &RwSignal<isize> {
+        &self.x
+    }
+
+    pub fn y(&self) -> &RwSignal<isize> {
+        &self.y
+    }
+
+    pub fn width(&self) -> &RwSignal<usize> {
+        &self.width
+    }
+
+    pub fn height(&self) -> &RwSignal<usize> {
+        &self.height
+    }
+}
+
+impl Default for ViewboxState {
+    fn default() -> Self {
+        use super::canvas;
+
+        Self {
+            x: create_rw_signal(0),
+            y: create_rw_signal(0),
+            width: create_rw_signal(canvas::VB_BASE),
+            height: create_rw_signal(canvas::VB_BASE),
+        }
+    }
+}
+
+impl std::fmt::Display for ViewboxState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} {} {}",
+            self.x.get_untracked(),
+            self.y.get_untracked(),
+            self.width.get_untracked(),
+            self.height.get_untracked()
+        )
+    }
 }
 
 /// Get a resource from a location on screen.

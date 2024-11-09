@@ -58,10 +58,8 @@ impl Container {
         fs::create_dir_all(app_folder).map_err(error::Save::CreateDir)?;
 
         #[cfg(target_os = "windows")]
-        {
-            if let Err(err) = common::fs::hide_folder(app_folder) {
-                tracing::error!("could not hide folder {app_folder:?}: {err:?}");
-            }
+        if let Err(err) = common::fs::hide_folder(app_folder) {
+            tracing::error!("could not hide folder {app_folder:?}: {err:?}");
         }
 
         let properties: StoredContainerProperties = self.container.clone().into();

@@ -1,6 +1,7 @@
 use super::{
     common::{asset_title_closure, interpret_resource_selection_action, SelectionAction},
     state,
+    workspace::ViewboxState,
 };
 use crate::{
     commands, common,
@@ -16,7 +17,7 @@ use leptos::{
 };
 use leptos_icons::*;
 use serde::Serialize;
-use std::{cmp, fmt::Display, io, num::NonZeroUsize, path::PathBuf, rc::Rc};
+use std::{cmp, io, num::NonZeroUsize, path::PathBuf, rc::Rc};
 use syre_core::{project::AnalysisAssociation, types::ResourceId};
 use syre_desktop_lib as lib;
 use syre_local as local;
@@ -35,7 +36,7 @@ const TOGGLE_VIEW_INDICATOR_RADIUS: usize = 3;
 const ICON_SCALE: f64 = 0.9;
 const VB_SCALE_ENLARGE: f32 = 0.9; // zoom in should reduce viewport.
 const VB_SCALE_REDUCE: f32 = 1.1;
-const VB_BASE: usize = 1000;
+pub const VB_BASE: usize = 1000;
 const VB_WIDTH_MIN: usize = 500;
 const VB_WIDTH_MAX: usize = 10_000;
 const VB_HEIGHT_MIN: usize = 500;
@@ -311,6 +312,7 @@ fn CanvasView(
     let graph = expect_context::<state::Graph>();
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
     let workspace_state = expect_context::<state::Workspace>();
+    let viewbox = expect_context::<ViewboxState>();
 
     let portal_ref = create_node_ref();
     let (container_preview_height, set_container_preview_height) = create_signal(0);
@@ -350,13 +352,11 @@ fn CanvasView(
         set_container_preview_height(common::clamp(height, 0, MAX_CONTAINER_HEIGHT));
     });
 
-    let vb_dimensions = ViewboxState::default();
     let (pan_drag, set_pan_drag) = create_signal(None);
     let (was_dragged, set_was_dragged) = create_signal(false);
-    let vb_scale = move || {
-        vb_dimensions
-            .width
-            .with(|width| VB_BASE as f64 / *width as f64)
+    let vb_scale = {
+        let width = viewbox.width().read_only();
+        move || width.with(|width| VB_BASE as f64 / *width as f64)
     };
 
     let mousedown = move |e: MouseEvent| {
@@ -378,6 +378,7 @@ fn CanvasView(
 
     let mousemove = {
         let graph = graph.clone();
+        let viewbox = viewbox.clone();
         move |e: MouseEvent| {
             if pan_drag.with(|c| c.is_some()) {
                 assert_eq!(e.button(), types::MouseButton::Primary);
@@ -390,25 +391,25 @@ fn CanvasView(
                     set_was_dragged(true);
                 }
 
-                let x = vb_dimensions.x.get() - (dx as f64 / vb_scale()) as isize;
-                let y = vb_dimensions.y.get() - (dy as f64 / vb_scale()) as isize;
+                let x = viewbox.x().get() - (dx as f64 / vb_scale()) as isize;
+                let y = viewbox.y().get() - (dy as f64 / vb_scale()) as isize;
                 let x_max = (graph.root().subtree_width().get().get()
                     * (CONTAINER_WIDTH + PADDING_X_SIBLING)) as isize
-                    - vb_dimensions.width.get() as isize / 2;
+                    - viewbox.width().get() as isize / 2;
                 let y_max = cmp::max(
                     (graph.root().subtree_height().get().get()
                         * (MAX_CONTAINER_HEIGHT + PADDING_Y_CHILDREN)) as isize
-                        - vb_dimensions.height.get() as isize / 2,
+                        - viewbox.height().get() as isize / 2,
                     0,
                 );
-                vb_dimensions.x.set(common::clamp(
+                viewbox.x().set(common::clamp(
                     x,
-                    -TryInto::<isize>::try_into(vb_dimensions.width.get() / 2).unwrap(),
+                    -TryInto::<isize>::try_into(viewbox.width().get() / 2).unwrap(),
                     x_max.try_into().unwrap(),
                 ));
-                vb_dimensions.y.set(common::clamp(
+                viewbox.y().set(common::clamp(
                     y,
-                    -TryInto::<isize>::try_into(vb_dimensions.height.get() / 2).unwrap(),
+                    -TryInto::<isize>::try_into(viewbox.height().get() / 2).unwrap(),
                     y_max.try_into().unwrap(),
                 ));
                 set_pan_drag(Some((e.client_x(), e.client_y())));
@@ -425,6 +426,7 @@ fn CanvasView(
 
     let wheel = {
         let graph = graph.clone();
+        let viewbox = viewbox.clone();
         move |e: WheelEvent| {
             if e.ctrl_key() {
                 let ViewboxDimensions {
@@ -434,46 +436,46 @@ fn CanvasView(
                     height,
                 } = calculate_canvas_viewbox_scaling(
                     e,
-                    vb_dimensions.x.get_untracked(),
-                    vb_dimensions.y.get_untracked(),
-                    vb_dimensions.width.get_untracked(),
-                    vb_dimensions.height.get_untracked(),
+                    viewbox.x().get_untracked(),
+                    viewbox.y().get_untracked(),
+                    viewbox.width().get_untracked(),
+                    viewbox.height().get_untracked(),
                 );
 
-                vb_dimensions.x.set(x);
-                vb_dimensions.y.set(y);
-                vb_dimensions.width.set(width);
-                vb_dimensions.height.set(height);
+                viewbox.x().set(x);
+                viewbox.y().set(y);
+                viewbox.width().set(width);
+                viewbox.height().set(height);
             } else if e.shift_key() {
                 let (x, y) = calculate_canvas_position_from_wheel_event(
                     e.delta_y(),
                     e.delta_x(),
-                    vb_dimensions.x.get(),
-                    vb_dimensions.y.get(),
-                    vb_dimensions.width.get(),
-                    vb_dimensions.height.get(),
+                    viewbox.x().get(),
+                    viewbox.y().get(),
+                    viewbox.width().get(),
+                    viewbox.height().get(),
                     vb_scale(),
                     graph.root().subtree_width().get().get(),
                     graph.root().subtree_height().get().get(),
                 );
 
-                vb_dimensions.x.set(x);
-                vb_dimensions.y.set(y);
+                viewbox.x().set(x);
+                viewbox.y().set(y);
             } else {
                 let (x, y) = calculate_canvas_position_from_wheel_event(
                     e.delta_x(),
                     e.delta_y(),
-                    vb_dimensions.x.get(),
-                    vb_dimensions.y.get(),
-                    vb_dimensions.width.get(),
-                    vb_dimensions.height.get(),
+                    viewbox.x().get(),
+                    viewbox.y().get(),
+                    viewbox.width().get(),
+                    viewbox.height().get(),
                     vb_scale(),
                     graph.root().subtree_width().get().get(),
                     graph.root().subtree_height().get().get(),
                 );
 
-                vb_dimensions.x.set(x);
-                vb_dimensions.y.set(y);
+                viewbox.x().set(x);
+                viewbox.y().set(y);
             }
         }
     };
@@ -489,10 +491,10 @@ fn CanvasView(
                 viewBox=move || {
                     format!(
                         "{} {} {} {}",
-                        vb_dimensions.x.get(),
-                        vb_dimensions.y.get(),
-                        vb_dimensions.width.get(),
-                        vb_dimensions.height.get(),
+                        viewbox.x().get(),
+                        viewbox.y().get(),
+                        viewbox.width().get(),
+                        viewbox.height().get(),
                     )
                 }
                 class=("cursor-grabbing", move || pan_drag.with(|c| c.is_some()))
@@ -1784,38 +1786,6 @@ fn ContainerErr(
                 </div>
             </div>
         </div>
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ViewboxState {
-    x: RwSignal<isize>,
-    y: RwSignal<isize>,
-    width: RwSignal<usize>,
-    height: RwSignal<usize>,
-}
-
-impl Default for ViewboxState {
-    fn default() -> Self {
-        Self {
-            x: create_rw_signal(0),
-            y: create_rw_signal(0),
-            width: create_rw_signal(VB_BASE),
-            height: create_rw_signal(VB_BASE),
-        }
-    }
-}
-
-impl Display for ViewboxState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} {} {} {}",
-            self.x.get_untracked(),
-            self.y.get_untracked(),
-            self.width.get_untracked(),
-            self.height.get_untracked()
-        )
     }
 }
 

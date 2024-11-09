@@ -1,6 +1,6 @@
 use super::{
     common::{asset_title_closure, interpret_resource_selection_action, SelectionAction},
-    state,
+    state, workspace::ViewboxState,
 };
 use crate::{
     commands, common,
@@ -216,6 +216,8 @@ fn ContainerLayerTitleOk(
     let context_menu = expect_context::<ContextMenuContainerOk>();
     let context_menu_active_container =
         expect_context::<RwSignal<Option<ContextMenuActiveContainer>>>();
+    let viewbox = expect_context::<ViewboxState>();
+
     let (click_event, set_click_event) = create_signal::<Option<MouseEvent>>(None);
     let click_event = leptos_use::signal_debounced(click_event, CLICK_DEBOUNCE);
 
@@ -321,64 +323,68 @@ fn ContainerLayerTitleOk(
         });
 
         move |e: &MouseEvent| {
-            if e.button() == types::MouseButton::Primary {
-                e.stop_propagation();
-                let window = web_sys::window().unwrap();
-                let document = window.document().unwrap();
-                let canvas = document.query_selector("#canvas > svg").unwrap().unwrap();
-                let node = document
-                    .query_selector(&format!(
-                        "[data-resource=\"container\"][data-rid=\"{}\"]",
-                        rid.get_untracked()
-                    ))
-                    .unwrap()
-                    .unwrap();
-
-                let object = node.closest("foreignObject").unwrap().unwrap();
-                let object_x = object.get_attribute("x").unwrap().parse::<isize>().unwrap();
-
-                let container = node.closest("svg").unwrap().unwrap();
-                let mut x = container
-                    .get_attribute("x")
-                    .unwrap()
-                    .parse::<isize>()
-                    .unwrap();
-                let mut y = container
-                    .get_attribute("y")
-                    .unwrap()
-                    .parse::<isize>()
-                    .unwrap();
-
-                let mut current_container = container;
-                while let Some(parent) = current_container.parent_element() {
-                    let Some(container) = parent.closest("svg").unwrap() else {
-                        break;
-                    };
-                    let Some(container_x) = container.get_attribute("x") else {
-                        break;
-                    };
-                    let Some(container_y) = container.get_attribute("y") else {
-                        break;
-                    };
-
-                    x += container_x.parse::<isize>().unwrap();
-                    y += container_y.parse::<isize>().unwrap();
-                    current_container = container;
-                }
-
-                let viewbox = canvas.get_attribute("viewBox").unwrap();
-                let [_x0, _y0, width, height] = viewbox.split(" ").collect::<Vec<_>>()[..] else {
-                    panic!("invalid value");
-                };
-                let width = width.parse::<usize>().unwrap();
-                let height = height.parse::<usize>().unwrap();
-
-                let x0 = x + object_x - width as isize / 2;
-                let y0 = y - height as isize / 2;
-                canvas
-                    .set_attribute("viewBox", &format!("{x0} {y0} {width} {height}"))
-                    .unwrap();
+            if e.button() != types::MouseButton::Primary {
+                return;
             }
+            e.stop_propagation();
+
+            let window = web_sys::window().unwrap();
+            let document = window.document().unwrap();
+            let canvas = document.query_selector("#canvas > svg").unwrap().unwrap();
+            let node = document
+                .query_selector(&format!(
+                    "[data-resource=\"container\"][data-rid=\"{}\"]",
+                    rid.get_untracked()
+                ))
+                .unwrap()
+                .unwrap();
+
+            let object = node.closest("foreignObject").unwrap().unwrap();
+            let object_x = object.get_attribute("x").unwrap().parse::<isize>().unwrap();
+
+            let container = node.closest("svg").unwrap().unwrap();
+            let mut x = container
+                .get_attribute("x")
+                .unwrap()
+                .parse::<isize>()
+                .unwrap();
+            let mut y = container
+                .get_attribute("y")
+                .unwrap()
+                .parse::<isize>()
+                .unwrap();
+
+            let mut current_container = container;
+            while let Some(parent) = current_container.parent_element() {
+                let Some(container) = parent.closest("svg").unwrap() else {
+                    break;
+                };
+                let Some(container_x) = container.get_attribute("x") else {
+                    break;
+                };
+                let Some(container_y) = container.get_attribute("y") else {
+                    break;
+                };
+
+                x += container_x.parse::<isize>().unwrap();
+                y += container_y.parse::<isize>().unwrap();
+                current_container = container;
+            }
+
+            // let viewbox = canvas.get_attribute("viewBox").unwrap();
+            // let [_x0, _y0, width, height] = viewbox.split(" ").collect::<Vec<_>>()[..] else {
+            //     panic!("invalid value");
+            // };
+            // let width = width.parse::<usize>().unwrap();
+            // let height = height.parse::<usize>().unwrap();
+
+            let x0 = x + object_x - viewbox.width().with_untracked(|width| width  / 2)as isize;
+            let y0 = y - viewbox.height().with_untracked(|height| height / 2)as isize ;
+            viewbox.x().set(x0);
+            viewbox.y().set(y0);
+            // canvas
+            //     .set_attribute("viewBox", &format!("{x0} {y0} {width} {height}"))
+            //     .unwrap();
         }
     };
 
