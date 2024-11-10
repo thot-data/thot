@@ -26,9 +26,13 @@ pub mod kind {
             }
         };
 
-        create_effect(move |_| {
-            oninput(processed_value());
-        });
+        let _ = watch(
+            processed_value,
+            move |processed_value, _, _| {
+                oninput(processed_value.clone());
+            },
+            false,
+        );
 
         view! { <InputText value=input_value oninput=oninput_text debounce class /> }
     }
@@ -62,9 +66,13 @@ pub mod description {
             }
         };
 
-        create_effect(move |_| {
-            oninput(processed_value());
-        });
+        let _ = watch(
+            processed_value,
+            move |processed_value, _, _| {
+                oninput(processed_value.clone());
+            },
+            false,
+        );
 
         view! { <TextArea value=Signal::derive(input_value) oninput=oninput_text debounce class /> }
     }
@@ -109,9 +117,13 @@ pub mod tags {
             }
         };
 
-        create_effect(move |_| {
-            oninput(processed_value());
-        });
+        let _ = watch(
+            processed_value,
+            move |processed_value, _, _| {
+                oninput(processed_value.clone());
+            },
+            false,
+        );
 
         view! { <InputText value=input_value oninput=oninput_text debounce class /> }
     }
@@ -465,26 +477,29 @@ pub mod metadata {
         }));
         let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
 
-        create_effect(move |_| {
-            let val = value.with(|value| {
+        let _ = watch(
+            value,
+            move |value, _, _| {
                 let Value::Array(value) = value else {
                     panic!("invalid value kind");
                 };
 
-                value
+                let val = value
                     .iter()
                     .map(|value| value.to_string())
                     .collect::<Vec<_>>()
-                    .join("\n")
-            });
+                    .join("\n");
 
-            set_input_value(val);
-        });
+                set_input_value(val);
+            },
+            false,
+        );
 
-        create_effect(move |_| {
-            set_error(None);
-            let val = input_value.with(|value| {
-                value
+        let _ = watch(
+            input_value,
+            move |input_value, _, _| {
+                set_error(None);
+                let val = input_value
                     .split([',', '\n', ';'])
                     .filter_map(|elm| {
                         let value = elm.trim();
@@ -494,19 +509,20 @@ pub mod metadata {
                             Some(serde_json::from_str::<Value>(elm))
                         }
                     })
-                    .collect::<serde_json::Result<Vec<_>>>()
-            });
+                    .collect::<serde_json::Result<Vec<_>>>();
 
-            match val {
-                Ok(val) => {
-                    let val = Value::Array(val);
-                    if value.with_untracked(|value| *value != val) {
-                        set_value(val);
+                match val {
+                    Ok(val) => {
+                        let val = Value::Array(val);
+                        if value.with_untracked(|value| *value != val) {
+                            set_value(val);
+                        }
                     }
+                    Err(err) => set_error(Some(err)),
                 }
-                Err(err) => set_error(Some(err)),
-            }
-        });
+            },
+            false,
+        );
 
         view! {
             <textarea
@@ -1576,9 +1592,10 @@ pub mod bulk {
                 })
             };
 
-            create_effect(move |_| {
-                let val = input_value.with(|value| {
-                    value
+            let _ = watch(
+                input_value,
+                move |value, _, _| {
+                    let val = value
                         .split([',', '\n', ';'])
                         .filter_map(|elm| {
                             let value = elm.trim();
@@ -1588,14 +1605,15 @@ pub mod bulk {
                                 Some(serde_json::from_str::<data::Value>(elm))
                             }
                         })
-                        .collect::<serde_json::Result<Vec<_>>>()
-                });
+                        .collect::<serde_json::Result<Vec<_>>>();
 
-                match val {
-                    Ok(val) => oninput(data::Value::Array(val)),
-                    Err(err) => set_error(Some(err)),
-                }
-            });
+                    match val {
+                        Ok(val) => oninput(data::Value::Array(val)),
+                        Err(err) => set_error(Some(err)),
+                    }
+                },
+                false,
+            );
 
             view! {
                 <textarea

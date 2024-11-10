@@ -388,46 +388,52 @@ mod name {
         let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
         let (error, set_error) = create_signal(false);
 
-        create_effect(move |_| {
-            value.with(|value| {
+        let _ = watch(
+            value,
+            move |value, _, _| {
                 set_input_value(value::State::set_from_state(value.clone()));
-            })
-        });
+            },
+            false,
+        );
 
-        create_effect({
-            let project = project.clone();
-            let graph = graph.clone();
-            let container = container.clone();
-            let messages = messages.write_only();
-            move |_| {
-                if input_value.with(|value| value.was_set_from_state()) {
-                    return;
-                }
-
-                set_error(false);
-                let name = input_value.with(|value| value.trim().to_string());
-                if name.is_empty() {
-                    set_error(true);
-                    return;
-                }
-
-                spawn_local({
-                    let project = project.rid().get_untracked();
-                    let node = container.with(|rid| graph.find_by_id(rid).unwrap());
-                    let path = graph.path(&node).unwrap();
-                    let messages = messages.clone();
-
-                    async move {
-                        if let Err(err) = rename_container(project, path, name).await {
-                            let mut msg =
-                                types::message::Builder::error("Could not save container.");
-                            msg.body(format!("{err:?}"));
-                            messages.update(|messages| messages.push(msg.build()));
-                        }
+        let _ = watch(
+            input_value,
+            {
+                let project = project.clone();
+                let graph = graph.clone();
+                let container = container.clone();
+                let messages = messages.write_only();
+                move |value, _, _| {
+                    if value.was_set_from_state() {
+                        return;
                     }
-                });
-            }
-        });
+
+                    set_error(false);
+                    let name = value.trim().to_string();
+                    if name.is_empty() {
+                        set_error(true);
+                        return;
+                    }
+
+                    spawn_local({
+                        let project = project.rid().get_untracked();
+                        let node = container.with(|rid| graph.find_by_id(rid).unwrap());
+                        let path = graph.path(&node).unwrap();
+                        let messages = messages.clone();
+
+                        async move {
+                            if let Err(err) = rename_container(project, path, name).await {
+                                let mut msg =
+                                    types::message::Builder::error("Could not save container.");
+                                msg.body(format!("{err:?}"));
+                                messages.update(|messages| messages.push(msg.build()));
+                            }
+                        }
+                    });
+                }
+            },
+            false,
+        );
 
         view! {
             <input
@@ -767,69 +773,77 @@ mod metadata {
         let (input_value, set_input_value) = create_signal(value.get_untracked());
         let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
 
-        create_effect(move |_| {
-            set_input_value(value());
-        });
+        let _ = watch(
+            value,
+            move |value, _, _| {
+                set_input_value(value.clone());
+            },
+            false,
+        );
 
-        create_effect({
-            let key = key.clone();
-            let project = project.clone();
-            let graph = graph.clone();
-            let container = container.clone();
-            let messages = messages.clone();
-            move |container_id| -> ResourceId {
-                let messages = messages.write_only();
-                if container.with(|rid| {
-                    if let Some(container_id) = container_id {
-                        *rid != container_id
-                    } else {
-                        false
-                    }
-                }) {
-                    return container.get();
-                }
-
-                let node = container.with(|rid| graph.find_by_id(rid).unwrap());
-                let path = graph.path(&node).unwrap();
-                let mut properties = node.properties().with_untracked(|properties| {
-                    let db::state::DataResource::Ok(properties) = properties else {
-                        panic!("invalid state");
-                    };
-
-                    properties.as_properties()
-                });
-
-                let value = input_value.with(|value| match value {
-                    Value::String(value) => Value::String(value.trim().to_string()),
-                    Value::Quantity { magnitude, unit } => Value::Quantity {
-                        magnitude: magnitude.clone(),
-                        unit: unit.trim().to_string(),
-                    },
-                    Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => {
-                        value.clone()
-                    }
-                });
-                properties.metadata.insert(key.clone(), value);
-
-                spawn_local({
-                    let project = project.rid().get_untracked();
-                    let messages = messages.clone();
-
-                    async move {
-                        if let Err(err) = update_properties(project, path, properties).await {
-                            tracing::error!(?err);
-                            let mut msg =
-                                types::message::Builder::error("Could not save container.");
-                            msg.body(format!("{err:?}"));
-                            messages.update(|messages| messages.push(msg.build()));
+        let _ = watch(
+            input_value,
+            {
+                let key = key.clone();
+                let project = project.clone();
+                let graph = graph.clone();
+                let container = container.clone();
+                let messages = messages.clone();
+                move |value, _, container_id| -> ResourceId {
+                    let messages = messages.write_only();
+                    if container.with_untracked(|rid| {
+                        if let Some(container_id) = container_id {
+                            *rid != container_id
+                        } else {
+                            false
                         }
+                    }) {
+                        return container.get();
                     }
-                });
 
-                // return the current id to track if the container changed
-                container.get()
-            }
-        });
+                    let node = container.with_untracked(|rid| graph.find_by_id(rid).unwrap());
+                    let path = graph.path(&node).unwrap();
+                    let mut properties = node.properties().with_untracked(|properties| {
+                        let db::state::DataResource::Ok(properties) = properties else {
+                            panic!("invalid state");
+                        };
+
+                        properties.as_properties()
+                    });
+
+                    let value = match value {
+                        Value::String(value) => Value::String(value.trim().to_string()),
+                        Value::Quantity { magnitude, unit } => Value::Quantity {
+                            magnitude: magnitude.clone(),
+                            unit: unit.trim().to_string(),
+                        },
+                        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => {
+                            value.clone()
+                        }
+                    };
+                    properties.metadata.insert(key.clone(), value);
+
+                    spawn_local({
+                        let project = project.rid().get_untracked();
+                        let messages = messages.clone();
+
+                        async move {
+                            if let Err(err) = update_properties(project, path, properties).await {
+                                tracing::error!(?err);
+                                let mut msg =
+                                    types::message::Builder::error("Could not save container.");
+                                msg.body(format!("{err:?}"));
+                                messages.update(|messages| messages.push(msg.build()));
+                            }
+                        }
+                    });
+
+                    // return the current id to track if the container changed
+                    container.get()
+                }
+            },
+            false,
+        );
 
         let remove_datum = {
             let project = project.clone();
@@ -1137,9 +1151,13 @@ mod analysis_associations {
             }
         });
 
-        create_effect(move |_| {
-            update_association.dispatch(value.get());
-        });
+        let _ = watch(
+            value,
+            move |value, _, _| {
+                update_association.dispatch(value.clone());
+            },
+            false,
+        );
 
         let title = {
             let association = association.clone();

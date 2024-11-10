@@ -474,58 +474,66 @@ mod metadata {
 
         // TODO: Handle errors with messages.
         // See https://github.com/leptos-rs/leptos/issues/2041
-        create_effect({
-            let project = project.clone();
-            let graph = graph.clone();
-            let asset = asset.clone();
-            let key = key.clone();
-            move |asset_id| -> ResourceId {
-                // let messages = messages.write_only();
-                if asset.rid().with_untracked(|rid| {
-                    if let Some(asset_id) = asset_id {
-                        *rid != asset_id
-                    } else {
-                        false
+        let _ = watch(
+            input_value,
+            {
+                let project = project.clone();
+                let graph = graph.clone();
+                let asset = asset.clone();
+                let key = key.clone();
+                move |value, _, asset_id| -> ResourceId {
+                    // let messages = messages.write_only();
+                    if asset.rid().with_untracked(|rid| {
+                        if let Some(asset_id) = asset_id {
+                            *rid != asset_id
+                        } else {
+                            false
+                        }
+                    }) {
+                        return asset.rid().get_untracked();
                     }
-                }) {
-                    return asset.rid().get_untracked();
+
+                    let value = match value {
+                        Value::String(value) => Value::String(value.trim().to_string()),
+                        Value::Quantity { magnitude, unit } => Value::Quantity {
+                            magnitude: magnitude.clone(),
+                            unit: unit.trim().to_string(),
+                        },
+                        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => {
+                            value.clone()
+                        }
+                    };
+                    let mut properties = asset.as_properties();
+                    properties.metadata.insert(key.clone(), value);
+
+                    spawn_local({
+                        let project = project.rid().get_untracked();
+                        let node = asset
+                            .rid()
+                            .with_untracked(|rid| graph.find_by_asset_id(rid).unwrap());
+                        let container_path = graph.path(&node).unwrap();
+                        let asset_path = asset.path().get_untracked();
+                        let messages = messages.clone();
+                        async move {
+                            if let Err(err) =
+                                update_properties(project, container_path, asset_path, properties)
+                                    .await
+                            {
+                                tracing::error!(?err);
+                                let mut msg =
+                                    types::message::Builder::error("Could not save asset");
+                                msg.body(format!("{err:?}"));
+                                messages.update(|messages| messages.push(msg.build()));
+                            }
+                        }
+                    });
+
+                    // return the current id to track if the asset changed
+                    asset.rid().get_untracked()
                 }
-
-                let value = input_value.with(|value| match value {
-                    Value::String(value) => Value::String(value.trim().to_string()),
-                    Value::Quantity { magnitude, unit } => Value::Quantity {
-                        magnitude: magnitude.clone(),
-                        unit: unit.trim().to_string(),
-                    },
-                    Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => {
-                        value.clone()
-                    }
-                });
-                let mut properties = asset.as_properties();
-                properties.metadata.insert(key.clone(), value);
-
-                let project = project.rid().get_untracked();
-                let node = asset
-                    .rid()
-                    .with_untracked(|rid| graph.find_by_asset_id(rid).unwrap());
-                let container_path = graph.path(&node).unwrap();
-                let asset_path = asset.path().get_untracked();
-                // let messages = messages.clone();
-                spawn_local(async move {
-                    if let Err(err) =
-                        update_properties(project, container_path, asset_path, properties).await
-                    {
-                        tracing::error!(?err);
-                        let mut msg = types::message::Builder::error("Could not save container");
-                        msg.body(format!("{err:?}"));
-                        // messages.update(|messages| messages.push(msg.build()));
-                    }
-                });
-
-                // return the current id to track if the container changed
-                asset.rid().get_untracked()
-            }
-        });
+            },
+            false,
+        );
 
         let remove_datum = Callback::new({
             let project = project.clone();
