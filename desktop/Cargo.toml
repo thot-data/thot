@@ -71,4 +71,6 @@ features = [
 	"ResizeObserverOptions",
 	"ResizeObserverSize",
 	"SvgElement",
+	"SvgGraphicsElement",
+	"SvgMatrix",
 ]

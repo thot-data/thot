@@ -1,6 +1,7 @@
 use super::{
     common::{asset_title_closure, interpret_resource_selection_action, SelectionAction},
-    state, workspace::ViewboxState,
+    state,
+    workspace::ViewboxState,
 };
 use crate::{
     commands, common,
@@ -330,10 +331,10 @@ fn ContainerLayerTitleOk(
 
             let window = web_sys::window().unwrap();
             let document = window.document().unwrap();
-            let canvas = document.query_selector("#canvas > svg").unwrap().unwrap();
             let node = document
                 .query_selector(&format!(
-                    "[data-resource=\"container\"][data-rid=\"{}\"]",
+                    "[data-resource=\"{}\"][data-rid=\"{}\"]",
+                    super::canvas::DATA_KEY_CONTAINER,
                     rid.get_untracked()
                 ))
                 .unwrap()
@@ -342,49 +343,41 @@ fn ContainerLayerTitleOk(
             let object = node.closest("foreignObject").unwrap().unwrap();
             let object_x = object.get_attribute("x").unwrap().parse::<isize>().unwrap();
 
-            let container = node.closest("svg").unwrap().unwrap();
-            let mut x = container
+            let wrapper = node.closest("svg").unwrap().unwrap();
+            let mut x = wrapper
                 .get_attribute("x")
                 .unwrap()
                 .parse::<isize>()
                 .unwrap();
-            let mut y = container
+            let mut y = wrapper
                 .get_attribute("y")
                 .unwrap()
                 .parse::<isize>()
                 .unwrap();
 
-            let mut current_container = container;
-            while let Some(parent) = current_container.parent_element() {
-                let Some(container) = parent.closest("svg").unwrap() else {
+            let mut current_wrapper = wrapper;
+            while let Some(parent) = current_wrapper.parent_element() {
+                let Some(wrapper) = parent.closest("svg").unwrap() else {
                     break;
                 };
-                let Some(container_x) = container.get_attribute("x") else {
+                let Some(wrapper_x) = wrapper.get_attribute("x") else {
                     break;
                 };
-                let Some(container_y) = container.get_attribute("y") else {
+                let Some(wrapper_y) = wrapper.get_attribute("y") else {
                     break;
                 };
 
-                x += container_x.parse::<isize>().unwrap();
-                y += container_y.parse::<isize>().unwrap();
-                current_container = container;
+                x += wrapper_x.parse::<isize>().unwrap();
+                y += wrapper_y.parse::<isize>().unwrap();
+                current_wrapper = wrapper;
             }
 
-            // let viewbox = canvas.get_attribute("viewBox").unwrap();
-            // let [_x0, _y0, width, height] = viewbox.split(" ").collect::<Vec<_>>()[..] else {
-            //     panic!("invalid value");
-            // };
-            // let width = width.parse::<usize>().unwrap();
-            // let height = height.parse::<usize>().unwrap();
-
-            let x0 = x + object_x - viewbox.width().with_untracked(|width| width  / 2)as isize;
-            let y0 = y - viewbox.height().with_untracked(|height| height / 2)as isize ;
-            viewbox.x().set(x0);
-            viewbox.y().set(y0);
-            // canvas
-            //     .set_attribute("viewBox", &format!("{x0} {y0} {width} {height}"))
-            //     .unwrap();
+            let x0 = x + object_x - viewbox.width().with_untracked(|width| width / 2) as isize;
+            let y0 = y - viewbox.height().with_untracked(|height| height / 2) as isize;
+            leptos::batch(|| {
+                viewbox.x().set(x0);
+                viewbox.y().set(y0);
+            });
         }
     };
 
@@ -441,22 +434,23 @@ fn ContainerLayerTitleOk(
                 <div>
                     {move || {
                         if num_children() > 0 {
+                            let visibility_icon = Signal::derive(move || {
+                                container_visibility
+                                    .with(|visible| {
+                                        if *visible {
+                                            components::icon::Eye
+                                        } else {
+                                            components::icon::EyeClosed
+                                        }
+                                    })
+                            });
                             view! {
                                 <button
                                     type="button"
                                     on:mousedown=toggle_container_visibility
                                     class="align-middle"
                                 >
-                                    {move || {
-                                        container_visibility
-                                            .with(|visible| {
-                                                if *visible {
-                                                    view! { <Icon icon=components::icon::Eye /> }
-                                                } else {
-                                                    view! { <Icon icon=components::icon::EyeClosed /> }
-                                                }
-                                            })
-                                    }}
+                                    <Icon icon=visibility_icon />
                                 </button>
                             }
                                 .into_view()

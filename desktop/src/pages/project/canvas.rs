@@ -23,6 +23,7 @@ use syre_desktop_lib as lib;
 use syre_local as local;
 use syre_local_database as db;
 use tauri_sys::{core::Channel, menu};
+use wasm_bindgen::JsCast;
 
 const CONTAINER_WIDTH: usize = 300;
 const MAX_CONTAINER_HEIGHT: usize = 400;
@@ -442,10 +443,12 @@ fn CanvasView(
                     viewbox.height().get_untracked(),
                 );
 
-                viewbox.x().set(x);
-                viewbox.y().set(y);
-                viewbox.width().set(width);
-                viewbox.height().set(height);
+                leptos::batch(|| {
+                    viewbox.x().set(x);
+                    viewbox.y().set(y);
+                    viewbox.width().set(width);
+                    viewbox.height().set(height);
+                });
             } else if e.shift_key() {
                 let (x, y) = calculate_canvas_position_from_wheel_event(
                     e.delta_y(),
@@ -459,8 +462,10 @@ fn CanvasView(
                     graph.root().subtree_height().get().get(),
                 );
 
-                viewbox.x().set(x);
-                viewbox.y().set(y);
+                leptos::batch(|| {
+                    viewbox.x().set(x);
+                    viewbox.y().set(y);
+                });
             } else {
                 let (x, y) = calculate_canvas_position_from_wheel_event(
                     e.delta_x(),
@@ -474,8 +479,10 @@ fn CanvasView(
                     graph.root().subtree_height().get().get(),
                 );
 
-                viewbox.x().set(x);
-                viewbox.y().set(y);
+                leptos::batch(|| {
+                    viewbox.x().set(x);
+                    viewbox.y().set(y);
+                });
             }
         }
     };
@@ -525,8 +532,10 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
     let display_state = expect_context::<display::State>();
     let container_preview_height = expect_context::<ContainerPreviewHeight>();
+    let viewbox = expect_context::<ViewboxState>();
     let portal_ref = expect_context::<PortalRef>();
     let create_child_ref = NodeRef::<html::Dialog>::new();
+    let wrapper_node = NodeRef::<svg::Svg>::new();
     let container_node = NodeRef::<html::Div>::new();
 
     fn child_key(child: &state::graph::Node, graph: &state::Graph) -> String {
@@ -648,8 +657,46 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
 
     let x_node = Signal::derive(move || (width.with(|width| (width - CONTAINER_WIDTH) / 2)));
 
+    let _ = watch(
+        container_visibility.read_only(),
+        {
+            let subtree_width = root.subtree_width();
+            move |visible, visible_prev, _| {
+                if let Some(visible_prev) = visible_prev {
+                    if visible == visible_prev {
+                        return;
+                    }
+                }
+                let Some(node) = wrapper_node.get() else {
+                    return;
+                };
+
+                let elm = node.dyn_ref::<web_sys::SvgGraphicsElement>().unwrap();
+                let transform = elm.get_ctm().unwrap();
+                let x0 = transform.e() as isize;
+                let vb_x0 = viewbox.x().get_untracked();
+                if *visible {
+                    if vb_x0 > x0 {
+                        let width = subtree_width.get_untracked().get();
+                        let shift = (width - 1) * (CONTAINER_WIDTH + PADDING_X_SIBLING);
+
+                        viewbox.x().set(vb_x0 + shift as isize);
+                    }
+                } else {
+                    if vb_x0 > x0 {
+                        let width = subtree_width.get_untracked().get();
+                        let shift = (width - 1) * (CONTAINER_WIDTH + PADDING_X_SIBLING);
+
+                        viewbox.x().set(vb_x0 - shift as isize);
+                    }
+                }
+            }
+        },
+        false,
+    );
+
     view! {
-        <svg width=width height=height x=x y=y>
+        <svg ref=wrapper_node width=width height=height x=x y=y>
             <GraphEdges x_node children_widths=display_data.children() container_visibility />
             <g class="group">
                 <foreignObject width=CONTAINER_WIDTH height=container_height x=x_node y=0>
@@ -1055,6 +1102,18 @@ fn ContainerOk(
         }
     };
 
+    let path = {
+        let graph = graph.clone();
+        let container = container.clone();
+        move || {
+            graph
+                .path(&container)
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        }
+    };
+
     let selection_resource = container
         .properties()
         .with_untracked(|properties| {
@@ -1183,6 +1242,7 @@ fn ContainerOk(
             class="h-full cursor-pointer rounded bg-white dark:bg-secondary-700"
             data-resource=DATA_KEY_CONTAINER
             data-rid=rid
+            data-path=path
         >
             // NB: inner div with node ref is used for resizing observer to obtain content height.
             <div ref=node_ref class="h-full flex flex-col">
@@ -1723,6 +1783,18 @@ fn ContainerErr(
     let context_menu_active_container =
         expect_context::<RwSignal<Option<ContextMenuActiveContainer>>>();
 
+    let path = {
+        let graph = graph.clone();
+        let container = container.clone();
+        move || {
+            graph
+                .path(&container)
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        }
+    };
+
     let show_details = create_rw_signal(false);
     let error = {
         let properties = container.properties().read_only();
@@ -1768,6 +1840,7 @@ fn ContainerErr(
             ref=node_ref
             class="h-full flex flex-col border-4 border-syre-red-600 rounded bg-white dark:bg-secondary-700"
             data-resource=DATA_KEY_CONTAINER
+            data-path=path
         >
             <div class="pb-2 text-center text-lg">
                 {move || container.name().with(|name| name.to_string_lossy().to_string())}
@@ -2250,7 +2323,7 @@ mod display {
 
         // TODO: Use trigger?
         /// Updates internal state when `children` changes.
-        update: Effect<()>,
+        _update: Effect<()>,
         reactive_owner: Owner,
     }
 
@@ -2265,7 +2338,6 @@ mod display {
             let state_children = children;
             let children = with_owner(reactive_owner, || create_rw_signal(vec![]));
 
-            let c_name = container.name();
             let update = with_owner(reactive_owner, || {
                 Effect::new(move |_| {
                     let (removed, added) = state_children.with(|state_children| {
@@ -2321,7 +2393,7 @@ mod display {
                 container,
                 visibility,
                 children,
-                update,
+                _update: update,
                 reactive_owner,
             }
         }
@@ -2370,7 +2442,7 @@ mod display {
 
         // TODO: Use trigger?
         /// Updates internal state when `children` changes.
-        update: Effect<()>,
+        _update: Effect<()>,
     }
 
     impl State {
@@ -2611,7 +2683,7 @@ mod display {
                 nodes,
                 root,
                 children: edges,
-                update,
+                _update: update,
             }
         }
 
