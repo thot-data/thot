@@ -1714,7 +1714,7 @@ fn AnalysisAssociation(association: state::AnalysisAssociation) -> impl IntoView
                 </div>
                 <div class="inline-flex gap-1">
                     <span>"(" {association.priority()} ")"</span>
-                    <span on:mousedown=autorun_toggle class="inline-flex">
+                    <span on:mousedown=autorun_toggle class="inline-flex items-center">
                         {move || {
                             if association.autorun().get() {
                                 view! { <Icon icon=icondata::BsStarFill /> }
@@ -1729,7 +1729,7 @@ fn AnalysisAssociation(association: state::AnalysisAssociation) -> impl IntoView
             <div>
                 <button
                     on:mousedown=remove_association
-                    class="aspect-square h-full rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-700"
+                    class="align-middle rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-800"
                 >
                     <Icon icon=components::icon::Remove />
                 </button>

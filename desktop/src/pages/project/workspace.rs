@@ -150,6 +150,7 @@ fn WorkspaceView(
 ) -> impl IntoView {
     assert!(project_data.properties().is_ok());
 
+    let analyze_node = NodeRef::<html::Div>::new();
     let project = state::Project::new(project_path, project_data);
     provide_context(user);
     provide_context(state::Workspace::new());
@@ -205,12 +206,12 @@ fn WorkspaceView(
         <div class="select-none flex flex-col h-full relative">
             <ProjectNav />
             <div class="border-b">
-                <ProjectBar />
+                <ProjectBar analyze_node />
             </div>
             {move || {
                 match graph.as_ref() {
                     db::state::FolderResource::Present(graph) => {
-                        view! { <WorkspaceGraph graph=graph.clone() /> }
+                        view! { <WorkspaceGraph graph=graph.clone() analyze_node /> }
                     }
                     db::state::FolderResource::Absent => view! { <NoGraph /> },
                 }
@@ -233,7 +234,7 @@ fn NoGraph() -> impl IntoView {
 }
 
 #[component]
-fn WorkspaceGraph(graph: db::state::Graph) -> impl IntoView {
+fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> impl IntoView {
     let project = expect_context::<state::Project>();
     let messages = expect_context::<types::Messages>();
     let graph = state::Graph::new(graph);
@@ -410,24 +411,40 @@ fn WorkspaceGraph(graph: db::state::Graph) -> impl IntoView {
     }
 
     view! {
-        <div class="grow flex relative overflow-hidden">
-            <Drawer
-                dock=drawer::Dock::East
-                absolute=true
-                class="min-w-28 max-w-[40%] bg-white dark:bg-secondary-800 w-1/6 border-r"
-            >
-                <LayersNav />
-            </Drawer>
-            <div class="grow">
-                <Canvas />
+        <div>
+            <div class="grow flex relative overflow-hidden">
+                <Drawer
+                    dock=drawer::Dock::East
+                    absolute=true
+                    class="min-w-28 max-w-[40%] bg-white dark:bg-secondary-800 w-1/6 border-r"
+                >
+                    <LayersNav />
+                </Drawer>
+                <div class="grow">
+                    <Canvas />
+                </div>
+                <Drawer
+                    dock=drawer::Dock::West
+                    absolute=true
+                    class="min-w-28 max-w-[40%] bg-white dark:bg-secondary-800 w-1/6 border-l"
+                >
+                    <PropertiesBar />
+                </Drawer>
             </div>
-            <Drawer
-                dock=drawer::Dock::West
-                absolute=true
-                class="min-w-28 max-w-[40%] bg-white dark:bg-secondary-800 w-1/6 border-l"
-            >
-                <PropertiesBar />
-            </Drawer>
+
+            {move || {
+                if let Some(analyze_node) = analyze_node.get() {
+                    let mount = (*analyze_node).clone();
+                    view! {
+                        <Portal mount>
+                            <analyze::Analyze />
+                        </Portal>
+                    }
+                        .into_view()
+                } else {
+                    ().into_view()
+                }
+            }}
         </div>
     }
 }
@@ -464,6 +481,123 @@ fn ProjectNav() -> impl IntoView {
                 </li>
             </ol>
         </nav>
+    }
+}
+
+mod analyze {
+    use super::state;
+    use crate::{components, types};
+    use leptos::{ev::MouseEvent, *};
+    use leptos_icons::*;
+    use std::path::PathBuf;
+    use syre_core::types::ResourceId;
+    use syre_desktop_lib as lib;
+
+    #[component]
+    pub fn Analyze() -> impl IntoView {
+        let project = expect_context::<state::Project>();
+        let messages = expect_context::<types::Messages>();
+
+        let action = create_action({
+            let project = project.rid().read_only();
+            move |_| async move {
+                match analyze(project.get_untracked(), "/").await {
+                    Ok(_) => {
+                        let msg = types::message::Builder::success("Analysis complete.");
+                        messages.update(|messages| messages.push(msg.build()));
+                    }
+                    Err(err) => {
+                        tracing::error!(?err);
+                        let mut msg =
+                            types::message::Builder::error("Could not complete analysis.");
+                        msg.body(format!("{err:?}"));
+                        messages.update(|messages| messages.push(msg.build()));
+                    }
+                }
+            }
+        });
+
+        move || {
+            if action.pending().get() {
+                view! { <Cancel action /> }
+            } else {
+                view! { <Trigger action /> }
+            }
+        }
+    }
+
+    #[component]
+    fn Trigger(action: Action<(), ()>) -> impl IntoView {
+        let project = expect_context::<state::Project>();
+        let messages = expect_context::<types::Messages>();
+
+        let mousedown = move |e: MouseEvent| {
+            if e.button() != types::MouseButton::Primary {
+                return;
+            }
+
+            action.dispatch(());
+        };
+
+        view! {
+            <button
+                on:mousedown=mousedown
+                class="flex gap-2 items-center btn-primary rounded px-4 \
+                disabled:bg-primary-800 dark:disabled:bg-primary-400 \
+                disabled:cursor-not-allowed"
+                disabled={
+                    let pending = action.pending();
+                    move || pending.get()
+                }
+            >
+                "Analyze"
+            </button>
+        }
+    }
+
+    #[component]
+    fn Cancel(action: Action<(), ()>) -> impl IntoView {
+        let mousedown = move |e: MouseEvent| {
+            if e.button() != types::MouseButton::Primary {
+                return;
+            }
+        };
+
+        view! {
+            <button
+                on:mousedown=mousedown
+                class="flex gap-2 items-center btn-primary rounded px-4 \
+                disabled:bg-primary-800 dark:disabled:bg-primary-400 \
+                disabled:cursor-not-allowed"
+            >
+                "Analyzing"
+                <span class="animate-spin">
+                    <Icon icon=components::icon::Refresh />
+                </span>
+            </button>
+        }
+    }
+
+    async fn analyze(
+        project: ResourceId,
+        root: impl Into<PathBuf>,
+    ) -> Result<(), lib::command::project::error::Analyze> {
+        #[derive(serde::Serialize)]
+        struct Args {
+            project: ResourceId,
+            root: PathBuf,
+            max_tasks: Option<usize>,
+        }
+
+        tauri_sys::core::invoke_result(
+            "analyze_project",
+            Args {
+                project,
+                root: root.into(),
+                max_tasks: None,
+            },
+        )
+        .await
     }
 }
 
@@ -821,6 +955,7 @@ fn handle_event_project(event: lib::Event, project: state::Project) {
         db::event::Project::AnalysisFile(_) => todo!(),
     }
 }
+
 fn handle_event_project_properties(event: lib::Event, project: state::Project) {
     let lib::EventKind::Project(db::event::Project::Properties(update)) = event.kind() else {
         panic!("invalid event kind");

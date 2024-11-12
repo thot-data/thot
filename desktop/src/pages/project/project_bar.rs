@@ -2,18 +2,18 @@ use super::{properties, state};
 use crate::{components, types};
 use leptos::{ev::MouseEvent, *};
 use leptos_icons::Icon;
-use std::path::PathBuf;
-use syre_core::types::ResourceId;
-use syre_desktop_lib as lib;
 use wasm_bindgen::{closure::Closure, JsCast};
 
 #[component]
-pub fn ProjectBar() -> impl IntoView {
+pub fn ProjectBar(
+    /// DOM node ref for analyze portal.
+    analyze_node: NodeRef<html::Div>,
+) -> impl IntoView {
     view! {
         <div class="flex px-2 py-1">
             <div class="w-1/3 inline-flex gap-2">
                 <PreviewSelector />
-                <Analyze />
+                <div ref=analyze_node></div>
             </div>
             <div class="w-1/3 text-center">
                 <ProjectInfo />
@@ -250,85 +250,6 @@ fn PreviewSelector() -> impl IntoView {
             </div>
         </div>
     }
-}
-
-#[component]
-fn Analyze() -> impl IntoView {
-    let project = expect_context::<state::Project>();
-    let messages = expect_context::<types::Messages>();
-
-    let trigger_analysis = create_action({
-        let project = project.rid().read_only();
-        move |_| async move {
-            match analyze(project.get_untracked(), "/").await {
-                Ok(_) => {
-                    let msg = types::message::Builder::success("Analysis complete.");
-                    messages.update(|messages| messages.push(msg.build()));
-                }
-                Err(err) => {
-                    tracing::error!(?err);
-                    let mut msg = types::message::Builder::error("Could not complete analysis.");
-                    msg.body(format!("{err:?}"));
-                    messages.update(|messages| messages.push(msg.build()));
-                }
-            }
-        }
-    });
-
-    let mousedown = move |e: MouseEvent| {
-        if e.button() != types::MouseButton::Primary {
-            return;
-        }
-
-        trigger_analysis.dispatch(());
-    };
-
-    view! {
-        <button
-            on:mousedown=mousedown
-            class="flex gap-2 items-center btn-primary rounded px-4 disabled:bg-primary-800 dark:disabled:bg-primary-400 disabled:cursor-not-allowed"
-            disabled={
-                let pending = trigger_analysis.pending();
-                move || pending.get()
-            }
-        >
-            <span>
-                {move || {
-                    if trigger_analysis.pending().get() {
-                        view! { "Analyzing" }
-                    } else {
-                        view! { "Analyze" }
-                    }
-                }}
-            </span>
-
-            <span class:hidden=move || !trigger_analysis.pending().get() class="animate-spin">
-                <Icon icon=components::icon::Refresh />
-            </span>
-        </button>
-    }
-}
-
-async fn analyze(
-    project: ResourceId,
-    root: impl Into<PathBuf>,
-) -> Result<(), lib::command::project::error::Analyze> {
-    #[derive(serde::Serialize)]
-    struct Args {
-        project: ResourceId,
-        root: PathBuf,
-        max_tasks: Option<usize>,
-    }
-
-    tauri_sys::core::invoke_result(
-        "analyze_project",
-        Args {
-            project,
-            root: root.into(),
-            max_tasks: None,
-        },
-    )
-    .await
 }
 
 #[component]

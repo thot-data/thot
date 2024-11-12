@@ -52,7 +52,7 @@ fn AnalysesErr(error: local::error::IoSerde) -> impl IntoView {
         <div>
             <h3>"Analyses"</h3>
             <div>
-                "Analyses can not be loaded" <div>
+                "Analyses could not be loaded" <div>
                     <small>{move || format!("{error:?}")}</small>
                 </div>
             </div>
@@ -236,7 +236,6 @@ fn ScriptView(analysis: state::project::Analysis) -> impl IntoView {
     };
 
     let remove_analysis = {
-        let fs_resource = analysis.fs_resource().clone();
         let script = script.clone();
         let project = project.clone();
         let messages = messages.clone();
@@ -339,7 +338,7 @@ fn ScriptView(analysis: state::project::Analysis) -> impl IntoView {
                     type="button"
                     title=absent_title
                     on:mousedown=remove_analysis
-                    class="aspect-square h-full rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-700"
+                    class="align-middle rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-900"
                 >
                     <Icon icon=components::icon::Remove />
                 </button>

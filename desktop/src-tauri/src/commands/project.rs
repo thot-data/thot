@@ -1,5 +1,5 @@
 use crate::settings;
-use std::{fs, path::PathBuf};
+use std::{fs, io, path::PathBuf};
 use syre_core::{
     self as core,
     runner::RunnerHooks,
@@ -236,10 +236,21 @@ pub fn project_analysis_remove(
             .join(properties.analysis_root.as_ref().unwrap())
             .join(path);
 
-        if let Err(err) = fs::remove_file(&path) {
-            return Err(AnalysesUpdate::RemoveFile(err.kind()));
-        };
+        if let Err(err) = trash::delete(&path) {
+            let err = match err {
+                trash::Error::TargetedRoot => io::ErrorKind::InvalidFilename,
+                trash::Error::CouldNotAccess { .. } => io::ErrorKind::PermissionDenied,
+                trash::Error::CanonicalizePath { .. } => io::ErrorKind::NotFound,
+                _ => {
+                    tracing::error!(?err);
+                    todo!();
+                }
+            };
+
+            return Err(AnalysesUpdate::RemoveFile(err));
+        }
     }
+
     Ok(())
 }
 

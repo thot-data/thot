@@ -2219,6 +2219,11 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   background-color: rgb(43 46 51 / var(--tw-bg-opacity));
 }
 
+.dark\:hover\:bg-secondary-900:hover:where(.dark, .dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(24 26 30 / var(--tw-bg-opacity));
+}
+
 .dark\:disabled\:bg-primary-400:disabled:where(.dark, .dark *) {
   --tw-bg-opacity: 1;
   background-color: rgb(149 209 217 / var(--tw-bg-opacity));

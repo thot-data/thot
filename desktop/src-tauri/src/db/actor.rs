@@ -24,17 +24,17 @@ impl Builder {
         let zmq_context = zmq::Context::new();
         let zmq_socket = zmq_context.socket(zmq::SUB).unwrap();
         zmq_socket
-            .set_subscribe(syre_local_database::constants::PUB_SUB_TOPIC.as_bytes())
+            .set_subscribe(db::constants::PUB_SUB_TOPIC.as_bytes())
             .unwrap();
 
         zmq_socket
-            .connect(&syre_local_database::common::zmq_url(zmq::SUB).unwrap())
+            .connect(&db::common::zmq_url(zmq::SUB).unwrap())
             .unwrap();
 
         let actor = Actor {
             app: self.app,
             zmq_socket,
-            db: syre_local_database::Client::new(),
+            db: db::Client::new(),
         };
         actor.run()
     }
@@ -50,7 +50,7 @@ pub struct Actor {
     zmq_socket: zmq::Socket,
 
     /// Local database client.
-    db: syre_local_database::Client,
+    db: db::Client,
 }
 
 impl Actor {
@@ -90,7 +90,7 @@ impl Actor {
                 message.push_str(msg);
             }
 
-            let events: Vec<db::event::Update> = match serde_json::from_str(&message) {
+            let updates: Vec<db::event::Update> = match serde_json::from_str(&message) {
                 Ok(events) => events,
                 Err(err) => {
                     tracing::error!(?message);
@@ -99,17 +99,17 @@ impl Actor {
                 }
             };
 
-            self.handle_events(topic, events);
+            self.handle_updates(topic, updates);
         }
     }
 }
 
 impl Actor {
-    fn handle_events(&self, topic: &str, events: Vec<db::event::Update>) {
-        tracing::debug!(?events);
+    fn handle_updates(&self, topic: &str, updates: Vec<db::event::Update>) {
+        tracing::debug!(?updates);
         let topic = topic.replace("local-database", "database/update");
 
-        let events = events
+        let events = updates
             .into_iter()
             .flat_map(|event| self.process_event(&topic, event))
             .collect::<Vec<_>>();

@@ -176,8 +176,8 @@ pub fn container_trash(
     let container_path =
         db::common::container_system_path(project_path.join(&properties.data_root), container);
 
-    trash::delete(container_path).map_err(|err| match err {
-        _ => todo!("{err:?}"),
+    trash::delete(&container_path).map_err(|err| match err {
+        _ => todo!("{container_path:?}: {err:?}"),
     })
 }
 

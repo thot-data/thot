@@ -13,7 +13,6 @@ use serde_json::Value as JsValue;
 use std::{collections::HashMap, io, path::PathBuf, thread};
 use syre_fs_watcher as watcher;
 use syre_local::{
-    self as local,
     system::{
         collections::{ProjectManifest, UserManifest},
         config::Config as LocalConfig,
@@ -318,7 +317,7 @@ impl Database {
 
     /// Publish a updates to subscribers.
     /// Triggered by file system events.
-    fn publish_updates(&self, updates: &Vec<Update>) -> zmq::Result<()> {
+    fn publish_updates(&self, updates: &Vec<Update>) {
         use crate::event;
 
         let mut sorted_updates = HashMap::with_capacity(updates.len());
@@ -354,18 +353,20 @@ impl Database {
             };
         }
 
-        for (event_topic, updates) in sorted_updates {
-            let topic = format!("{}/{event_topic}", constants::PUB_SUB_TOPIC);
-            self.update_tx.send(&topic, zmq::SNDMORE)?;
-            if let Err(err) = self
-                .update_tx
-                .send(&serde_json::to_string(&updates).unwrap(), 0)
-            {
-                tracing::error!(?err);
-            }
-        }
+        let errors = sorted_updates
+            .iter()
+            .filter_map(|(event_topic, updates)| {
+                let topic = format!("{}/{event_topic}", constants::PUB_SUB_TOPIC);
+                self.update_tx.send(&topic, zmq::SNDMORE).err().or(self
+                    .update_tx
+                    .send(&serde_json::to_string(&updates).unwrap(), 0)
+                    .err())
+            })
+            .collect::<Vec<_>>();
 
-        Ok(())
+        if !errors.is_empty() {
+            panic!("could not send updates: {errors:?}");
+        }
     }
 
     fn handle_query(&self, query: crate::Query) -> JsValue {
@@ -400,10 +401,7 @@ mod windows {
 
             let updates = self.process_file_system_events(events);
             tracing::debug!(?updates);
-            if let Err(err) = self.publish_updates(&updates) {
-                tracing::error!(?err);
-            }
-
+            self.publish_updates(&updates);
             tracing::trace!(target: "syre::local::database::state", state = ?self.state);
             Ok(())
         }
@@ -444,10 +442,7 @@ mod macos {
             let mut events = FileSystemEventProcessor::process(events);
             events.sort_by(|a, b| a.time.cmp(&b.time));
             let updates = self.process_file_system_events(events);
-            if let Err(err) = self.publish_updates(&updates) {
-                tracing::error!(?err);
-            }
-
+            self.publish_updates(&updates);
             Ok(())
         }
 
@@ -586,11 +581,7 @@ mod linux {
 
             let updates = self.process_file_system_events(events);
             tracing::debug!(?updates);
-            if let Err(err) = self.publish_updates(&updates) {
-                tracing::error!(?err);
-            }
-
-            tracing::debug!(?self.state);
+            self.publish_updates(&updates);
             Ok(())
         }
 
