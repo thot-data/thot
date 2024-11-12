@@ -185,7 +185,9 @@
         // Cleanup
         isDragging = false;
         draggedElement.setAttribute('draggable', 'true');
-        document.body.removeChild(ghostElement);
+        if (ghostElement) {
+            document.body.removeChild(ghostElement);
+        }
         ghostElement = null;
         draggedElement = null;
         currentOverElement = null;
