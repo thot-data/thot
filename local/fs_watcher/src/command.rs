@@ -39,9 +39,4 @@ pub(crate) enum WatcherCommand {
         path: PathBuf,
         tx: Sender<notify::Result<()>>,
     },
-
-    FileId {
-        path: PathBuf,
-        tx: Sender<Option<FileId>>,
-    },
 }

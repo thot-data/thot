@@ -2,13 +2,10 @@ use super::{
     super::{event as fs_event, ConversionError, ConversionResult},
     FsWatcher,
 };
-use crate::{command::WatcherCommand, error};
+use crate::error;
 use notify::event::{CreateKind, EventKind as NotifyEventKind, ModifyKind, RemoveKind, RenameMode};
 use notify_debouncer_full::{DebouncedEvent, FileIdCache};
-use std::{
-    assert_matches::assert_matches, collections::HashMap, fs, io, path::PathBuf,
-    result::Result as StdResult,
-};
+use std::{assert_matches::assert_matches, collections::HashMap, fs, io, path::PathBuf};
 use syre_local::common as local_common;
 
 impl FsWatcher {
@@ -22,7 +19,7 @@ impl FsWatcher {
     pub fn process_events_notify_to_fs<'a>(
         &'a self,
         events: &'a Vec<DebouncedEvent>,
-    ) -> (Vec<fs_event::Event>, Vec<ConversionError>) {
+    ) -> (Vec<fs_event::Event<'a>>, Vec<ConversionError<'a>>) {
         let events = events.iter().collect::<Vec<_>>();
         let filtered_events = Self::filter_events(events.clone())
             .into_iter()
@@ -184,7 +181,7 @@ impl FsWatcher {
     fn group_events<'a>(
         &'a self,
         events: Vec<&'a DebouncedEvent>,
-    ) -> (Vec<fs_event::Event>, Vec<&'a DebouncedEvent>) {
+    ) -> (Vec<fs_event::Event<'a>>, Vec<&'a DebouncedEvent>) {
         let mut remaining = Vec::with_capacity(events.len());
         let mut grouped_id = HashMap::with_capacity(events.len());
         let mut grouped_path = HashMap::with_capacity(events.len());
@@ -208,10 +205,10 @@ impl FsWatcher {
                 }
 
                 NotifyEventKind::Create(_) => {
-                    let id = match self.file_id_from_watcher(event.paths[0].clone()) {
+                    let id = match file_id::get_file_id(event.paths[0].clone()) {
                         Ok(id) => id,
-                        Err(_err) => {
-                            tracing::error!("could not retrieve id from watcher");
+                        Err(err) => {
+                            tracing::error!("could not retrieve id from watcher: {err:?}");
                             remaining.push(event);
                             tracing::trace!("{event:?} added to remaining");
                             continue;
@@ -227,18 +224,11 @@ impl FsWatcher {
                             tracing::trace!("{event:?} added to grouped path");
                         }
 
-                        None => match id {
-                            Some(id) => {
-                                let entry = grouped_id.entry(id).or_insert(vec![]);
-                                entry.push(event);
-                                tracing::trace!("{event:?} added to grouped id");
-                            }
-
-                            None => {
-                                remaining.push(event);
-                                tracing::trace!("{event:?} added to remaining");
-                            }
-                        },
+                        None => {
+                            let entry = grouped_id.entry(id).or_insert(vec![]);
+                            entry.push(event);
+                            tracing::trace!("{event:?} added to grouped id");
+                        }
                     }
                 }
 
@@ -256,20 +246,14 @@ impl FsWatcher {
                 }
 
                 NotifyEventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
-                    let id = match self.file_id_from_watcher(event.paths[0].clone()) {
+                    let id = match file_id::get_file_id(event.paths[0].clone()) {
                         Ok(id) => id,
-                        Err(_err) => {
-                            tracing::error!("could not retrieve id from watcher");
+                        Err(err) => {
+                            tracing::error!("could not retrieve id from watcher: {err:?}");
                             remaining.push(event);
                             tracing::trace!("{event:?} added to remaining");
                             continue;
                         }
-                    };
-
-                    let Some(id) = id else {
-                        remaining.push(event);
-                        tracing::trace!("{event:?} added to remaining");
-                        continue;
                     };
 
                     let entry = grouped_id.entry(id).or_insert(vec![]);
@@ -283,20 +267,14 @@ impl FsWatcher {
                     };
 
                     if path.exists() {
-                        let id = match self.file_id_from_watcher(event.paths[0].clone()) {
+                        let id = match file_id::get_file_id(event.paths[0].clone()) {
                             Ok(id) => id,
-                            Err(_err) => {
-                                tracing::error!("could not retrieve id from watcher");
+                            Err(err) => {
+                                tracing::error!("could not retrieve id from watcher: {err:?}");
                                 remaining.push(event);
                                 tracing::trace!("{event:?} added to remaining");
                                 continue;
                             }
-                        };
-
-                        let Some(id) = id else {
-                            remaining.push(event);
-                            tracing::trace!("{event:?} added to remaining");
-                            continue;
                         };
 
                         let entry = grouped_id.entry(id).or_insert(vec![]);
@@ -652,7 +630,7 @@ impl FsWatcher {
     fn convert_events<'a>(
         &'a self,
         events: Vec<&'a DebouncedEvent>,
-    ) -> (Vec<fs_event::Event>, Vec<ConversionError>) {
+    ) -> (Vec<fs_event::Event<'a>>, Vec<ConversionError<'a>>) {
         let (converted, errors): (Vec<_>, Vec<_>) = events
             .into_iter()
             .filter_map(|event| match self.convert_event(&event) {
@@ -925,12 +903,14 @@ impl FsWatcher {
         for event in events {
             let path = &event.paths[0];
             match event.kind {
-                NotifyEventKind::Create(_) => file_ids.add_path(path),
+                NotifyEventKind::Create(_) => {
+                    file_ids.add_path(path, notify::RecursiveMode::NonRecursive)
+                }
                 NotifyEventKind::Remove(_) => file_ids.remove_path(path),
                 NotifyEventKind::Modify(ModifyKind::Name(rename_mode)) => match rename_mode {
                     RenameMode::Any => {
                         if path.exists() {
-                            file_ids.add_path(path);
+                            file_ids.add_path(path, notify::RecursiveMode::NonRecursive);
                         } else {
                             file_ids.remove_path(path);
                         }
@@ -938,7 +918,7 @@ impl FsWatcher {
 
                     RenameMode::Both => {
                         file_ids.remove_path(&event.paths[0]);
-                        file_ids.add_path(&event.paths[1]);
+                        file_ids.add_path(&event.paths[1], notify::RecursiveMode::NonRecursive);
                     }
 
                     RenameMode::From => {
@@ -946,7 +926,7 @@ impl FsWatcher {
                     }
 
                     RenameMode::To => {
-                        file_ids.add_path(path);
+                        file_ids.add_path(path, notify::RecursiveMode::NonRecursive);
                     }
 
                     RenameMode::Other => {
@@ -956,27 +936,11 @@ impl FsWatcher {
 
                 _ => {
                     if file_ids.cached_file_id(path).is_none() {
-                        file_ids.add_path(path);
+                        file_ids.add_path(path, notify::RecursiveMode::NonRecursive);
                     }
                 }
             }
         }
-    }
-
-    fn file_id_from_watcher(&self, path: PathBuf) -> StdResult<Option<file_id::FileId>, ()> {
-        let (tx, rx) = crossbeam::channel::bounded(1);
-        if let Err(_err) = self.command_tx.send(WatcherCommand::FileId { path, tx }) {
-            return Err(());
-        }
-
-        let id = match rx.recv() {
-            Ok(id) => id,
-            Err(_err) => {
-                return Err(());
-            }
-        };
-
-        Ok(id)
     }
 }
 

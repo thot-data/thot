@@ -15,9 +15,11 @@ mod windows {
     use super::DEBOUNCE_TIMEOUT;
     use crate::command::WatcherCommand as Command;
     use crossbeam::channel::{Receiver, Sender};
-    use notify::{self, RecursiveMode, Watcher};
     use notify_debouncer_full::{DebounceEventResult, Debouncer, FileIdCache, FileIdMap};
-    use std::path::{Path, PathBuf};
+    use std::{
+        io,
+        path::{Path, PathBuf},
+    };
 
     type FileSystemWatcher = notify::RecommendedWatcher;
     pub struct FileSystemActor {
@@ -48,13 +50,6 @@ mod windows {
                 match cmd {
                     Command::Watch { path, tx } => self.watch(path, tx),
                     Command::Unwatch { path, tx } => self.unwatch(path, tx),
-                    Command::FileId { path, tx } => {
-                        if let Err(err) =
-                            tx.send(self.watcher.cache().cached_file_id(&path).cloned())
-                        {
-                            tracing::error!(?err);
-                        };
-                    }
                 }
             }
 
@@ -63,17 +58,13 @@ mod windows {
 
         fn watch(&mut self, path: impl AsRef<Path>, tx: Sender<notify::Result<()>>) {
             let path = path.as_ref();
-            if let Err(err) = self.watcher.watcher().watch(path, RecursiveMode::Recursive) {
+            if let Err(err) = self.watcher.watch(path, notify::RecursiveMode::Recursive) {
                 if let Err(err) = tx.send(Err(err)) {
                     tracing::error!(?err);
                 }
 
                 return;
             }
-
-            self.watcher
-                .cache()
-                .add_root(path, RecursiveMode::Recursive);
 
             tracing::debug!("watching {path:?}");
             if let Err(err) = tx.send(Ok(())) {
@@ -83,7 +74,7 @@ mod windows {
 
         fn unwatch(&mut self, path: impl AsRef<Path>, tx: Sender<notify::Result<()>>) {
             let path = path.as_ref();
-            if let Err(err) = self.watcher.watcher().unwatch(path) {
+            if let Err(err) = self.watcher.unwatch(path) {
                 if let Err(err) = tx.send(Err(err)) {
                     tracing::error!(?err);
                 }
@@ -91,36 +82,36 @@ mod windows {
                 return;
             }
 
-            self.watcher.cache().remove_root(path);
             tracing::debug!("unwatching {path:?}");
             if let Err(err) = tx.send(Ok(())) {
                 tracing::error!(?err);
             }
         }
 
+        // TODO: Respond with an `Err` if can not get file id.
         /// Gets the final path of a file.
         ///
-        /// # Returns
-        /// + `None` if the path is not in the watcher's cache.
+        /// # Response
         ///
-        /// # Errors
-        /// + If the final path could not be obtained.
         fn final_path(
             &mut self,
             path: impl AsRef<Path>,
             tx: Sender<Result<Option<PathBuf>, file_path_from_id::Error>>,
         ) {
             let path = path.as_ref();
-            let cache = self.watcher.cache();
-            let Some(id) = cache.cached_file_id(path) else {
-                match tx.send(Ok(None)) {
-                    Ok(_) => {}
-                    Err(err) => tracing::debug!(?err),
-                };
-                return;
+            let id = match file_id::get_file_id(path) {
+                Ok(id) => id,
+                Err(err) => {
+                    tracing::error!(?err);
+                    match tx.send(Ok(None)) {
+                        Ok(_) => {}
+                        Err(err) => tracing::error!(?err),
+                    };
+                    return;
+                }
             };
 
-            let path_res = match file_path_from_id::path_from_id(id) {
+            let path_res = match file_path_from_id::path_from_id(&id) {
                 Ok(path) => Ok(Some(path)),
                 Err(err) => Err(err),
             };
@@ -138,7 +129,7 @@ mod macos {
     use super::DEBOUNCE_TIMEOUT;
     use crate::command::WatcherCommand as Command;
     use crossbeam::channel::{Receiver, Sender};
-    use notify::{RecursiveMode, Watcher};
+    use notify::{notify::RecursiveMode, Watcher};
     use notify_debouncer_full::{DebounceEventResult, Debouncer, FileIdCache, FileIdMap};
     use std::path::Path;
 
@@ -205,12 +196,12 @@ mod macos {
             let path = path.as_ref();
             self.watcher
                 .watcher()
-                .watch(path, RecursiveMode::Recursive)
+                .watch(path, notify::RecursiveMode::Recursive)
                 .unwrap();
 
             self.watcher
                 .cache()
-                .add_root(path, RecursiveMode::Recursive);
+                .add_root(path, notify::RecursiveMode::Recursive);
         }
 
         fn unwatch(&mut self, path: impl AsRef<Path>) {
@@ -226,7 +217,7 @@ mod linux {
     use super::DEBOUNCE_TIMEOUT;
     use crate::command::WatcherCommand as Command;
     use crossbeam::channel::{Receiver, Sender};
-    use notify::{self, RecursiveMode, Watcher};
+    use notify::{self, notify::RecursiveMode, Watcher};
     use notify_debouncer_full::{DebounceEventResult, Debouncer, FileIdCache, FileIdMap};
     use std::path::{Path, PathBuf};
 
@@ -275,7 +266,11 @@ mod linux {
 
         fn watch(&mut self, path: impl AsRef<Path>, tx: Sender<notify::Result<()>>) {
             let path = path.as_ref();
-            if let Err(err) = self.watcher.watcher().watch(path, RecursiveMode::Recursive) {
+            if let Err(err) = self
+                .watcher
+                .watcher()
+                .watch(path, notify::RecursiveMode::Recursive)
+            {
                 if let Err(err) = tx.send(Err(err)) {
                     tracing::error!(?err);
                 }
@@ -285,7 +280,7 @@ mod linux {
 
             self.watcher
                 .cache()
-                .add_root(path, RecursiveMode::Recursive);
+                .add_root(path, notify::RecursiveMode::Recursive);
 
             tracing::debug!("watching {path:?}");
             if let Err(err) = tx.send(Ok(())) {

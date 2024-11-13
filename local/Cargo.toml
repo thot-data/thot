@@ -20,7 +20,7 @@ calamine.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 csv.workspace = true
 derivative = "2.2"
-derive_more.workspace = true
+derive_more = { workspace = true, features = ["deref", "deref_mut"] }
 directories = { workspace = true, optional = true }
 fastrand = "2.1"
 glob = { workspace = true, optional = true }

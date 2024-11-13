@@ -29,13 +29,13 @@ surrealdb = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4"] }
-validator = "0.18"
+validator = "0.19"
 
 has_id = { path = "../has_id", features = ["derive"] }
 
 [dev-dependencies]
 rand = "0.8"
-fake = "2.4"
+fake.workspace = true
 # mockall = { version = "0.11", features = ["nightly"] }
 # mockall_double = "0.3"
 # ntest = "0.9"

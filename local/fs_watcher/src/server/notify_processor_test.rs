@@ -8,7 +8,7 @@ use notify::{
     event::{ModifyKind, RenameMode},
     EventKind as NotifyEventKind,
 };
-use std::fs;
+use std::{fs, time::Instant};
 
 // NB: Flaky test. Not sure why.
 #[test_log::test]
@@ -97,7 +97,10 @@ fn watcher_group_notify_events_should_work() {
         e_d_any_to,
     ];
 
-    let events: Vec<DebouncedEvent> = events.into_iter().map(|e| e.into()).collect();
+    let events = events
+        .into_iter()
+        .map(|e| notify_debouncer_full::DebouncedEvent::new(e, Instant::now()))
+        .collect::<Vec<DebouncedEvent>>();
     let (converted, remaining) = watcher.group_events(events.iter().collect());
     assert_eq!(converted.len(), 4);
     assert_eq!(remaining.len(), 2);
@@ -105,7 +108,7 @@ fn watcher_group_notify_events_should_work() {
 
 fn build_watcher(
     command_rx: Receiver<Command>,
-    event_tx: Sender<StdResult<Vec<Event>, Vec<Error>>>,
+    event_tx: Sender<Result<Vec<Event>, Vec<Error>>>,
     config: Config,
 ) -> FsWatcher {
     use crate::server::actor::FileSystemActor;

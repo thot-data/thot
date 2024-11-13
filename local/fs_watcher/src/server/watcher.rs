@@ -146,7 +146,7 @@ impl Builder {
 
                 errors.push(err);
             } else {
-                file_ids.add_root(path, notify::RecursiveMode::NonRecursive);
+                file_ids.add_path(path, notify::RecursiveMode::NonRecursive);
             }
         }
 
@@ -281,7 +281,7 @@ impl FsWatcher {
                     rx.recv().unwrap().unwrap();
                     roots.retain(|root| root != path);
                     let mut file_ids = self.file_ids.lock().unwrap();
-                    file_ids.remove_root(&path);
+                    file_ids.remove_path(&path);
                 }
 
                 assert!(roots.is_empty());
@@ -391,7 +391,14 @@ impl FsWatcher {
 
         if let Some(event) = events.iter().find(|event| event.need_rescan()) {
             let mut file_ids = self.file_ids.lock().unwrap();
-            file_ids.rescan();
+            let roots = self
+                .roots
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|path| (path.clone(), notify::RecursiveMode::Recursive))
+                .collect::<Vec<_>>();
+            file_ids.rescan(roots.as_slice());
             Event::new_from_notify(EventKind::OutOfSync, event.attrs.tracker());
             self.event_tx.send(Ok(vec![])).unwrap();
         } else {
@@ -484,7 +491,7 @@ impl FsWatcher {
         }
 
         let mut file_ids = self.file_ids.lock().unwrap();
-        file_ids.add_root(path, notify::RecursiveMode::Recursive);
+        file_ids.add_path(&path, notify::RecursiveMode::Recursive);
     }
 
     fn handle_command_unwatch(&self, path: PathBuf) {
@@ -516,7 +523,7 @@ impl FsWatcher {
         roots.retain(|root| root != &path);
 
         let mut file_ids = self.file_ids.lock().unwrap();
-        file_ids.remove_root(&path);
+        file_ids.remove_path(&path);
     }
 }
 

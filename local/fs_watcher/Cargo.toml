@@ -15,18 +15,18 @@ categories = []
 
 [dependencies]
 crossbeam = { workspace = true, features = ["crossbeam-channel"] }
-derive_more.workspace = true
+derive_more = { workspace = true, features = ["from"] }
 file_path_from_id.workspace = true
-file-id = {version = "0.2.1", optional = true }
+file-id = {version = "0.2", optional = true }
 glob.workspace = true
 has_id = { workspace = true, features = ["derive"], optional = true }
 in_trash.workspace = true
 notify = { workspace = true, default-features = false, features = ["macos_kqueue"], optional = true }
-notify-debouncer-full = { workspace = true, default-features = false, features = ["crossbeam"], optional = true }
+notify-debouncer-full = { workspace = true, default-features = false, features = ["crossbeam-channel"], optional = true }
 rayon.workspace = true
 syre-core = { workspace = true, optional = true }
 syre-local = { workspace = true, features = ["fs"], optional = true }
-tracing-appender = { workspace = true, optional = true}
+tracing-appender = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, features = ["time", "json"] }
 tracing.workspace = true
 uuid = { workspace = true, features = ["v7"], optional = true }

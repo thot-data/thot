@@ -47,9 +47,9 @@ file_path_from_id = { workspace = true, optional = true }
 
 [dev-dependencies]
 rand = "0.8"
-fake = "2.4"
+fake.workspace = true
 lazy_static = "1.4"
-tempfile = "3.9.0"
+tempfile.workspace = true
 test-log = { version = "0.2.16", features = ["trace"] }
 zmq.workspace = true
 
