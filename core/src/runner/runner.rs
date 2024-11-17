@@ -1,11 +1,13 @@
 //! Syre project runner.
 use super::{Runnable, CONTAINER_ID_KEY, PROJECT_ID_KEY};
 use crate::{graph::ResourceTree, project::Container, types::ResourceId};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     path::PathBuf,
     result::Result as StdResult,
+    sync::Arc,
     {process, str},
 };
 
@@ -31,7 +33,7 @@ pub trait RunnerHooks {
         &self,
         project: ResourceId,
         analysis: ResourceId,
-    ) -> StdResult<Box<dyn Runnable>, String>;
+    ) -> StdResult<Box<dyn Runnable + Send + Sync>, String>;
 
     /// Run when an analysis errors.
     /// Should return `Ok` if evaluation should continue, or
@@ -63,43 +65,55 @@ pub trait RunnerHooks {
     fn assets_added(&self, ctx: AnalysisExecutionContext, assets: Vec<ResourceId>) {}
 }
 
-// TODO Make builder.
-#[cfg_attr(doc, aquamarine::aquamarine)]
-/// ```mermaid
-///
-/// ```
+pub struct Builder {
+    hooks: Arc<dyn RunnerHooks + Send + Sync>,
+    num_threads: Option<usize>,
+}
+
+impl Builder {
+    pub fn new(hooks: impl RunnerHooks + Send + Sync + 'static) -> Self {
+        Self {
+            hooks: Arc::new(hooks),
+            num_threads: None,
+        }
+    }
+
+    /// Set the number of threads the runner should use.
+    pub fn num_threads(&mut self, num_threads: usize) -> &mut Self {
+        let _ = self.num_threads.insert(num_threads);
+        self
+    }
+
+    pub fn build(self) -> Runner {
+        let mut thread_pool =
+            rayon::ThreadPoolBuilder::new().thread_name(|_id| format!("syre runner thread"));
+        if let Some(max_tasks) = self.num_threads {
+            thread_pool = thread_pool.num_threads(max_tasks);
+        }
+
+        Runner {
+            hooks: self.hooks,
+            thread_pool: thread_pool.build().unwrap(),
+        }
+    }
+}
+
+/// # Notes
+/// + All analyses launched from a single runner share a thread pool for evaluation.
 pub struct Runner {
-    hooks: Box<dyn RunnerHooks>,
+    hooks: Arc<dyn RunnerHooks + Send + Sync>,
+    thread_pool: rayon::ThreadPool,
 }
 
 impl Runner {
-    pub fn new(hooks: Box<dyn RunnerHooks>) -> Self {
-        Self { hooks }
-    }
-
     /// Analyze a tree.
     ///
     /// # Arguments
     /// 1. Container tree to evaluate.
     pub fn run(&self, project: &ResourceId, tree: &mut ContainerTree) -> Result {
         let root = tree.root().clone();
-        let mut analyzer = TreeRunner::new(project, tree, &root, &self.hooks);
-        analyzer.run()
-    }
-
-    /// Analyze a tree using restricted parallelization.
-    ///
-    /// # Arguments
-    /// 1. Container tree to evaluate.
-    /// 2. Maximum number of analysis tasks to run at once.
-    pub fn with_tasks(
-        &self,
-        project: &ResourceId,
-        tree: &mut ContainerTree,
-        tasks: usize,
-    ) -> Result {
-        let root = tree.root().clone();
-        let mut analyzer = TreeRunner::with_tasks(project, tree, &root, &self.hooks, tasks);
+        let mut analyzer =
+            TreeRunner::new(project, tree, &root, self.hooks.clone(), &self.thread_pool);
         analyzer.run()
     }
 
@@ -107,31 +121,15 @@ impl Runner {
     ///
     /// # Arguments
     /// 1. Container tree to evaluate.
-    /// 2. Root of subtree.
+    /// 2. Root of subtree to evaluate.
     pub fn from(
         &self,
         project: &ResourceId,
         tree: &mut ContainerTree,
         root: &ResourceId,
     ) -> Result {
-        let mut analyzer = TreeRunner::new(project, tree, root, &self.hooks);
-        analyzer.run()
-    }
-
-    /// Analyze a subtree using restricted parallelization.
-    ///
-    /// # Arguments
-    /// 1. Container tree to evaluate.
-    /// 2. Root of subtree.
-    /// 3. Maximum number of analysis tasks to run at once.
-    pub fn with_tasks_from(
-        &self,
-        project: &ResourceId,
-        tree: &mut ContainerTree,
-        root: &ResourceId,
-        tasks: usize,
-    ) -> Result {
-        let mut analyzer = TreeRunner::with_tasks(project, tree, root, &self.hooks, tasks);
+        let mut analyzer =
+            TreeRunner::new(project, tree, root, self.hooks.clone(), &self.thread_pool);
         analyzer.run()
     }
 }
@@ -140,10 +138,9 @@ struct TreeRunner<'a> {
     project: &'a ResourceId,
     tree: &'a mut ContainerTree,
     root: &'a ResourceId,
-    hooks: &'a Box<dyn RunnerHooks>,
-    max_tasks: Option<usize>,
+    thread_pool: &'a rayon::ThreadPool,
     error_response: ErrorResponse,
-    analyses: HashMap<ResourceId, Box<dyn Runnable>>,
+    hooks: Arc<dyn RunnerHooks + Send + Sync>,
 }
 
 impl<'a> TreeRunner<'a> {
@@ -151,66 +148,59 @@ impl<'a> TreeRunner<'a> {
         project: &'a ResourceId,
         tree: &'a mut ContainerTree,
         root: &'a ResourceId,
-        hooks: &'a Box<dyn RunnerHooks>,
+        hooks: Arc<dyn RunnerHooks + Send + Sync>,
+        thread_pool: &'a rayon::ThreadPool,
     ) -> Self {
         Self {
             project,
             tree,
             root,
             hooks,
-            max_tasks: None,
+            thread_pool,
             error_response: ErrorResponse::default(),
-            analyses: HashMap::new(),
-        }
-    }
-
-    pub fn with_tasks(
-        project: &'a ResourceId,
-        tree: &'a mut ContainerTree,
-        root: &'a ResourceId,
-        hooks: &'a Box<dyn RunnerHooks>,
-        max_tasks: usize,
-    ) -> Self {
-        Self {
-            project,
-            tree,
-            root,
-            hooks,
-            max_tasks: Some(max_tasks),
-            error_response: ErrorResponse::default(),
-            analyses: HashMap::new(),
         }
     }
 
     pub fn run(&mut self) -> Result {
-        let mut analysis_errors = HashMap::new();
-        for (_, container) in self.tree.iter_nodes() {
-            for aid in container
-                .analyses
-                .iter()
-                .map(|association| association.analysis())
-            {
-                if self.analyses.contains_key(aid) {
-                    continue;
-                }
+        let mut analysis_ids = self
+            .tree
+            .descendants(&self.root)
+            .unwrap()
+            .into_iter()
+            .flat_map(|id| {
+                let container = self.tree.get(&id).unwrap();
+                container
+                    .analyses
+                    .iter()
+                    .map(|association| association.analysis())
+            })
+            .collect::<Vec<_>>();
 
-                match self.hooks.get_analysis(self.project.clone(), aid.clone()) {
-                    Ok(analysis) => {
-                        self.analyses.insert(aid.clone(), analysis);
-                    }
-
-                    Err(err) => {
-                        analysis_errors.insert(aid.clone(), err);
-                    }
-                }
-            }
-        }
+        analysis_ids.sort();
+        analysis_ids.dedup();
+        let (analyses, analysis_errors): (Vec<_>, Vec<_>) = analysis_ids
+            .into_iter()
+            .map(|id| {
+                (
+                    id,
+                    self.hooks.get_analysis(self.project.clone(), id.clone()),
+                )
+            })
+            .partition(|(_, result)| result.is_ok());
 
         if !analysis_errors.is_empty() {
-            return Err(Error::LoadAnalyses(analysis_errors));
+            let errors = analysis_errors
+                .into_iter()
+                .map(|(id, err)| (id.clone(), err.err().unwrap()))
+                .collect();
+            return Err(Error::LoadAnalyses(errors));
         }
 
-        self.evaluate_tree(self.root)
+        let analyses = analyses
+            .into_iter()
+            .map(|(id, analysis)| (id.clone(), analysis.ok().unwrap()))
+            .collect();
+        self.evaluate_tree(self.root, Arc::new(analyses))
     }
 
     /// Evaluates a `Container` tree.
@@ -219,18 +209,30 @@ impl<'a> TreeRunner<'a> {
     /// 1. Container tree to evaluate.
     /// 2. Root of subtree.
     /// 3. Maximum number of analysis tasks to run at once.
-    #[tracing::instrument(skip(self))]
-    fn evaluate_tree(&self, root: &ResourceId) -> Result {
+    #[tracing::instrument(skip(self, analyses))]
+    fn evaluate_tree(
+        &self,
+        root: &ResourceId,
+        analyses: Arc<HashMap<ResourceId, Box<dyn Runnable + Send + Sync>>>,
+    ) -> Result {
         // recurse on children
         let Some(children) = self.tree.children(root).cloned() else {
             return Err(Error::ContainerNotFound(root.clone()));
         };
 
-        for child in children {
-            self.evaluate_tree(&child)?;
+        if !children.is_empty() {
+            self.thread_pool.install({
+                let analyses = analyses.clone();
+                move || {
+                    children
+                        .par_iter()
+                        .map(|child| self.evaluate_tree(child, analyses.clone()))
+                        .collect::<Vec<_>>()
+                }
+            });
         }
 
-        self.evaluate_container(root)
+        self.evaluate_container(root, analyses)
     }
 
     /// Evaluates a single container.
@@ -241,8 +243,12 @@ impl<'a> TreeRunner<'a> {
     /// 2. `None` to run all analyses set to `autorun`.
     ///     Otherwise a [`HashSet`] of the analyses to run.
     /// + `ignore_errors`: Whether to continue running on a analysis error.
-    #[tracing::instrument(skip(self))]
-    fn evaluate_container(&self, container: &ResourceId) -> Result {
+    #[tracing::instrument(skip(self, analyses))]
+    fn evaluate_container(
+        &self,
+        container: &ResourceId,
+        analyses: Arc<HashMap<ResourceId, Box<dyn Runnable + Send + Sync>>>,
+    ) -> Result {
         let Some(container) = self.tree.get(container) else {
             return Err(Error::ContainerNotFound(container.clone()));
         };
@@ -264,11 +270,11 @@ impl<'a> TreeRunner<'a> {
             let analyses = analysis_group
                 .into_iter()
                 .filter(|s| s.autorun)
-                .map(|assoc| self.analyses.get(assoc.analysis()).unwrap())
+                .map(|assoc| analyses.get(assoc.analysis()).unwrap())
                 .collect();
 
             let container_path = self.tree.path(container.rid()).unwrap();
-            self.run_analyses(analyses, container_path, self.project.clone())?;
+            self.run_analysis_group(analyses, container_path, self.project.clone())?;
         }
 
         Ok(())
@@ -295,40 +301,51 @@ impl<'a> TreeRunner<'a> {
     ///    ignore_errors -- "false" ---> break("return Err(_)")
     /// ```
     #[tracing::instrument(skip(self, analyses))]
-    fn run_analyses(
+    fn run_analysis_group(
         &self,
-        analyses: Vec<&Box<dyn Runnable>>,
+        analyses: Vec<&Box<dyn Runnable + Send + Sync>>,
         container: PathBuf,
         project: ResourceId,
     ) -> Result {
-        for analysis in analyses {
-            let exec_ctx = AnalysisExecutionContext {
-                project: project.clone(),
-                analysis: analysis.id().clone(),
-                container: container.clone(),
-            };
+        self.thread_pool.install(move || {
+            analyses
+                .into_par_iter()
+                .map(|analysis| {
+                    let exec_ctx = AnalysisExecutionContext {
+                        project: project.clone(),
+                        analysis: analysis.id().clone(),
+                        container: container.clone(),
+                    };
 
-            self.hooks.pre_analysis(exec_ctx.clone());
+                    self.hooks.pre_analysis(exec_ctx.clone());
+                    let assets = Vec::new(); // TODO: Collect `ResourceId`s of `Assets`.
+                    let mut ignored_errors = Vec::new();
+                    let result = self
+                        .run_analysis(analysis, container.clone(), project.clone())
+                        .map_err(|err| {
+                            self.hooks
+                                .analysis_error(exec_ctx.clone(), err)
+                                .or_else(|err| match self.error_response {
+                                    ErrorResponse::Terminate => {
+                                        tracing::trace!(
+                                            "terminating analysis due to error: {err:?}"
+                                        );
+                                        Err(err)
+                                    }
+                                    ErrorResponse::Ignore => {
+                                        ignored_errors.push(err);
+                                        Ok(())
+                                    }
+                                })
+                        });
+                    self.hooks.assets_added(exec_ctx.clone(), assets);
 
-            let run_res = self.run_analysis(analysis, container.clone(), project.clone());
-            let assets = Vec::new(); // TODO: Collect `ResourceId`s of `Assets`.
-            self.hooks.assets_added(exec_ctx.clone(), assets);
-            match run_res {
-                Ok(_) => {}
-                Err(err) => match self.hooks.analysis_error(exec_ctx.clone(), err) {
-                    Ok(()) => {}
-                    Err(err) => match self.error_response {
-                        ErrorResponse::Terminate => {
-                            tracing::trace!("terminating analysis due to error");
-                            return Err(err.into());
-                        }
-                        ErrorResponse::Ignore => todo!("collect errors for reporting"),
-                    },
-                },
-            }
-
-            self.hooks.post_analysis(exec_ctx);
-        }
+                    if result.is_ok() {
+                        self.hooks.post_analysis(exec_ctx);
+                    }
+                })
+                .collect::<Vec<_>>()
+        });
 
         Ok(())
     }
@@ -343,7 +360,7 @@ impl<'a> TreeRunner<'a> {
     #[tracing::instrument(skip(self, analysis))]
     fn run_analysis(
         &self,
-        analysis: &Box<dyn Runnable>,
+        analysis: &Box<dyn Runnable + Send + Sync>,
         container: PathBuf,
         project: ResourceId,
     ) -> Result<process::Output> {
@@ -425,3 +442,7 @@ pub enum Error {
         cmd: String,
     },
 }
+
+#[cfg(test)]
+#[path = "runner_test.rs"]
+mod runner_test;

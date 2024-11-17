@@ -21,6 +21,7 @@ clap = { workspace = true, optional = true }
 derivative = "2.2"
 directories = "5.0"
 indexmap = { workspace = true, features = ["serde"] }
+rayon = { workspace = true, optional = true }
 regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true }
@@ -36,17 +37,15 @@ has_id = { path = "../has_id", features = ["derive"] }
 [dev-dependencies]
 rand = "0.8"
 fake.workspace = true
-# mockall = { version = "0.11", features = ["nightly"] }
-# mockall_double = "0.3"
-# ntest = "0.9"
 lazy_static = "1.4"
 tempfile = { workspace = true }
+test-log = { version = "0.2", features = ["trace"] }
 
 [features]
 default = ["project", "runner", "system", "db"]
 db = ["project"]
 project = []
-runner = ["project"]
+runner = ["project", "dep:serde", "dep:rayon", "indexmap/rayon"]
 system = []
 
 serde = ["dep:serde", "serde/rc", "has_id/serde", "dep:serde_with"]
