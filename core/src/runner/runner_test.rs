@@ -1,10 +1,43 @@
 use super::*;
-use crate::project;
+use crate::{graph, project};
 use has_id::HasId;
 
 #[test_log::test]
 pub fn runner_should_work() {
     let project = ResourceId::new();
+    let (tree, hooks) = create_tree();
+    let builder = Builder::new(hooks);
+    let runner = builder.build();
+
+    let handle = runner.run(project, tree);
+    handle.join().unwrap();
+}
+
+#[test_log::test]
+pub fn runner_kill_should_work() {
+    let project = ResourceId::new();
+    let (tree, hooks) = create_tree();
+    let builder = Builder::new(hooks);
+    let runner = builder.build();
+
+    let handle = runner.run(project, tree);
+    thread::sleep(std::time::Duration::from_millis(15000));
+    handle.kill();
+}
+
+#[test_log::test]
+pub fn runner_cancel_should_work() {
+    let project = ResourceId::new();
+    let (tree, hooks) = create_tree();
+    let builder = Builder::new(hooks);
+    let runner = builder.build();
+
+    let handle = runner.run(project, tree);
+    thread::sleep(std::time::Duration::from_millis(15000));
+    handle.cancel();
+}
+
+fn create_tree() -> (Tree, MockHooks<MockAnalysis>) {
     let analyses = vec![
         MockAnalysis::new(),
         MockAnalysis::new(),
@@ -41,14 +74,11 @@ pub fn runner_should_work() {
         1,
     ));
 
-    let mut tree = ResourceTree::new(root);
+    let mut tree = graph::ResourceTree::new(root);
     tree.insert(tree.root().clone(), c1).unwrap();
     tree.insert(tree.root().clone(), c2).unwrap();
 
-    let hooks = MockHooks::new(analyses);
-    let builder = Builder::new(hooks);
-    let runner = builder.build();
-    runner.run(&project, &mut tree).unwrap()
+    (tree.into(), MockHooks::new(analyses))
 }
 
 #[derive(HasId, Clone)]
@@ -104,7 +134,7 @@ where
         &self,
         _project: ResourceId,
         analysis: ResourceId,
-    ) -> StdResult<Box<dyn Runnable + Send + Sync>, String> {
+    ) -> Result<Box<dyn Runnable + Send + Sync>, String> {
         self.analyses
             .iter()
             .find(|a| *a.id() == analysis)

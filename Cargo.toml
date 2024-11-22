@@ -35,6 +35,7 @@ dev_utils = { path = "dev_utils" }
 file_path_from_id = { path = "file_path_from_id" }
 in_trash = { path = "in_trash" }
 has_id = { path  = "has_id" }
+io_error_serde = { git = "https://github.com/syre-data/io_error_serde.git" }
 
 aquamarine = "0.6"
 calamine = "0.26"
@@ -55,7 +56,6 @@ rayon = "1.8"
 regex = "1.11"
 serde = "1.0"
 serde_json = "1.0"
-serde_with = "3.11"
 serde-wasm-bindgen = "0.6"
 surrealdb = { version = "2.0", package = "surrealdb-nightly" }
 thiserror = "2.0"
