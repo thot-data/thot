@@ -154,12 +154,15 @@ enum AnalyzerState {
     Kill,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum AnalysisStatus {
     Pending,
     Running,
     Complete,
     Killed,
 }
+
+#[derive(Clone, Debug)]
 pub struct AnalysisState {
     container: ResourceId,
     analysis: ResourceId,
@@ -169,6 +172,7 @@ pub struct AnalysisState {
 pub struct Handle {
     handle: thread::JoinHandle<Result<(), error::AnalyzerRun>>,
     state: Arc<Mutex<AnalyzerState>>,
+    analysis_status: Arc<Mutex<Vec<AnalysisState>>>,
 }
 
 impl Handle {
@@ -181,6 +185,7 @@ impl Handle {
     ) -> Result<Self, error::ContainerNotFound> {
         let state = Arc::new(Mutex::new(AnalyzerState::Running));
         let mut analyzer = Analyzer::new(project, tree, root, hooks, thread_pool, state.clone())?;
+        let analysis_status = analyzer.status().clone();
 
         // TODO: Spawn in thread pool?
         let analyzer = thread::Builder::new()
@@ -191,6 +196,7 @@ impl Handle {
         Ok(Self {
             handle: analyzer,
             state,
+            analysis_status,
         })
     }
 
@@ -198,27 +204,42 @@ impl Handle {
     ///
     /// # Panics
     /// If the analysis thread panics.
-    pub fn join(self) -> Result<(), error::AnalyzerRun> {
-        self.handle.join().unwrap()
+    pub fn join(self) -> Result<Vec<AnalysisState>, error::AnalyzerRun> {
+        self.handle.join().unwrap()?;
+
+        let status = Arc::try_unwrap(self.analysis_status).unwrap();
+        let status = status.into_inner().unwrap();
+        Ok(status)
     }
 
     /// If no more analyses will run.
     /// This can be caused by all analyses finishing, or the process being `cancel`ed or `kill`ed.
-    fn done(&self) -> bool {
+    pub fn done(&self) -> bool {
         let state = self.state.lock().unwrap();
         matches!(*state, AnalyzerState::Done)
     }
 
     /// Waits for all current tasks to finish and aborts any pending tasks.
-    fn cancel(&self) {
+    /// Only performs an action if analyzer is running.
+    pub fn cancel(&self) {
         let mut state = self.state.lock().unwrap();
-        *state = AnalyzerState::Cancel;
+        if matches!(*state, AnalyzerState::Running) {
+            *state = AnalyzerState::Cancel;
+        }
     }
 
     /// Immediately kills all current tasks, and aborts any pending tasks.
-    fn kill(&self) {
+    /// Only performs an action if analyzer is running.
+    pub fn kill(&self) {
         let mut state = self.state.lock().unwrap();
-        *state = AnalyzerState::Kill;
+        if matches!(*state, AnalyzerState::Running) {
+            *state = AnalyzerState::Kill;
+        }
+    }
+
+    pub fn status(&self) -> Vec<AnalysisState> {
+        let status = self.analysis_status.lock().unwrap();
+        (*status).clone()
     }
 }
 
@@ -256,6 +277,10 @@ impl Analyzer {
             state,
             status,
         })
+    }
+
+    pub fn status(&self) -> &Arc<Mutex<Vec<AnalysisState>>> {
+        &self.status
     }
 
     fn collect_analyses_to_perform(tree: &Tree) -> Vec<AnalysisState> {
@@ -311,8 +336,14 @@ impl Analyzer {
             .map(|(id, analysis)| (id.clone(), analysis.ok().unwrap()))
             .collect();
 
-        self.evaluate_tree(self.root.clone(), Arc::new(analyses))
-            .map_err(|err| err.into())
+        let result = self
+            .evaluate_tree(self.root.clone(), Arc::new(analyses))
+            .map_err(|err| error::AnalyzerRun::from(err));
+
+        let mut state = self.state.lock().unwrap();
+        *state = AnalyzerState::Done;
+
+        result
     }
 
     /// Evaluates a `Container` tree.
@@ -376,7 +407,12 @@ impl Analyzer {
                 .collect();
 
             let container_path = self.tree.path(container).unwrap();
-            self.run_analysis_group(analyses, container_path, self.project.clone())?;
+            self.run_analysis_group(
+                analyses,
+                container_path,
+                container.rid(),
+                self.project.clone(),
+            )?;
         }
 
         Ok(())
@@ -399,7 +435,8 @@ impl Analyzer {
     fn run_analysis_group(
         &self,
         analyses: Vec<&Box<dyn Runnable + Send + Sync>>,
-        container: PathBuf,
+        container_path: PathBuf,
+        container_id: &ResourceId,
         project: ResourceId,
     ) -> Result<(), Vec<error::Evaluation>> {
         let errors = self.thread_pool.install(move || {
@@ -409,46 +446,51 @@ impl Analyzer {
                     let exec_ctx = AnalysisExecutionContext {
                         project: project.clone(),
                         analysis: analysis.id().clone(),
-                        container: container.clone(),
+                        container: container_path.clone(),
                     };
 
                     self.hooks.pre_analysis(&exec_ctx);
-                    self.run_analysis(analysis, container.clone(), project.clone())
-                        .map(|output| {
-                            output.map(|output| {
-                                let assets = Vec::new(); // TODO: Collect `ResourceId`s of `Assets`.
-                                self.hooks.assets_added(&exec_ctx, assets);
-                                if output.status.success() {
-                                    self.hooks.post_analysis(&exec_ctx);
-                                    return None;
-                                }
+                    self.run_analysis(
+                        analysis,
+                        container_path.clone(),
+                        container_id,
+                        project.clone(),
+                    )
+                    .map(|output| {
+                        output.map(|output| {
+                            let assets = Vec::new(); // TODO: Collect `ResourceId`s of `Assets`.
+                            self.hooks.assets_added(&exec_ctx, assets);
+                            if output.status.success() {
+                                self.hooks.post_analysis(&exec_ctx);
+                                return None;
+                            }
 
-                                let stderr = str::from_utf8(output.stderr.as_slice())
-                                    .unwrap()
-                                    .to_string();
-                                let exec_ctx = AnalysisExecutionContext {
+                            let stderr = str::from_utf8(output.stderr.as_slice())
+                                .unwrap()
+                                .to_string();
+                            let exec_ctx = AnalysisExecutionContext {
+                                project: project.clone(),
+                                analysis: analysis.id().clone(),
+                                container: container_path.clone(),
+                            };
+
+                            match self.hooks.analysis_error(
+                                &exec_ctx,
+                                output.status,
+                                stderr.clone(),
+                            ) {
+                                ErrorResponse::Continue => None,
+                                ErrorResponse::Terminate => Some(error::Evaluation::Analysis {
                                     project: project.clone(),
                                     analysis: analysis.id().clone(),
-                                    container: container.clone(),
-                                };
-
-                                match self.hooks.analysis_error(
-                                    &exec_ctx,
-                                    output.status,
-                                    stderr.clone(),
-                                ) {
-                                    ErrorResponse::Continue => None,
-                                    ErrorResponse::Terminate => Some(error::Evaluation::Analysis {
-                                        project: project.clone(),
-                                        analysis: analysis.id().clone(),
-                                        container: container.clone(),
-                                        exit_code: output.status.code(),
-                                        err: stderr,
-                                    }),
-                                }
-                            })
+                                    container: container_path.clone(),
+                                    exit_code: output.status.code(),
+                                    err: stderr,
+                                }),
+                            }
                         })
-                        .err()
+                    })
+                    .err()
                 })
                 .collect::<Vec<_>>()
         });
@@ -472,15 +514,18 @@ impl Analyzer {
     fn run_analysis(
         &self,
         analysis: &Box<dyn Runnable + Send + Sync>,
-        container: PathBuf,
+        container_path: PathBuf,
+        container_id: &ResourceId,
         project: ResourceId,
     ) -> Result<Option<process::Output>, error::Evaluation> {
-        tracing::trace!("running {} on {:?}", analysis.id(), container);
+        tracing::trace!("running {} on {:?}", analysis.id(), container_path);
 
         let mut status = self.status.lock().unwrap();
         let status_idx = status
             .iter()
-            .position(|status| status.analysis == *analysis.id())
+            .position(|status| {
+                status.analysis == *analysis.id() && status.container == *container_id
+            })
             .unwrap();
         status[status_idx].status = AnalysisStatus::Running;
         drop(status);
@@ -488,7 +533,7 @@ impl Analyzer {
         let mut cmd = analysis.command();
         let mut child = match cmd
             .env(PROJECT_ID_KEY, project.to_string())
-            .env(CONTAINER_ID_KEY, &container)
+            .env(CONTAINER_ID_KEY, &container_path)
             .spawn()
         {
             Ok(child) => child,
@@ -497,7 +542,7 @@ impl Analyzer {
                 return Err(error::Evaluation::Command {
                     project: project.clone(),
                     analysis: analysis.id().clone(),
-                    container,
+                    container: container_path,
                     cmd: format!("{cmd:?}"),
                     err: err.kind(),
                 });
@@ -536,7 +581,7 @@ impl Analyzer {
                 return Err(error::Evaluation::Command {
                     project: project.clone(),
                     analysis: analysis.id().clone(),
-                    container,
+                    container: container_path,
                     cmd: format!("{cmd:?}"),
                     err: err.kind(),
                 });
