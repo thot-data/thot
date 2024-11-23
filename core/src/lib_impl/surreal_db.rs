@@ -1,15 +1,15 @@
 //! impls for Surreal DB.
 use crate::types::ResourceId;
-use surrealdb::sql::Id;
+use surrealdb::value::RecordIdKey;
 
 impl ResourceId {
-    pub fn into_surreal_id(self) -> Id {
+    pub fn into_surreal_id(self) -> RecordIdKey {
         self.into()
     }
 }
 
-impl Into<Id> for ResourceId {
-    fn into(self) -> Id {
-        Id::String(self.to_string())
+impl Into<RecordIdKey> for ResourceId {
+    fn into(self) -> RecordIdKey {
+        self.to_string().into()
     }
 }

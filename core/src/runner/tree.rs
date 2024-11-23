@@ -18,6 +18,39 @@ pub struct Tree {
 }
 
 impl Tree {
+    /// Create a new tree from a graph.
+    /// Performs basic checks to ensure graph is a valid tree,
+    /// but assumes `graph` is a valid tree.
+    pub fn from_graph(graph: Vec<(Node, Children)>) -> Result<Self, error::InvalidGraph> {
+        let Some(root) = graph.iter().find_map(|(parent, _)| {
+            (!graph
+                .iter()
+                .any(|(_, children)| children.iter().any(|child| Node::ptr_eq(child, parent))))
+            .then_some(parent.clone())
+        }) else {
+            return Err(error::InvalidGraph::NoRoot);
+        };
+
+        let parents = graph
+            .iter()
+            .flat_map(|(parent, children)| {
+                children
+                    .iter()
+                    .map(|child| (child.clone(), parent.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        if parents.len() != graph.len() - 1 {
+            return Err(error::InvalidGraph::InvalidTree);
+        }
+
+        Ok(Self {
+            graph,
+            root,
+            parents,
+        })
+    }
+
     /// Iterator over all nodes.
     pub fn nodes(&self) -> Vec<Node> {
         self.graph
@@ -233,5 +266,12 @@ impl From<&graph::ResourceTree<Container>> for Tree {
             root,
             parents,
         }
+    }
+}
+
+pub mod error {
+    pub enum InvalidGraph {
+        NoRoot,
+        InvalidTree,
     }
 }

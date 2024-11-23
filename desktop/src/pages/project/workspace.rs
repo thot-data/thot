@@ -487,6 +487,7 @@ fn ProjectNav() -> impl IntoView {
 mod analyze {
     use super::state;
     use crate::{components, types};
+    use futures::future;
     use leptos::{ev::MouseEvent, *};
     use leptos_icons::*;
     use std::path::PathBuf;

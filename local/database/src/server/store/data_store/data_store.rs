@@ -1,8 +1,9 @@
 use super::Command;
 use std::str::FromStr;
-use surrealdb::engine::local::{Db, Mem};
-use surrealdb::sql::Thing;
-use surrealdb::{error, Error, Surreal};
+use surrealdb::{
+    engine::local::{Db, Mem},
+    error, Error, Surreal,
+};
 use syre_core::types::ResourceId;
 use tokio::sync::{mpsc, oneshot};
 
@@ -22,7 +23,7 @@ pub const DATABASE: &str = "datastore";
 #[allow(dead_code)]
 #[derive(Debug, serde::Deserialize)]
 struct IdRecord {
-    id: Thing,
+    id: surrealdb::RecordIdKey,
 }
 
 const DEFINE_TABLE_USER: &str = "
@@ -190,7 +191,7 @@ impl Store {
         #[allow(dead_code)]
         #[derive(serde::Deserialize, Debug)]
         struct Record {
-            id: surrealdb::sql::Thing,
+            id: surrealdb::RecordIdKey,
             score: f64,
         }
 
@@ -275,7 +276,7 @@ impl Store {
 
         let results = results
             .into_iter()
-            .map(|record| ResourceId::from_str(record.id.id.to_raw().as_str()).unwrap())
+            .map(|record| ResourceId::from_str(&record.id.to_string()).unwrap())
             .collect();
 
         Self::send_response(tx, Ok(results));
@@ -308,7 +309,7 @@ impl Store {
             // .bind(("table", table))
             // .bind(("id", id))
             .query("SELECT in AS id FROM has_resource WHERE out = $id")
-            .bind(("id", Thing::from((table, id.into_surreal_id()))))
+            .bind(("id", (table, id.into_surreal_id())))
             .await?;
 
         let result = result.take::<Vec<IdRecord>>(0)?;
@@ -317,8 +318,8 @@ impl Store {
         };
 
         assert_eq!(result.len(), 1);
-        let rid = result[0].id.id.to_raw();
-        let Ok(rid) = ResourceId::from_str(rid.as_str()) else {
+        let rid = result[0].id.to_string();
+        let Ok(rid) = ResourceId::from_str(&rid) else {
             return Err(Error::Db(error::Db::IdInvalid {
                 value: rid.to_string(),
             }));
@@ -445,13 +446,14 @@ pub mod project {
 }
 
 pub mod graph {
-    use super::super::command::graph::{Command, ContainerTree};
-    use super::asset::Record as AssetRecord;
-    use super::container::Record as ContainerRecord;
-    use super::{error, Error, Result, Store};
+    use super::{
+        super::command::graph::{Command, ContainerTree},
+        asset::Record as AssetRecord,
+        container::Record as ContainerRecord,
+        error, Error, Result, Store,
+    };
     use futures::future::{BoxFuture, FutureExt};
     use std::{collections::HashMap, str::FromStr};
-    use surrealdb::sql::Thing;
     use syre_core::{
         graph::ResourceNode,
         project::{Asset, Container},
@@ -492,11 +494,8 @@ pub mod graph {
 
                 self.db
                     .query("RELATE $project -> has_resource -> $id")
-                    .bind((
-                        "project",
-                        Thing::from(("project", project.clone().into_surreal_id())),
-                    ))
-                    .bind(("id", Thing::from(("container", id.into_surreal_id()))))
+                    .bind(("project", ("project", project.clone().into_surreal_id())))
+                    .bind(("id", ("container", id.into_surreal_id())))
                     .await?;
             }
 
@@ -504,14 +503,8 @@ pub mod graph {
                 for child in children {
                     self.db
                         .query("RELATE $parent -> has_child -> $child")
-                        .bind((
-                            "parent",
-                            Thing::from(("container", parent.clone().into_surreal_id())),
-                        ))
-                        .bind((
-                            "child",
-                            Thing::from(("container", child.clone().into_surreal_id())),
-                        ))
+                        .bind(("parent", ("container", parent.clone().into_surreal_id())))
+                        .bind(("child", ("container", child.clone().into_surreal_id())))
                         .await?;
                 }
             }
@@ -531,18 +524,15 @@ pub mod graph {
                     .query("RELATE $container -> has_asset -> $id")
                     .bind((
                         "container",
-                        Thing::from(("container", container.clone().into_surreal_id())),
+                        ("container", container.clone().into_surreal_id()),
                     ))
-                    .bind(("id", Thing::from(("asset", id.clone().into_surreal_id()))))
+                    .bind(("id", ("asset", id.clone().into_surreal_id())))
                     .await?;
 
                 self.db
                     .query("RELATE $project -> has_resource -> $id")
-                    .bind((
-                        "project",
-                        Thing::from(("project", project.clone().into_surreal_id())),
-                    ))
-                    .bind(("id", Thing::from(("asset", id.into_surreal_id()))))
+                    .bind(("project", ("project", project.clone().into_surreal_id())))
+                    .bind(("id", ("asset", id.into_surreal_id())))
                     .await?;
             }
 
@@ -562,11 +552,8 @@ pub mod graph {
 
             self.db
                 .query("RELATE $parent -> has_child -> $child")
-                .bind((
-                    "parent",
-                    Thing::from(("container", parent.clone().into_surreal_id())),
-                ))
-                .bind(("child", Thing::from(("container", root.into_surreal_id()))))
+                .bind(("parent", ("container", parent.clone().into_surreal_id())))
+                .bind(("child", ("container", root.into_surreal_id())))
                 .await?;
 
             Ok(())
@@ -579,7 +566,7 @@ pub mod graph {
                     .query("DELETE asset WHERE <-(has_asset WHERE in == $container)")
                     .bind((
                         "container",
-                        Thing::from(("container", container.clone().into_surreal_id())),
+                        ("container", container.clone().into_surreal_id()),
                     ))
                     .await?;
 
@@ -594,22 +581,19 @@ pub mod graph {
         async fn children(&self, parent: ResourceId) -> Result<Vec<ResourceId>> {
             #[derive(serde::Deserialize, Debug)]
             struct Record {
-                out: Thing,
+                out: surrealdb::RecordIdKey,
             }
 
             let mut results = self
                 .db
                 .query("SELECT out FROM has_child WHERE in == $parent")
-                .bind((
-                    "parent",
-                    Thing::from(("container", parent.into_surreal_id())),
-                ))
+                .bind(("parent", ("container", parent.into_surreal_id())))
                 .await?;
 
             let results = results.take::<Vec<Record>>(0)?;
             let ids = results
                 .into_iter()
-                .map(|record| ResourceId::from_str(record.out.id.to_raw().as_str()).unwrap())
+                .map(|record| ResourceId::from_str(&record.out.to_string()).unwrap())
                 .collect();
 
             Ok(ids)
@@ -689,19 +673,16 @@ pub mod graph {
 }
 
 pub mod container {
-    use super::super::command::container::Command;
-    use super::ResourceKind;
-    use super::{Result, Store};
+    use super::{super::command::container::Command, ResourceKind, Result, Store};
     use chrono::{DateTime, Utc};
     use serde::{Deserialize, Serialize};
     use std::path::PathBuf;
-    use surrealdb::{error, sql::Thing, Error};
+    use surrealdb::{error, Error};
     use syre_core::{
         project::{ContainerProperties, Metadata},
         types::{ResourceId, UserId},
     };
-    use syre_local::project::resources::Container;
-    use syre_local::types::ContainerSettings;
+    use syre_local::{project::resources::Container, types::ContainerSettings};
 
     impl Store {
         pub async fn handle_command_container(&self, cmd: Command) {
@@ -743,23 +724,14 @@ pub mod container {
 
             self.db
                 .query("RELATE $parent -> has_child -> $id")
-                .bind((
-                    "parent",
-                    Thing::from(("container", parent.into_surreal_id())),
-                ))
-                .bind((
-                    "id",
-                    Thing::from(("container", id.clone().into_surreal_id())),
-                ))
+                .bind(("parent", ("container", parent.into_surreal_id())))
+                .bind(("id", ("container", id.clone().into_surreal_id())))
                 .await?;
 
             self.db
                 .query("RELATE $project -> has_resource -> $id")
-                .bind((
-                    "project",
-                    Thing::from(("project", project.into_surreal_id())),
-                ))
-                .bind(("id", Thing::from(("container", id.into_surreal_id()))))
+                .bind(("project", ("project", project.into_surreal_id())))
+                .bind(("id", ("container", id.into_surreal_id())))
                 .await?;
 
             Ok(())
@@ -819,15 +791,15 @@ pub mod container {
 }
 
 pub mod asset {
-    use super::super::command::asset::Command;
-    use super::ResourceKind;
-    use super::{Result, Store};
+    use super::{super::command::asset::Command, ResourceKind, Result, Store};
     use chrono::{DateTime, Utc};
     use serde::{Deserialize, Serialize};
     use std::path::PathBuf;
-    use surrealdb::{error, sql::Thing, Error};
-    use syre_core::project::{Asset, AssetProperties, Metadata};
-    use syre_core::types::ResourceId;
+    use surrealdb::{error, Error};
+    use syre_core::{
+        project::{Asset, AssetProperties, Metadata},
+        types::ResourceId,
+    };
 
     impl Store {
         pub async fn handle_command_asset(&self, cmd: Command) {
@@ -874,20 +846,14 @@ pub mod asset {
 
             self.db
                 .query("RELATE $container -> has_asset -> $id")
-                .bind((
-                    "container",
-                    Thing::from(("container", container.into_surreal_id())),
-                ))
-                .bind(("id", Thing::from(("asset", id.clone().into_surreal_id()))))
+                .bind(("container", ("container", container.into_surreal_id())))
+                .bind(("id", ("asset", id.clone().into_surreal_id())))
                 .await?;
 
             self.db
                 .query("RELATE $project -> has_resource -> $id")
-                .bind((
-                    "project",
-                    Thing::from(("project", project.into_surreal_id())),
-                ))
-                .bind(("id", Thing::from(("asset", id.into_surreal_id()))))
+                .bind(("project", ("project", project.into_surreal_id())))
+                .bind(("id", ("asset", id.into_surreal_id())))
                 .await?;
 
             Ok(())

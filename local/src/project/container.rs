@@ -410,14 +410,13 @@ pub mod builder {
 }
 
 pub mod error {
-    use crate::error::IoErrorKind;
     use serde::{Deserialize, Serialize};
     use std::io;
 
     #[derive(Serialize, Deserialize, Debug, derive_more::From)]
     pub enum Build {
         Load,
-        Save(#[serde(with = "IoErrorKind")] io::ErrorKind),
+        Save(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
         NotADirectory,
 
         /// The path is already a Syre resource.

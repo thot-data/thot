@@ -1,5 +1,9 @@
 use crate::settings;
-use std::{fs, io, path::PathBuf};
+use std::{
+    fs, io,
+    path::{self, PathBuf},
+    sync::Arc,
+};
 use syre_core::{
     self as core,
     runner::RunnerHooks,
@@ -270,6 +274,27 @@ pub async fn analyze_project(
         return Err(error::Analyze::GraphAbsent);
     };
 
+    let Ok(graph) = graph_state_to_runner_tree(graph) else {
+        return Err(error::Analyze::InvalidGraph);
+    };
+
+    let mut root_path = root.components();
+    assert_eq!(root_path.next().unwrap(), path::Component::RootDir);
+    let mut root = graph.root();
+    while let Some(component) = root_path.next() {
+        let path::Component::Normal(name) = component else {
+            panic!("invalid path");
+        };
+        let name = name.to_str().unwrap();
+
+        let children = graph.children(root).unwrap();
+        root = children
+            .iter()
+            .find(|child| child.properties.name == name)
+            .unwrap();
+    }
+    let root = root.rid().clone();
+
     let runner_settings = state
         .user()
         .lock()
@@ -283,17 +308,14 @@ pub async fn analyze_project(
             Ok(hooks) => hooks,
             Err(err) => return Err(err.into()),
         };
-    let runner_hooks = Box::new(runner_hooks) as Box<dyn RunnerHooks>;
-    let runner = core::runner::Runner::new(runner_hooks);
-    let Ok(mut graph) = graph_state_to_container_tree(graph) else {
-        return Err(error::Analyze::InvalidGraph);
-    };
-    let root = graph.get_path(&root).unwrap().unwrap().rid().clone();
-    match max_tasks {
-        None => runner.from(&project, &mut graph, &root)?,
-        Some(max_tasks) => runner.with_tasks(&project, &mut graph, max_tasks)?,
+    let mut runner = core::runner::Builder::new(runner_hooks);
+    if let Some(max_tasks) = max_tasks {
+        runner.num_threads(max_tasks);
     }
+    let runner = runner.build();
 
+    let handle = runner.from(project, graph, &root).unwrap();
+    let result = handle.join().unwrap();
     Ok(())
 }
 
@@ -302,41 +324,49 @@ pub fn delete_project(project: PathBuf) -> Result<(), lib::command::error::Trash
     trash::delete(&project).map_err(|err| err.into())
 }
 
-fn graph_state_to_container_tree(
+fn graph_state_to_runner_tree(
     graph: db::state::Graph,
-) -> Result<core::graph::ResourceTree<core::project::Container>, InvalidGraph> {
+) -> Result<core::runner::Tree, error::InvalidGraph> {
     let db::state::Graph { nodes, children } = graph;
-    let nodes = nodes
+    let (nodes, errors): (Vec<_>, Vec<_>) = nodes
         .into_iter()
         .map(|node| node.as_container())
-        .collect::<Vec<_>>();
-    if nodes.iter().any(|node| node.is_none()) {
-        return Err(InvalidGraph);
+        .partition(|node| node.is_some());
+    if !errors.is_empty() {
+        return Err(error::InvalidGraph::InvalidContainer);
     }
     let nodes = nodes
         .into_iter()
-        .map(|node| {
-            let node = node.unwrap();
-            (node.rid().clone(), core::graph::ResourceNode::new(node))
-        })
+        .map(|node| Arc::new(node.unwrap()))
         .collect::<Vec<_>>();
 
-    let edges = children
+    let graph = children
         .into_iter()
         .enumerate()
         .map(|(idx, children)| {
-            let children = children
-                .into_iter()
-                .map(|idx| nodes[idx].0.clone())
-                .collect();
-
-            (nodes[idx].0.clone(), children)
+            let children = children.into_iter().map(|idx| nodes[idx].clone()).collect();
+            (nodes[idx].clone(), children)
         })
-        .collect::<core::graph::tree::EdgeMap>();
+        .collect::<Vec<_>>();
 
-    let nodes = nodes.into_iter().collect::<core::types::ResourceMap<_>>();
-    Ok(core::graph::ResourceTree::from_parts(nodes, edges).unwrap())
+    Ok(core::runner::Tree::from_graph(graph)?)
 }
 
-#[derive(Debug)]
-struct InvalidGraph;
+mod error {
+    use syre_core as core;
+
+    pub enum InvalidGraph {
+        InvalidContainer,
+        InvalidTree,
+        NoRoot,
+    }
+
+    impl From<core::runner::tree::error::InvalidGraph> for InvalidGraph {
+        fn from(value: core::runner::tree::error::InvalidGraph) -> Self {
+            match value {
+                core::runner::tree::error::InvalidGraph::NoRoot => Self::NoRoot,
+                core::runner::tree::error::InvalidGraph::InvalidTree => Self::InvalidTree,
+            }
+        }
+    }
+}

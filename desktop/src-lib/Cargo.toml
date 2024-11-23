@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 derive_more.workspace = true
+io_error_serde.workspace = true
 serde = { workspace = true, features = ["derive"] }
 syre-core.workspace = true
 syre-local.workspace = true

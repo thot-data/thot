@@ -40,7 +40,7 @@ leptos_meta = { version = "0.6", features = ["nightly", "csr"] }
 chrono = { workspace = true, features = ["serde"] }
 leptos_icons = "0.3.1"
 icondata = "0.4.0"
-leptos-use = { git = "https://github.com/Synphonyte/leptos-use.git", features = ["storage"]}
+leptos-use = { git = "https://github.com/Synphonyte/leptos-use.git", branch = "leptos-0.6", features = ["storage"]}
 derive_more.workspace = true
 
 [dependencies.web-sys]  

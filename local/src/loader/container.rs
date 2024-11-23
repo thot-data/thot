@@ -165,7 +165,7 @@ pub mod error {
     pub struct AssetFile {
         pub(crate) asset: ResourceId,
 
-        #[serde(with = "crate::error::IoErrorKind")]
+        #[serde(with = "io_error_serde::ErrorKind")]
         pub(crate) kind: io::ErrorKind,
     }
 }

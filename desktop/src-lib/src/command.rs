@@ -4,7 +4,7 @@ pub mod project {
         use serde::{Deserialize, Serialize};
         use std::io;
         use syre_core as core;
-        use syre_local::error::{IoErrorKind, IoSerde};
+        use syre_local::error::IoSerde;
         use syre_local_runner as runner;
 
         #[derive(Serialize, Deserialize, Debug)]
@@ -32,7 +32,7 @@ pub mod project {
         #[derive(Serialize, Deserialize, Debug)]
         pub enum AnalysesUpdate {
             AnalysesFile(IoSerde),
-            RemoveFile(#[serde(with = "IoErrorKind")] io::ErrorKind),
+            RemoveFile(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
         }
 
         #[derive(Serialize, Deserialize, derive_more::From, Debug)]
@@ -40,7 +40,7 @@ pub mod project {
             GraphAbsent,
             InvalidGraph,
             RunnerCreation(runner::error::From),
-            Analysis(core::runner::Error),
+            Analysis(core::runner::error::AnalyzerRun),
         }
     }
 }
@@ -185,7 +185,7 @@ pub mod container {
         pub mod error {
             use serde::{Deserialize, Serialize};
             use std::{io, path::PathBuf};
-            use syre_local::error::{IoErrorKind, IoSerde};
+            use syre_local::error::IoSerde;
 
             /// Error renaming container.
             #[derive(Serialize, Deserialize, Debug)]
@@ -200,7 +200,7 @@ pub mod container {
             #[derive(Serialize, Deserialize, Debug)]
             pub enum Update {
                 Load(IoSerde),
-                Save(#[serde(with = "IoErrorKind")] io::ErrorKind),
+                Save(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
             }
         }
     }
@@ -208,18 +208,18 @@ pub mod container {
     pub mod error {
         use serde::{Deserialize, Serialize};
         use std::io;
-        use syre_local::error::{IoErrorKind, IoSerde};
+        use syre_local::error::IoSerde;
 
         /// Error renaming container.
         #[derive(Serialize, Deserialize, Debug)]
         pub enum Rename {
             ProjectNotFound,
             NameCollision,
-            Rename(#[serde(with = "IoErrorKind")] io::ErrorKind),
+            Rename(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
 
             /// Could not update project's data root.
             /// Only applicable when renaming the root node.
-            DataRoot(#[serde(with = "IoErrorKind")] io::ErrorKind),
+            DataRoot(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
         }
 
         /// Error updating container.
@@ -227,7 +227,7 @@ pub mod container {
         pub enum Update {
             ProjectNotFound,
             Load(IoSerde),
-            Save(#[serde(with = "IoErrorKind")] io::ErrorKind),
+            Save(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
         }
     }
 }
@@ -273,14 +273,14 @@ pub mod asset {
             use serde::{Deserialize, Serialize};
             use std::io;
             use syre_core::types::ResourceId;
-            use syre_local::error::{IoErrorKind, IoSerde};
+            use syre_local::error::IoSerde;
 
             /// Error updating containers.
             #[derive(Serialize, Deserialize, Debug)]
             pub enum Update {
                 Load(IoSerde),
                 NotFound(Vec<ResourceId>),
-                Save(#[serde(with = "IoErrorKind")] io::ErrorKind),
+                Save(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
             }
         }
     }
@@ -288,14 +288,14 @@ pub mod asset {
     pub mod error {
         use serde::{Deserialize, Serialize};
         use std::io;
-        use syre_local::error::{IoErrorKind, IoSerde};
+        use syre_local::error::IoSerde;
 
         /// Error updating asset.
         #[derive(Serialize, Deserialize, Debug)]
         pub enum Update {
             ProjectNotFound,
             Load(IoSerde),
-            Save(#[serde(with = "IoErrorKind")] io::ErrorKind),
+            Save(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
         }
     }
 }
@@ -344,7 +344,7 @@ pub mod error {
 
     /// [`std::io::ErrorKind`] wrapper to allow for serialization.
     #[derive(Serialize, Deserialize, derive_more::From, Debug)]
-    pub struct IoErrorKind(#[serde(with = "syre_local::error::IoErrorKind")] pub io::ErrorKind);
+    pub struct IoErrorKind(#[serde(with = "io_error_serde::ErrorKind")] pub io::ErrorKind);
     impl Into<io::ErrorKind> for IoErrorKind {
         fn into(self) -> io::ErrorKind {
             self.0

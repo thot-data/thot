@@ -57,7 +57,7 @@ regex = "1.11"
 serde = "1.0"
 serde_json = "1.0"
 serde-wasm-bindgen = "0.6"
-surrealdb = { version = "2.0", package = "surrealdb-nightly" }
+surrealdb = { version = "2.1", package = "surrealdb-nightly" }
 thiserror = "2.0"
 tracing = "0.1"
 tracing-appender = "0.2"

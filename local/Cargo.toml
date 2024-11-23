@@ -26,11 +26,11 @@ fastrand = "2.1"
 glob = { workspace = true, optional = true }
 has_id = { workspace = true, features = ["derive", "serde"] }
 ignore = { workspace = true, optional = true }
+io_error_serde.workspace = true
 rayon.workspace = true
 regex.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
 tempfile.workspace = true
 thiserror = { workspace = true }
 tracing = { workspace = true }

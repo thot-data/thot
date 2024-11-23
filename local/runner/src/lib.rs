@@ -1,12 +1,15 @@
 //! Local runner hooks.
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    process,
+};
 use syre_core::{
     self as core,
     project::{ExcelTemplate, Script, ScriptLang},
     runner::{Runnable, RunnerHooks},
     types::ResourceId,
 };
-use syre_local::{self as local, system::config, types::analysis::AnalysisKind};
+use syre_local::{system::config, types::analysis::AnalysisKind};
 use syre_local_database as db;
 
 #[derive(Debug)]
@@ -135,17 +138,17 @@ impl RunnerHooks for Runner {
         &self,
         project: ResourceId,
         analysis: ResourceId,
-    ) -> Result<Box<dyn Runnable>, String> {
+    ) -> Result<Box<dyn Runnable + Send + Sync>, String> {
         self.analyses
             .iter()
             .find_map(|(id, runner_analysis)| {
                 if *id == analysis {
                     let analysis = match runner_analysis {
                         AnalysisKind::Script(script) => {
-                            Box::new(script.clone()) as Box<dyn Runnable>
+                            Box::new(script.clone()) as Box<dyn Runnable + Send + Sync>
                         }
                         AnalysisKind::ExcelTemplate(template) => {
-                            Box::new(template.clone()) as Box<dyn Runnable>
+                            Box::new(template.clone()) as Box<dyn Runnable + Send + Sync>
                         }
                     };
                     Some(analysis)
@@ -158,10 +161,11 @@ impl RunnerHooks for Runner {
 
     fn analysis_error(
         &self,
-        ctx: core::runner::AnalysisExecutionContext,
-        err: core::runner::Error,
-    ) -> Result<(), core::runner::Error> {
-        Err(err)
+        ctx: &core::runner::AnalysisExecutionContext,
+        status: process::ExitStatus,
+        err: String,
+    ) -> core::runner::ErrorResponse {
+        core::runner::ErrorResponse::Terminate
     }
 }
 

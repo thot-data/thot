@@ -1,7 +1,8 @@
-#![feature(io_error_more)]
-#![feature(path_file_prefix)]
 //! # Syre Local
 //! This package contains local functionality and types of the Syre software suite.
+#![feature(io_error_more)]
+#![feature(path_file_prefix)]
+
 pub mod common;
 pub mod constants;
 pub mod error;
