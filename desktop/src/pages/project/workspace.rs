@@ -487,40 +487,77 @@ fn ProjectNav() -> impl IntoView {
 mod analyze {
     use super::state;
     use crate::{components, types};
-    use futures::future;
+    use futures::stream::StreamExt;
     use leptos::{ev::MouseEvent, *};
     use leptos_icons::*;
     use std::path::PathBuf;
     use syre_core::types::ResourceId;
     use syre_desktop_lib as lib;
 
+    enum AnalysisState {
+        Idle,
+        Pending,
+        Running { completed: usize, remaining: usize },
+    }
+
+    impl AnalysisState {
+        pub fn running(&self) -> bool {
+            matches!(self, AnalysisState::Running { .. })
+        }
+    }
+
     #[component]
     pub fn Analyze() -> impl IntoView {
         let project = expect_context::<state::Project>();
         let messages = expect_context::<types::Messages>();
+        let analysis_state = create_rw_signal(AnalysisState::Idle);
+        provide_context(analysis_state);
 
         let action = create_action({
             let project = project.rid().read_only();
             move |_| async move {
-                match analyze(project.get_untracked(), "/").await {
-                    Ok(_) => {
-                        let msg = types::message::Builder::success("Analysis complete.");
-                        messages.update(|messages| messages.push(msg.build()));
+                analysis_state.set(AnalysisState::Pending);
+                let mut rx: tauri_sys::core::Channel<lib::event::analysis::Update> =
+                    match trigger_analysis(project.get_untracked(), "/").await {
+                        Ok(rx) => rx,
+                        Err(err) => {
+                            tracing::error!(?err);
+                            analysis_state.set(AnalysisState::Idle);
+                            let mut msg =
+                                types::message::Builder::error("Could not initialize analysis.");
+                            msg.body(format!("{err:?}"));
+                            messages.update(|messages| messages.push(msg.build()));
+                            return;
+                        }
+                    };
+
+                spawn_local(async move {
+                    while let Some(event) = rx.next().await {
+                        match event {
+                            lib::event::analysis::Update::Progress {
+                                completed,
+                                remaining,
+                            } => {
+                                analysis_state.set(AnalysisState::Running {
+                                    completed,
+                                    remaining,
+                                });
+                            }
+                            lib::event::analysis::Update::Done => {
+                                analysis_state.set(AnalysisState::Idle);
+                                let msg = types::message::Builder::success("Analysis complete.");
+                                messages.update(|messages| messages.push(msg.build()));
+                                break;
+                            }
+                        }
                     }
-                    Err(err) => {
-                        tracing::error!(?err);
-                        let mut msg =
-                            types::message::Builder::error("Could not complete analysis.");
-                        msg.body(format!("{err:?}"));
-                        messages.update(|messages| messages.push(msg.build()));
-                    }
-                }
+                });
             }
         });
 
         move || {
-            if action.pending().get() {
-                view! { <Cancel action /> }
+            if analysis_state.with(|state| state.running()) {
+                view! { <Cancel /> }
             } else {
                 view! { <Trigger action /> }
             }
@@ -557,48 +594,93 @@ mod analyze {
     }
 
     #[component]
-    fn Cancel(action: Action<(), ()>) -> impl IntoView {
+    fn Cancel() -> impl IntoView {
+        let analysis_state = expect_context::<RwSignal<AnalysisState>>();
         let mousedown = move |e: MouseEvent| {
             if e.button() != types::MouseButton::Primary {
                 return;
             }
         };
 
+        let title = move || {
+            analysis_state.with(|state| {
+                let AnalysisState::Running {
+                    completed,
+                    remaining,
+                } = state
+                else {
+                    panic!("invalid state");
+                };
+
+                format!("{} of {} remaining", remaining, completed + remaining)
+            })
+        };
+
+        let percent_complete = move || {
+            analysis_state.with(|state| {
+                let AnalysisState::Running {
+                    completed,
+                    remaining,
+                } = state
+                else {
+                    panic!("invalid state");
+                };
+
+                let percent_complete = 100 * completed / (completed + remaining);
+                format!("{percent_complete}%")
+            })
+        };
+
         view! {
             <button
                 on:mousedown=mousedown
-                class="flex gap-2 items-center btn-primary rounded px-4 \
-                disabled:bg-primary-800 dark:disabled:bg-primary-400 \
-                disabled:cursor-not-allowed"
+                class="relative btn-primary rounded px-4 disabled:bg-primary-800 \
+                dark:disabled:bg-primary-400 disabled:cursor-not-allowed"
+                title=title
             >
-                "Analyzing"
-                <span class="animate-spin">
-                    <Icon icon=components::icon::Refresh />
-                </span>
+                <div class="flex gap-2 items-center">
+                    "Analyzing" <span class="animate-spin">
+                        <Icon icon=components::icon::Refresh />
+                    </span>
+                </div>
+                <div class="absolute bottom-0 left-1 right-1 h-0.5 rounded-full bg-primary-800 dark:bg-primary-700">
+                    <span
+                        class="h-full block rounded-full bg-syre-green-800 dark:bg-syre-green-500"
+                        style:width=percent_complete
+                    ></span>
+                </div>
             </button>
         }
     }
 
-    async fn analyze(
+    async fn trigger_analysis(
         project: ResourceId,
         root: impl Into<PathBuf>,
-    ) -> Result<(), lib::command::project::error::Analyze> {
+    ) -> Result<
+        tauri_sys::core::Channel<lib::event::analysis::Update>,
+        lib::command::project::error::TriggerAnalysis,
+    > {
         #[derive(serde::Serialize)]
-        struct Args {
+        struct Args<'a> {
+            rx: &'a tauri_sys::core::Channel<lib::event::analysis::Update>,
             project: ResourceId,
             root: PathBuf,
             max_tasks: Option<usize>,
         }
 
-        tauri_sys::core::invoke_result(
-            "analyze_project",
+        let rx = tauri_sys::core::Channel::new();
+        tauri_sys::core::invoke_result::<(), lib::command::project::error::TriggerAnalysis>(
+            "trigger_analysis",
             Args {
+                rx: &rx,
                 project,
                 root: root.into(),
                 max_tasks: None,
             },
         )
-        .await
+        .await?;
+
+        Ok(rx)
     }
 }
 

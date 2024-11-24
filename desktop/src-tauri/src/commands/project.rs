@@ -6,7 +6,6 @@ use std::{
 };
 use syre_core::{
     self as core,
-    runner::RunnerHooks,
     types::{ResourceId, UserId, UserPermissions},
 };
 use syre_desktop_lib as lib;
@@ -259,25 +258,25 @@ pub fn project_analysis_remove(
 }
 
 #[tauri::command]
-pub async fn analyze_project(
+pub async fn trigger_analysis(
     db: tauri::State<'_, db::Client>,
     state: tauri::State<'_, crate::State>,
+    rx: tauri::ipc::Channel<lib::event::analysis::Update>,
     project: ResourceId,
     root: PathBuf,
     max_tasks: Option<usize>,
-) -> Result<(), lib::command::project::error::Analyze> {
+) -> Result<(), lib::command::project::error::TriggerAnalysis> {
     use lib::command::project::error;
+    const PROGRESS_DELAY_MS: u64 = 100;
 
     let (project_path, project_data, graph) =
         db.project().resources(project.clone()).unwrap().unwrap();
     let db::state::FolderResource::Present(graph) = graph else {
-        return Err(error::Analyze::GraphAbsent);
+        return Err(error::TriggerAnalysis::GraphAbsent);
     };
 
-    let Ok(graph) = graph_state_to_runner_tree(graph) else {
-        return Err(error::Analyze::InvalidGraph);
-    };
-
+    let graph = graph_state_to_runner_tree(graph)
+        .map_err(|err| Into::<error::TriggerAnalysis>::into(err))?;
     let mut root_path = root.components();
     assert_eq!(root_path.next().unwrap(), path::Component::RootDir);
     let mut root = graph.root();
@@ -315,8 +314,29 @@ pub async fn analyze_project(
     let runner = runner.build();
 
     let handle = runner.from(project, graph, &root).unwrap();
-    let result = handle.join().unwrap();
+    tauri::async_runtime::spawn(async move {
+        while !handle.done() {
+            let status = handle.status();
+            let completed = status.iter().filter(|state| state.complete()).count();
+            let remaining = status.len() - completed;
+            rx.send(lib::event::analysis::Update::Progress {
+                completed,
+                remaining,
+            })
+            .unwrap();
+
+            tokio::time::sleep(std::time::Duration::from_millis(PROGRESS_DELAY_MS)).await;
+        }
+
+        rx.send(lib::event::analysis::Update::Done).unwrap();
+    });
+
     Ok(())
+}
+
+#[tauri::command]
+pub fn cancel_analysis() {
+    todo!();
 }
 
 #[tauri::command]
@@ -354,6 +374,7 @@ fn graph_state_to_runner_tree(
 
 mod error {
     use syre_core as core;
+    use syre_desktop_lib as lib;
 
     pub enum InvalidGraph {
         InvalidContainer,
@@ -366,6 +387,18 @@ mod error {
             match value {
                 core::runner::tree::error::InvalidGraph::NoRoot => Self::NoRoot,
                 core::runner::tree::error::InvalidGraph::InvalidTree => Self::InvalidTree,
+            }
+        }
+    }
+
+    impl Into<lib::command::project::error::TriggerAnalysis> for InvalidGraph {
+        fn into(self) -> lib::command::project::error::TriggerAnalysis {
+            use lib::command::project::error::TriggerAnalysis;
+
+            match self {
+                InvalidGraph::InvalidContainer => TriggerAnalysis::InvalidContainer,
+                InvalidGraph::InvalidTree => TriggerAnalysis::InvalidTree,
+                InvalidGraph::NoRoot => TriggerAnalysis::NoRoot,
             }
         }
     }

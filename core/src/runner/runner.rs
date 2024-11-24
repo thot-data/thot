@@ -169,6 +169,12 @@ pub struct AnalysisState {
     status: AnalysisStatus,
 }
 
+impl AnalysisState {
+    pub fn complete(&self) -> bool {
+        matches!(self.status, AnalysisStatus::Complete)
+    }
+}
+
 pub struct Handle {
     handle: thread::JoinHandle<Result<(), error::AnalyzerRun>>,
     state: Arc<Mutex<AnalyzerState>>,
@@ -287,10 +293,12 @@ impl Analyzer {
         tree.nodes()
             .iter()
             .flat_map(|node| {
-                node.analyses.iter().map(|analysis| AnalysisState {
-                    container: node.rid().clone(),
-                    analysis: analysis.analysis().clone(),
-                    status: AnalysisStatus::Pending,
+                node.analyses.iter().filter_map(|analysis| {
+                    analysis.autorun.then_some(AnalysisState {
+                        container: node.rid().clone(),
+                        analysis: analysis.analysis().clone(),
+                        status: AnalysisStatus::Pending,
+                    })
                 })
             })
             .collect()

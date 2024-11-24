@@ -105,3 +105,13 @@ pub mod topic {
         format!("{}/{}", PROJECT, project)
     }
 }
+
+pub mod analysis {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize, Deserialize, Clone, Debug)]
+    pub enum Update {
+        Progress { completed: usize, remaining: usize },
+        Done,
+    }
+}

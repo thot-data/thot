@@ -36,9 +36,11 @@ pub mod project {
         }
 
         #[derive(Serialize, Deserialize, derive_more::From, Debug)]
-        pub enum Analyze {
+        pub enum TriggerAnalysis {
             GraphAbsent,
-            InvalidGraph,
+            InvalidContainer,
+            InvalidTree,
+            NoRoot,
             RunnerCreation(runner::error::From),
             Analysis(core::runner::error::AnalyzerRun),
         }

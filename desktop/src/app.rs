@@ -110,32 +110,28 @@ mod message {
             }
         };
 
-        let (class_main, class_content, class_btn) = match message.kind() {
+        let (class_main, class_btn) = match message.kind() {
             types::message::MessageKind::Info => (
                 "flex bg-primary-500 border border-primary-600 rounded",
-                "grow px-2",
-                "px-2 border-l-2 border-l-primary-600 flex",
+                "border-l border-l-primary-600 flex",
             ),
             types::message::MessageKind::Success => (
                 "flex bg-syre-green-500 border border-syre-green-600 rounded",
-                "grow px-2",
-                "px-2 border-l-2 border-l-green-600 flex",
+                "border-l border-l-green-600 flex",
             ),
             types::message::MessageKind::Warning => (
                 "flex bg-syre-yellow-600 border border-syre-yellow-700 rounded",
-                "grow px-2",
-                "px-2 border-l-2 border-l-yellow-700 flex",
+                "border-l border-l-yellow-700 flex",
             ),
             types::message::MessageKind::Error => (
                 "flex bg-syre-red-500 border border-syre-red-700 rounded",
-                "grow px-2",
-                "px-2 border-l-2 border-l-red-700 flex",
+                "border-l border-l-red-700 flex",
             ),
         };
 
         view! {
             <div class=class_main>
-                <div class=class_content>
+                <div class="grow px-2">
                     <div class="relative flex gap-2">
                         <div class="text-lg grow">{message.title()}</div>
                         {message
@@ -162,7 +158,7 @@ mod message {
                         })}
                 </div>
                 <div class=class_btn>
-                    <button on:mousedown=close>
+                    <button on:mousedown=close class="px-2 w-full h-full">
                         <Icon icon=components::icon::Close />
                     </button>
                 </div>
