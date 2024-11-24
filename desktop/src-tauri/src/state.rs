@@ -59,8 +59,13 @@ pub fn load_user_state(db: &db::Client, user: &ResourceId) -> Vec<PathBuf> {
 
 /// Slice of the state.
 ///
-/// Arc<Mutex<T>> newtype for convenience.
+/// `Arc<Mutex<T>>` alias for convenience.
 pub type Slice<T> = Arc<Mutex<T>>;
-fn new_slice<T>(obj: T) -> Slice<T> {
+pub fn new_slice<T>(obj: T) -> Slice<T> {
     Arc::new(Mutex::new(obj))
+}
+
+pub enum AnalyzerAction {
+    Cancel,
+    Kill,
 }

@@ -116,8 +116,8 @@ mod message {
                 "border-l border-l-primary-600 flex",
             ),
             types::message::MessageKind::Success => (
-                "flex bg-syre-green-500 border border-syre-green-600 rounded",
-                "border-l border-l-green-600 flex",
+                "flex bg-syre-green-600 border border-syre-green-700 rounded",
+                "border-l border-l-green-700 flex",
             ),
             types::message::MessageKind::Warning => (
                 "flex bg-syre-yellow-600 border border-syre-yellow-700 rounded",

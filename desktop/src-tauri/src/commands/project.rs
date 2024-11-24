@@ -1,8 +1,8 @@
-use crate::settings;
+use crate::{settings, state};
 use std::{
     fs, io,
     path::{self, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 use syre_core::{
     self as core,
@@ -261,11 +261,13 @@ pub fn project_analysis_remove(
 pub async fn trigger_analysis(
     db: tauri::State<'_, db::Client>,
     state: tauri::State<'_, crate::State>,
+    analyzer_action: tauri::State<'_, state::Slice<Option<state::AnalyzerAction>>>,
     rx: tauri::ipc::Channel<lib::event::analysis::Update>,
     project: ResourceId,
     root: PathBuf,
     max_tasks: Option<usize>,
 ) -> Result<(), lib::command::project::error::TriggerAnalysis> {
+    use crate::state;
     use lib::command::project::error;
     const PROGRESS_DELAY_MS: u64 = 100;
 
@@ -314,29 +316,56 @@ pub async fn trigger_analysis(
     let runner = runner.build();
 
     let handle = runner.from(project, graph, &root).unwrap();
-    tauri::async_runtime::spawn(async move {
-        while !handle.done() {
-            let status = handle.status();
-            let completed = status.iter().filter(|state| state.complete()).count();
-            let remaining = status.len() - completed;
-            rx.send(lib::event::analysis::Update::Progress {
-                completed,
-                remaining,
-            })
-            .unwrap();
+    tauri::async_runtime::spawn({
+        let analyzer_action = (*analyzer_action).clone();
+        async move {
+            while !handle.done() {
+                let status = handle.status();
+                let completed = status.iter().filter(|state| state.complete()).count();
+                let remaining = status.len() - completed;
+                rx.send(lib::event::analysis::Update::Progress {
+                    completed,
+                    remaining,
+                })
+                .unwrap();
 
-            tokio::time::sleep(std::time::Duration::from_millis(PROGRESS_DELAY_MS)).await;
+                // NOTE: Scope needed to isolate `Send`-ness of data
+                // See https://github.com/rust-lang/rust/issues/63768.
+                {
+                    let mut action_guard = analyzer_action.lock().unwrap();
+                    if let Some(action) = action_guard.as_ref() {
+                        match action {
+                            state::AnalyzerAction::Cancel => {
+                                handle.cancel();
+                            }
+                            state::AnalyzerAction::Kill => {
+                                handle.kill();
+                            }
+                        }
+                        let _ = action_guard.take();
+                    }
+                }
+
+                tokio::time::sleep(std::time::Duration::from_millis(PROGRESS_DELAY_MS)).await;
+            }
+
+            rx.send(lib::event::analysis::Update::Done).unwrap();
         }
-
-        rx.send(lib::event::analysis::Update::Done).unwrap();
     });
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn cancel_analysis() {
-    todo!();
+pub fn cancel_analysis(action: tauri::State<'_, state::Slice<Option<state::AnalyzerAction>>>) {
+    let mut action = action.lock().unwrap();
+    let _ = action.insert(state::AnalyzerAction::Cancel);
+}
+
+#[tauri::command]
+pub fn kill_analysis(action: tauri::State<'_, state::Slice<Option<state::AnalyzerAction>>>) {
+    let mut action = action.lock().unwrap();
+    let _ = action.insert(state::AnalyzerAction::Kill);
 }
 
 #[tauri::command]

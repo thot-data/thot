@@ -498,9 +498,20 @@ mod analyze {
         Idle,
         Pending,
         Running { completed: usize, remaining: usize },
+        Cancelling { completed: usize, remaining: usize },
+        Killing { completed: usize, remaining: usize },
     }
 
     impl AnalysisState {
+        pub fn active(&self) -> bool {
+            match self {
+                AnalysisState::Idle | AnalysisState::Pending => false,
+                AnalysisState::Running { .. }
+                | AnalysisState::Cancelling { .. }
+                | AnalysisState::Killing { .. } => true,
+            }
+        }
+
         pub fn running(&self) -> bool {
             matches!(self, AnalysisState::Running { .. })
         }
@@ -535,14 +546,43 @@ mod analyze {
                     while let Some(event) = rx.next().await {
                         match event {
                             lib::event::analysis::Update::Progress {
-                                completed,
-                                remaining,
-                            } => {
-                                analysis_state.set(AnalysisState::Running {
+                                completed: update_completed,
+                                remaining: update_remaining,
+                            } => analysis_state.update(|state| match state {
+                                AnalysisState::Idle => panic!("invalid state"),
+
+                                AnalysisState::Pending => {
+                                    *state = AnalysisState::Running {
+                                        completed: update_completed,
+                                        remaining: update_remaining,
+                                    }
+                                }
+
+                                AnalysisState::Running {
                                     completed,
                                     remaining,
-                                });
-                            }
+                                } => {
+                                    *completed = update_completed;
+                                    *remaining = update_remaining;
+                                }
+
+                                AnalysisState::Cancelling {
+                                    completed,
+                                    remaining,
+                                } => {
+                                    *completed = update_completed;
+                                    *remaining = update_remaining;
+                                }
+
+                                AnalysisState::Killing {
+                                    completed,
+                                    remaining,
+                                } => {
+                                    *completed = update_completed;
+                                    *remaining = update_remaining;
+                                }
+                            }),
+
                             lib::event::analysis::Update::Done => {
                                 analysis_state.set(AnalysisState::Idle);
                                 let msg = types::message::Builder::success("Analysis complete.");
@@ -555,12 +595,13 @@ mod analyze {
             }
         });
 
-        move || {
-            if analysis_state.with(|state| state.running()) {
-                view! { <Cancel /> }
-            } else {
-                view! { <Trigger action /> }
-            }
+        view! {
+            <Show
+                when=move || analysis_state.with(|state| state.active())
+                fallback=move || view! { <Trigger action /> }
+            >
+                <Analyzing />
+            </Show>
         }
     }
 
@@ -594,30 +635,93 @@ mod analyze {
     }
 
     #[component]
-    fn Cancel() -> impl IntoView {
+    fn Analyzing() -> impl IntoView {
         let analysis_state = expect_context::<RwSignal<AnalysisState>>();
-        let mousedown = move |e: MouseEvent| {
-            if e.button() != types::MouseButton::Primary {
-                return;
-            }
-        };
-
         let title = move || {
-            analysis_state.with(|state| {
-                let AnalysisState::Running {
+            analysis_state.with(|state| match state {
+                AnalysisState::Idle | AnalysisState::Pending => unreachable!(),
+                AnalysisState::Running {
                     completed,
                     remaining,
-                } = state
-                else {
-                    panic!("invalid state");
-                };
-
-                format!("{} of {} remaining", remaining, completed + remaining)
+                }
+                | AnalysisState::Cancelling {
+                    completed,
+                    remaining,
+                }
+                | AnalysisState::Killing {
+                    completed,
+                    remaining,
+                } => format!("{} of {} remaining", remaining, completed + remaining),
             })
         };
 
         let percent_complete = move || {
-            analysis_state.with(|state| {
+            analysis_state.with(|state| match state {
+                AnalysisState::Idle | AnalysisState::Pending => unreachable!(),
+                AnalysisState::Running {
+                    completed,
+                    remaining,
+                }
+                | AnalysisState::Cancelling {
+                    completed,
+                    remaining,
+                }
+                | AnalysisState::Killing {
+                    completed,
+                    remaining,
+                } => {
+                    let percent_complete = 100 * completed / (completed + remaining);
+                    format!("{percent_complete}%")
+                }
+            })
+        };
+
+        let text = move || {
+            analysis_state.with(|state| match state {
+                AnalysisState::Running { .. } => "Analyzing",
+                AnalysisState::Cancelling { .. } => "Cancelling",
+                AnalysisState::Killing { .. } => "Killing",
+                _ => panic!("invalid state"),
+            })
+        };
+
+        view! {
+            <div class="flex">
+                <button
+                    class="relative btn-primary rounded-l px-4 cursor-not-allowed"
+                    class:rounded-r=move || analysis_state.with(|state| !state.running())
+                    title=title
+                    disabled=true
+                >
+                    <div class="flex gap-2 items-center">
+                        {text} <span class="animate-spin">
+                            <Icon icon=components::icon::Refresh />
+                        </span>
+                    </div>
+                    <div class="absolute bottom-0 left-1 right-1 h-0.5 rounded-full bg-primary-800 dark:bg-primary-700">
+                        <span
+                            class="h-full block rounded-full bg-syre-green-800 dark:bg-syre-green-500"
+                            style:width=percent_complete
+                        ></span>
+                    </div>
+                </button>
+                <Show when=move || analysis_state.with(|state| state.running()) fallback=|| ()>
+                    <AnalyzingActions />
+                </Show>
+
+            </div>
+        }
+    }
+
+    #[component]
+    fn AnalyzingActions() -> impl IntoView {
+        let analysis_state = expect_context::<RwSignal<AnalysisState>>();
+        let cancel_analysis = move |e: MouseEvent| {
+            if e.button() != types::MouseButton::Primary {
+                return;
+            }
+
+            analysis_state.update(|state| {
                 let AnalysisState::Running {
                     completed,
                     remaining,
@@ -626,30 +730,66 @@ mod analyze {
                     panic!("invalid state");
                 };
 
-                let percent_complete = 100 * completed / (completed + remaining);
-                format!("{percent_complete}%")
-            })
+                *state = AnalysisState::Cancelling {
+                    completed: *completed,
+                    remaining: *remaining,
+                }
+            });
+            spawn_local(async { cancel_analysis().await });
+        };
+
+        let kill_analysis = move |e: MouseEvent| {
+            if e.button() != types::MouseButton::Primary {
+                return;
+            }
+
+            analysis_state.update(|state| {
+                let AnalysisState::Running {
+                    completed,
+                    remaining,
+                } = state
+                else {
+                    panic!("invalid state");
+                };
+
+                *state = AnalysisState::Killing {
+                    completed: *completed,
+                    remaining: *remaining,
+                }
+            });
+            spawn_local(async { kill_analysis().await });
         };
 
         view! {
-            <button
-                on:mousedown=mousedown
-                class="relative btn-primary rounded px-4 disabled:bg-primary-800 \
-                dark:disabled:bg-primary-400 disabled:cursor-not-allowed"
-                title=title
-            >
-                <div class="flex gap-2 items-center">
-                    "Analyzing" <span class="animate-spin">
-                        <Icon icon=components::icon::Refresh />
-                    </span>
+            <div class="group relative">
+                <div class="flex items-center h-full btn-primary rounded-r px-1 border-l border-l-primary-800">
+                    <Icon icon=components::icon::ChevronDown />
                 </div>
-                <div class="absolute bottom-0 left-1 right-1 h-0.5 rounded-full bg-primary-800 dark:bg-primary-700">
-                    <span
-                        class="h-full block rounded-full bg-syre-green-800 dark:bg-syre-green-500"
-                        style:width=percent_complete
-                    ></span>
+                <div class="absolute top-full left-0 group-[&:not(:hover)]:hidden \
+                z-10 rounded-b rounded-r border border-secondary-800 dark:border-secondary-200 \
+                bg-white dark:bg-secondary-700">
+                    <ul>
+                        <li class="hover:bg-100 dark:hover:bg-secondary-800">
+                            <button
+                                on:click=cancel_analysis
+                                class="px-2"
+                                title="Cancel all remaining analyses, allowing those currently running to finish."
+                            >
+                                "Cancel"
+                            </button>
+                        </li>
+                        <li class="hover:bg-100 dark:hover:bg-secondary-800">
+                            <button
+                                on:click=kill_analysis
+                                class="px-2"
+                                title="Immediately kill all analyses, even those currently running."
+                            >
+                                "Kill"
+                            </button>
+                        </li>
+                    </ul>
                 </div>
-            </button>
+            </div>
         }
     }
 
@@ -681,6 +821,14 @@ mod analyze {
         .await?;
 
         Ok(rx)
+    }
+
+    async fn cancel_analysis() {
+        tauri_sys::core::invoke::<()>("cancel_analysis", ()).await
+    }
+
+    async fn kill_analysis() {
+        tauri_sys::core::invoke::<()>("kill_analysis", ()).await
     }
 }
 

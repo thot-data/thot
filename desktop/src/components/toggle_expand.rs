@@ -1,4 +1,4 @@
-use crate::types;
+use crate::{components, types};
 use leptos::{ev::MouseEvent, *};
 use leptos_icons::Icon;
 
@@ -16,7 +16,7 @@ pub fn ToggleExpand(expanded: RwSignal<bool>) -> impl IntoView {
     view! {
         <button on:mousedown=toggle type="button">
             <span class=("rotate-90", expanded) class="inline-block transition">
-                <Icon icon=icondata::VsChevronRight />
+                <Icon icon=components::icon::ChevronRight />
             </span>
         </button>
     }

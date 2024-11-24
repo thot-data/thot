@@ -1,10 +1,11 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+use std::sync::Mutex;
 use syre_desktop::{
     commands::{
         analyses, asset, auth, common, container, fs, graph, mixed_bulk, project, settings, user,
     },
-    setup,
+    setup, state,
 };
 
 fn main() {
@@ -19,6 +20,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(syre_local_database::Client::new())
+        .manage(state::new_slice(Option::<state::AnalyzerAction>::None))
         .invoke_handler(tauri::generate_handler![
             analyses::project_add_analyses,
             asset::asset_properties_update_bulk,
@@ -46,6 +48,7 @@ fn main() {
             mixed_bulk::properties_update_bulk_mixed,
             project::trigger_analysis,
             project::cancel_analysis,
+            project::kill_analysis,
             project::create_project,
             project::delete_project,
             project::deregister_project,

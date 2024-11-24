@@ -1056,6 +1056,10 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   top: 0.5rem;
 }
 
+.top-full {
+  top: 100%;
+}
+
 .z-10 {
   z-index: 10;
 }
@@ -1207,6 +1211,10 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   cursor: grabbing;
 }
 
+.cursor-not-allowed {
+  cursor: not-allowed;
+}
+
 .cursor-pointer {
   cursor: pointer;
 }
@@ -1335,6 +1343,16 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   border-bottom-left-radius: 0px;
 }
 
+.rounded-l {
+  border-top-left-radius: 0.25rem;
+  border-bottom-left-radius: 0.25rem;
+}
+
+.rounded-r {
+  border-top-right-radius: 0.25rem;
+  border-bottom-right-radius: 0.25rem;
+}
+
 .border {
   border-width: 1px;
 }
@@ -1421,14 +1439,19 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   border-color: rgb(86 91 102 / var(--tw-border-opacity));
 }
 
+.border-secondary-800 {
+  --tw-border-opacity: 1;
+  border-color: rgb(43 46 51 / var(--tw-border-opacity));
+}
+
 .border-secondary-900 {
   --tw-border-opacity: 1;
   border-color: rgb(24 26 30 / var(--tw-border-opacity));
 }
 
-.border-syre-green-600 {
+.border-syre-green-700 {
   --tw-border-opacity: 1;
-  border-color: rgb(117 148 49 / var(--tw-border-opacity));
+  border-color: rgb(72 111 37 / var(--tw-border-opacity));
 }
 
 .border-syre-red-600 {
@@ -1450,14 +1473,19 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   border-color: transparent;
 }
 
-.border-l-green-600 {
+.border-l-green-700 {
   --tw-border-opacity: 1;
-  border-left-color: rgb(22 163 74 / var(--tw-border-opacity));
+  border-left-color: rgb(21 128 61 / var(--tw-border-opacity));
 }
 
 .border-l-primary-600 {
   --tw-border-opacity: 1;
   border-left-color: rgb(81 161 196 / var(--tw-border-opacity));
+}
+
+.border-l-primary-800 {
+  --tw-border-opacity: 1;
+  border-left-color: rgb(6 91 128 / var(--tw-border-opacity));
 }
 
 .border-l-red-700 {
@@ -1500,9 +1528,9 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   background-color: rgb(166 170 179 / var(--tw-bg-opacity));
 }
 
-.bg-syre-green-500 {
+.bg-syre-green-600 {
   --tw-bg-opacity: 1;
-  background-color: rgb(146 185 61 / var(--tw-bg-opacity));
+  background-color: rgb(117 148 49 / var(--tw-bg-opacity));
 }
 
 .bg-syre-green-800 {
@@ -1938,6 +1966,10 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
 .group\/assets:hover .group-hover\/assets\:border-secondary-200 {
   --tw-border-opacity: 1;
   border-color: rgb(196 199 204 / var(--tw-border-opacity));
+}
+
+.group:not(:hover) .group-\[\&\:not\(\:hover\)\]\:hidden {
+  display: none;
 }
 
 .group:not(:hover) .group-\[\:not\(\:hover\)\]\:hidden {

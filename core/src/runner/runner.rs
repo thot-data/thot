@@ -154,6 +154,15 @@ enum AnalyzerState {
     Kill,
 }
 
+impl AnalyzerState {
+    pub fn terminate(&self) -> bool {
+        match self {
+            AnalyzerState::Running | AnalyzerState::Done => false,
+            AnalyzerState::Cancel | AnalyzerState::Kill => true,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum AnalysisStatus {
     Pending,
@@ -373,7 +382,15 @@ impl Analyzer {
                 move || {
                     children
                         .into_par_iter()
-                        .filter_map(|child| self.evaluate_tree(child, analyses.clone()).err())
+                        .filter_map(|child| {
+                            let state = self.state.lock().unwrap();
+                            if state.terminate() {
+                                return None;
+                            }
+                            drop(state);
+
+                            self.evaluate_tree(child, analyses.clone()).err()
+                        })
                         .flatten()
                         .collect::<Vec<_>>()
                 }
@@ -408,6 +425,12 @@ impl Analyzer {
         analysis_groups.sort_by(|(p0, _), (p1, _)| p0.cmp(p1));
 
         for (_priority, analysis_group) in analysis_groups {
+            let state = self.state.lock().unwrap();
+            if state.terminate() {
+                break;
+            }
+            drop(state);
+
             let analyses = analysis_group
                 .into_iter()
                 .filter(|s| s.autorun)
@@ -451,6 +474,12 @@ impl Analyzer {
             analyses
                 .into_par_iter()
                 .filter_map(|analysis| {
+                    let state = self.state.lock().unwrap();
+                    if state.terminate() {
+                        return None;
+                    }
+                    drop(state);
+
                     let exec_ctx = AnalysisExecutionContext {
                         project: project.clone(),
                         analysis: analysis.id().clone(),
@@ -565,8 +594,12 @@ impl Analyzer {
                     break;
                 }
                 AnalyzerState::Kill => {
+                    tracing::trace!("killing analysis {} on {container_path:?}", analysis.id());
                     if let Err(err) = child.kill() {
-                        tracing::error!(?err);
+                        tracing::error!(
+                            "could not kill analysis {} on {container_path:?}: {err:?}",
+                            analysis.id()
+                        );
                     }
 
                     let mut status = self.status.lock().unwrap();
