@@ -12,21 +12,40 @@ use syre_core::{
 use syre_local::{system::config, types::analysis::AnalysisKind};
 use syre_local_database as db;
 
-#[derive(Debug)]
-pub struct Runner {
-    analyses: Vec<(ResourceId, AnalysisKind)>,
+pub struct Builder<'a> {
+    path: &'a dyn AsRef<Path>,
+    project: &'a db::state::ProjectData,
+    settings: Option<&'a config::runner_settings::Settings>,
+    ignore_errors: bool,
 }
 
-impl Runner {
+impl<'a> Builder<'a> {
     /// # Arguments
     /// `path`: Path to the projects base directory.
-    pub fn from(
-        path: impl AsRef<Path>,
-        project: &db::state::ProjectData,
-        settings: Option<&config::runner_settings::Settings>,
-    ) -> Result<Self, error::From> {
-        let analyses = Self::create_analyses(path, project, settings)?;
-        Ok(Self { analyses })
+    pub fn new(
+        path: &'a impl AsRef<Path>,
+        project: &'a db::state::ProjectData,
+        settings: Option<&'a config::runner_settings::Settings>,
+    ) -> Self {
+        Self {
+            path,
+            project,
+            settings,
+            ignore_errors: false,
+        }
+    }
+
+    pub fn ignore_errors(&mut self) -> &mut Self {
+        self.ignore_errors = true;
+        self
+    }
+
+    pub fn build(self) -> Result<Runner, error::From> {
+        let analyses = Self::create_analyses(self.path, self.project, self.settings)?;
+        Ok(Runner {
+            analyses,
+            ignore_errors: self.ignore_errors,
+        })
     }
 
     /// # Returns
@@ -132,6 +151,21 @@ impl Runner {
     }
 }
 
+#[derive(Debug)]
+pub struct Runner {
+    analyses: Vec<(ResourceId, AnalysisKind)>,
+    ignore_errors: bool,
+}
+
+impl Runner {
+    pub fn new(analyses: Vec<(ResourceId, AnalysisKind)>, ignore_errors: bool) -> Self {
+        Self {
+            analyses,
+            ignore_errors,
+        }
+    }
+}
+
 impl RunnerHooks for Runner {
     /// Retrieves a local [`Script`](CoreScript) given its [`ResourceId`].
     fn get_analysis(
@@ -162,10 +196,14 @@ impl RunnerHooks for Runner {
     fn analysis_error(
         &self,
         ctx: &core::runner::AnalysisExecutionContext,
-        status: process::ExitStatus,
-        err: String,
+        exit_code: i32,
+        err: &str,
     ) -> core::runner::ErrorResponse {
-        core::runner::ErrorResponse::Terminate
+        if self.ignore_errors {
+            core::runner::ErrorResponse::Continue
+        } else {
+            core::runner::ErrorResponse::Terminate
+        }
     }
 }
 

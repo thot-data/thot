@@ -11,6 +11,9 @@ use std::{
     thread,
 };
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 /// Time between checking an analyzer's state.
 const ANALYZER_STATE_POLL_DELAY_MS: u64 = 100;
 
@@ -47,8 +50,8 @@ pub trait RunnerHooks {
     fn analysis_error(
         &self,
         ctx: &AnalysisExecutionContext,
-        status: process::ExitStatus,
-        err: String,
+        exit_code: i32,
+        err: &str,
     ) -> ErrorResponse {
         ErrorResponse::Terminate
     }
@@ -163,15 +166,17 @@ impl AnalyzerState {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AnalysisStatus {
     Pending,
     Running,
-    Complete,
     Killed,
+    Complete(Option<Output>),
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AnalysisState {
     container: ResourceId,
     analysis: ResourceId,
@@ -179,8 +184,77 @@ pub struct AnalysisState {
 }
 
 impl AnalysisState {
+    /// Create a new state with `status` `Pending`.
+    pub fn pending(container: ResourceId, analysis: ResourceId) -> Self {
+        Self {
+            container,
+            analysis,
+            status: AnalysisStatus::Pending,
+        }
+    }
+
+    pub fn container(&self) -> &ResourceId {
+        &self.container
+    }
+
+    pub fn analysis(&self) -> &ResourceId {
+        &self.analysis
+    }
+    /// Whether the `status` is `Complete`.
     pub fn complete(&self) -> bool {
-        matches!(self.status, AnalysisStatus::Complete)
+        matches!(self.status, AnalysisStatus::Complete(_))
+    }
+
+    /// # Returns
+    /// Analysis output if it exists.
+    pub fn output(&self) -> Option<&Output> {
+        match &self.status {
+            AnalysisStatus::Complete(output) => output.as_ref(),
+            _ => None,
+        }
+    }
+}
+
+/// Data from [`std::process::Output`].
+/// Used for de/serialization.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Output {
+    pub status: ExitStatus,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+impl From<process::Output> for Output {
+    fn from(value: process::Output) -> Self {
+        Self {
+            status: value.status.into(),
+            stdout: value.stdout,
+            stderr: value.stderr,
+        }
+    }
+}
+
+/// Data from [`std::process::ExitStatus`].
+/// Used for de/serialization.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ExitStatus {
+    code: Option<i32>,
+}
+impl ExitStatus {
+    pub fn code(&self) -> Option<i32> {
+        self.code.clone()
+    }
+
+    pub fn success(&self) -> bool {
+        matches!(self.code, Some(0))
+    }
+}
+
+impl From<process::ExitStatus> for ExitStatus {
+    fn from(value: process::ExitStatus) -> Self {
+        Self { code: value.code() }
     }
 }
 
@@ -303,11 +377,10 @@ impl Analyzer {
             .iter()
             .flat_map(|node| {
                 node.analyses.iter().filter_map(|analysis| {
-                    analysis.autorun.then_some(AnalysisState {
-                        container: node.rid().clone(),
-                        analysis: analysis.analysis().clone(),
-                        status: AnalysisStatus::Pending,
-                    })
+                    analysis.autorun.then_some(AnalysisState::pending(
+                        node.rid().clone(),
+                        analysis.analysis().clone(),
+                    ))
                 })
             })
             .collect()
@@ -493,8 +566,17 @@ impl Analyzer {
                         container_id,
                         project.clone(),
                     )
-                    .map(|output| {
-                        output.map(|output| {
+                    .map(|_| {
+                        let status = self.status.lock().unwrap();
+                        let status = status
+                            .iter()
+                            .find(|status| {
+                                status.analysis == *analysis.id()
+                                    && status.container == *container_id
+                            })
+                            .unwrap();
+
+                        status.output().map(|output| {
                             let assets = Vec::new(); // TODO: Collect `ResourceId`s of `Assets`.
                             self.hooks.assets_added(&exec_ctx, assets);
                             if output.status.success() {
@@ -502,9 +584,7 @@ impl Analyzer {
                                 return None;
                             }
 
-                            let stderr = str::from_utf8(output.stderr.as_slice())
-                                .unwrap()
-                                .to_string();
+                            let stderr = str::from_utf8(output.stderr.as_slice()).unwrap();
                             let exec_ctx = AnalysisExecutionContext {
                                 project: project.clone(),
                                 analysis: analysis.id().clone(),
@@ -513,17 +593,23 @@ impl Analyzer {
 
                             match self.hooks.analysis_error(
                                 &exec_ctx,
-                                output.status,
-                                stderr.clone(),
+                                output.status.code().unwrap(),
+                                stderr,
                             ) {
                                 ErrorResponse::Continue => None,
-                                ErrorResponse::Terminate => Some(error::Evaluation::Analysis {
-                                    project: project.clone(),
-                                    analysis: analysis.id().clone(),
-                                    container: container_path.clone(),
-                                    exit_code: output.status.code(),
-                                    err: stderr,
-                                }),
+                                ErrorResponse::Terminate => {
+                                    let mut state = self.state.lock().unwrap();
+                                    *state = AnalyzerState::Cancel;
+                                    drop(state);
+
+                                    Some(error::Evaluation::Analysis {
+                                        project: project.clone(),
+                                        analysis: analysis.id().clone(),
+                                        container: container_path.clone(),
+                                        exit_code: output.status.code(),
+                                        err: stderr.to_string(),
+                                    })
+                                }
                             }
                         })
                     })
@@ -542,11 +628,11 @@ impl Analyzer {
     /// Runs an individual analysis.
     ///
     /// # Returns
-    /// `Some([Output](process:Output)) from the analysis if the analysis runs to completion.
-    /// `None` if the analysis is killed.
+    /// Exit status of the analysis.
     ///
     /// # Errors
-    /// + [`Error`]: The analysis returned a `status` other than `0`.
+    /// + If launching or waiting for the command fails.
+    /// + Does **not** error if the analysis errors.
     #[tracing::instrument(skip(self, analysis))]
     fn run_analysis(
         &self,
@@ -554,7 +640,7 @@ impl Analyzer {
         container_path: PathBuf,
         container_id: &ResourceId,
         project: ResourceId,
-    ) -> Result<Option<process::Output>, error::Evaluation> {
+    ) -> Result<(), error::Evaluation> {
         tracing::trace!("running {} on {:?}", analysis.id(), container_path);
 
         let mut status = self.status.lock().unwrap();
@@ -571,6 +657,8 @@ impl Analyzer {
         let mut child = match cmd
             .env(PROJECT_ID_KEY, project.to_string())
             .env(CONTAINER_ID_KEY, &container_path)
+            .stdout(process::Stdio::piped())
+            .stderr(process::Stdio::piped())
             .spawn()
         {
             Ok(child) => child,
@@ -604,19 +692,19 @@ impl Analyzer {
 
                     let mut status = self.status.lock().unwrap();
                     status[status_idx].status = AnalysisStatus::Killed;
-                    return Ok(None);
+                    return Ok(());
                 }
                 AnalyzerState::Done => panic!("invalid state"),
             }
             thread::sleep(time::Duration::from_millis(ANALYZER_STATE_POLL_DELAY_MS));
         }
-        let out = child.wait_with_output();
+        let output = child.wait_with_output();
 
         let mut status = self.status.lock().unwrap();
-        status[status_idx].status = AnalysisStatus::Complete;
+        status[status_idx].status = AnalysisStatus::Complete(None);
 
-        let out = match out {
-            Ok(out) => out,
+        let output = match output {
+            Ok(output) => output,
             Err(err) => {
                 tracing::error!(?err);
                 return Err(error::Evaluation::Command {
@@ -629,8 +717,13 @@ impl Analyzer {
             }
         };
 
-        tracing::trace!(?out);
-        Ok(Some(out))
+        tracing::trace!(?output);
+        let AnalysisStatus::Complete(ref mut status_output) = status[status_idx].status else {
+            unreachable!();
+        };
+        let _ = status_output.insert(output.into());
+
+        Ok(())
     }
 }
 

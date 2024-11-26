@@ -493,6 +493,7 @@ mod analyze {
     use std::path::PathBuf;
     use syre_core::types::ResourceId;
     use syre_desktop_lib as lib;
+    use syre_local::types::AnalysisKind;
 
     enum AnalysisState {
         Idle,
@@ -520,78 +521,153 @@ mod analyze {
     #[component]
     pub fn Analyze() -> impl IntoView {
         let project = expect_context::<state::Project>();
+        let graph = expect_context::<state::Graph>();
         let messages = expect_context::<types::Messages>();
         let analysis_state = create_rw_signal(AnalysisState::Idle);
         provide_context(analysis_state);
 
         let action = create_action({
+            let analyses = project.analyses();
             let project = project.rid().read_only();
-            move |_| async move {
-                analysis_state.set(AnalysisState::Pending);
-                let mut rx: tauri_sys::core::Channel<lib::event::analysis::Update> =
-                    match trigger_analysis(project.get_untracked(), "/").await {
-                        Ok(rx) => rx,
-                        Err(err) => {
-                            tracing::error!(?err);
-                            analysis_state.set(AnalysisState::Idle);
-                            let mut msg =
-                                types::message::Builder::error("Could not initialize analysis.");
-                            msg.body(format!("{err:?}"));
-                            messages.update(|messages| messages.push(msg.build()));
-                            return;
-                        }
-                    };
+            move |_| {
+                let graph = graph.clone();
+                async move {
+                    analysis_state.set(AnalysisState::Pending);
+                    let mut rx: tauri_sys::core::Channel<lib::event::analysis::Update> =
+                        match trigger_analysis(project.get_untracked(), "/").await {
+                            Ok(rx) => rx,
+                            Err(err) => {
+                                tracing::error!(?err);
+                                analysis_state.set(AnalysisState::Idle);
+                                let mut msg = types::message::Builder::error(
+                                    "Could not initialize analysis.",
+                                );
+                                msg.body(format!("{err:?}"));
+                                messages.update(|messages| messages.push(msg.build()));
+                                return;
+                            }
+                        };
 
-                spawn_local(async move {
-                    while let Some(event) = rx.next().await {
-                        match event {
-                            lib::event::analysis::Update::Progress {
-                                completed: update_completed,
-                                remaining: update_remaining,
-                            } => analysis_state.update(|state| match state {
-                                AnalysisState::Idle => panic!("invalid state"),
-
-                                AnalysisState::Pending => {
-                                    *state = AnalysisState::Running {
+                    spawn_local({
+                        let graph = graph.clone();
+                        async move {
+                            while let Some(event) = rx.next().await {
+                                match event {
+                                    lib::event::analysis::Update::Progress {
                                         completed: update_completed,
                                         remaining: update_remaining,
+                                    } => analysis_state.update(|state| match state {
+                                        AnalysisState::Idle => panic!("invalid state"),
+
+                                        AnalysisState::Pending => {
+                                            *state = AnalysisState::Running {
+                                                completed: update_completed,
+                                                remaining: update_remaining,
+                                            }
+                                        }
+
+                                        AnalysisState::Running {
+                                            completed,
+                                            remaining,
+                                        }
+                                        | AnalysisState::Cancelling {
+                                            completed,
+                                            remaining,
+                                        }
+                                        | AnalysisState::Killing {
+                                            completed,
+                                            remaining,
+                                        } => {
+                                            *completed = update_completed;
+                                            *remaining = update_remaining;
+                                        }
+                                    }),
+
+                                    lib::event::analysis::Update::Done(status) => {
+                                        analysis_state.set(AnalysisState::Idle);
+                                        let errors = status
+                                            .iter()
+                                            .filter(|status| {
+                                                status
+                                                    .output()
+                                                    .map(|output| !output.status.success())
+                                                    .unwrap_or(false)
+                                            })
+                                            .collect::<Vec<_>>();
+
+                                        if errors.is_empty() {
+                                            let msg = types::message::Builder::success(
+                                                "Analysis complete.",
+                                            );
+                                            messages.update(|messages| messages.push(msg.build()));
+                                        } else {
+                                            let mut msg = types::message::Builder::error(
+                                                "Errors occurred during analysis.",
+                                            );
+                                            msg.body(view! {
+                                                <ul>
+                                                    {errors
+                                                        .iter()
+                                                        .map(|err| {
+                                                            let analysis = analyses
+                                                                .with_untracked(|analyses| {
+                                                                    analyses
+                                                                        .as_ref()
+                                                                        .unwrap()
+                                                                        .with_untracked(|analyses| {
+                                                                            analyses
+                                                                                .iter()
+                                                                                .find_map(|analysis| {
+                                                                                    analysis
+                                                                                        .properties()
+                                                                                        .with_untracked(|analysis| {
+                                                                                            match analysis {
+                                                                                                AnalysisKind::Script(script) => {
+                                                                                                    (script.rid() == err.analysis())
+                                                                                                        .then_some(script.path.to_string_lossy().to_string())
+                                                                                                }
+                                                                                                AnalysisKind::ExcelTemplate(template) => {
+                                                                                                    (template.rid() == err.analysis())
+                                                                                                        .then_some(
+                                                                                                            template.template.path.to_string_lossy().to_string(),
+                                                                                                        )
+                                                                                                }
+                                                                                            }
+                                                                                        })
+                                                                                })
+                                                                                .unwrap()
+                                                                        })
+                                                                });
+                                                            let container = graph.find_by_id(err.container()).unwrap();
+                                                            let container = graph
+                                                                .path(&container)
+                                                                .unwrap()
+                                                                .to_string_lossy()
+                                                                .to_string();
+                                                            let stderr = err
+                                                                .output()
+                                                                .map_or(
+                                                                    "Could not retrieve error message".to_string(),
+                                                                    |output| {
+                                                                        String::from_utf8(output.stderr.clone()).unwrap()
+                                                                    },
+                                                                );
+                                                            view! {
+                                                                <li>{analysis} " running on " {container} ": " {stderr}</li>
+                                                            }
+                                                        })
+                                                        .collect::<Vec<_>>()}
+                                                </ul>
+                                            });
+                                            messages.update(|messages| messages.push(msg.build()));
+                                        }
+                                        break;
                                     }
                                 }
-
-                                AnalysisState::Running {
-                                    completed,
-                                    remaining,
-                                } => {
-                                    *completed = update_completed;
-                                    *remaining = update_remaining;
-                                }
-
-                                AnalysisState::Cancelling {
-                                    completed,
-                                    remaining,
-                                } => {
-                                    *completed = update_completed;
-                                    *remaining = update_remaining;
-                                }
-
-                                AnalysisState::Killing {
-                                    completed,
-                                    remaining,
-                                } => {
-                                    *completed = update_completed;
-                                    *remaining = update_remaining;
-                                }
-                            }),
-
-                            lib::event::analysis::Update::Done => {
-                                analysis_state.set(AnalysisState::Idle);
-                                let msg = types::message::Builder::success("Analysis complete.");
-                                messages.update(|messages| messages.push(msg.build()));
-                                break;
                             }
                         }
-                    }
-                });
+                    });
+                }
             }
         });
 

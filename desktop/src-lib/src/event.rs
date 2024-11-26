@@ -108,10 +108,11 @@ pub mod topic {
 
 pub mod analysis {
     use serde::{Deserialize, Serialize};
+    use syre_core::runner::runner;
 
     #[derive(Serialize, Deserialize, Clone, Debug)]
     pub enum Update {
         Progress { completed: usize, remaining: usize },
-        Done,
+        Done(Vec<runner::AnalysisState>),
     }
 }

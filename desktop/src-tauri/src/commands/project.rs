@@ -304,11 +304,11 @@ pub async fn trigger_analysis(
         .map(|user| settings::Runner::load(user.rid()).ok())
         .flatten();
 
-    let runner_hooks =
-        match runner::Runner::from(project_path, &project_data, runner_settings.as_ref()) {
-            Ok(hooks) => hooks,
-            Err(err) => return Err(err.into()),
-        };
+    let runner_hooks = runner::Builder::new(&project_path, &project_data, runner_settings.as_ref());
+    let runner_hooks = match runner_hooks.build() {
+        Ok(hooks) => hooks,
+        Err(err) => return Err(err.into()),
+    };
     let mut runner = core::runner::Builder::new(runner_hooks);
     if let Some(max_tasks) = max_tasks {
         runner.num_threads(max_tasks);
@@ -349,7 +349,8 @@ pub async fn trigger_analysis(
                 tokio::time::sleep(std::time::Duration::from_millis(PROGRESS_DELAY_MS)).await;
             }
 
-            rx.send(lib::event::analysis::Update::Done).unwrap();
+            let status = handle.status();
+            rx.send(lib::event::analysis::Update::Done(status)).unwrap();
         }
     });
 
