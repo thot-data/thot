@@ -70,4 +70,7 @@ pub struct Settings {
 
     /// Path to R executable runner should use.
     pub r_path: Option<PathBuf>,
+
+    /// Continue or halt analysis when an error occurs.
+    pub continue_on_error: bool,
 }

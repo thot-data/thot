@@ -605,7 +605,7 @@ mod analyze {
                                                 "Errors occurred during analysis.",
                                             );
                                             msg.body(view! {
-                                                <ul>
+                                                <ol class="list-decimal">
                                                     {errors
                                                         .iter()
                                                         .map(|err| {
@@ -653,11 +653,13 @@ mod analyze {
                                                                     },
                                                                 );
                                                             view! {
-                                                                <li>{analysis} " running on " {container} ": " {stderr}</li>
+                                                                <li class="pb-4">
+                                                                    {analysis} " running on " {container} ": " {stderr}
+                                                                </li>
                                                             }
                                                         })
                                                         .collect::<Vec<_>>()}
-                                                </ul>
+                                                </ol>
                                             });
                                             messages.update(|messages| messages.push(msg.build()));
                                         }

@@ -888,7 +888,6 @@ select {
 }
 
 .input-simple {
-  width: 100%;
   border-radius: 0.25rem;
 }
 
@@ -912,6 +911,10 @@ select {
   border-color: rgb(34 129 170 / var(--tw-border-opacity));
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(6 91 128 / var(--tw-ring-opacity));
+}
+
+input.input-simple:not([type="checkbox"]) {
+  width: 100%;
 }
 
 input.input-simple:not([type="checkbox"]):where(.dark, .dark *) {
@@ -1235,6 +1238,10 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   -webkit-user-select: all;
      -moz-user-select: all;
           user-select: all;
+}
+
+.list-decimal {
+  list-style-type: decimal;
 }
 
 .flex-col {

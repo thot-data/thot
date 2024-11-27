@@ -51,6 +51,7 @@ impl Default for Desktop {
 pub struct Runner {
     pub python_path: Option<PathBuf>,
     pub r_path: Option<PathBuf>,
+    pub continue_on_error: bool,
 }
 
 impl From<local::system::config::runner_settings::Settings> for Runner {
@@ -58,6 +59,7 @@ impl From<local::system::config::runner_settings::Settings> for Runner {
         Self {
             python_path: value.python_path,
             r_path: value.r_path,
+            continue_on_error: value.continue_on_error,
         }
     }
 }
@@ -67,6 +69,7 @@ impl Into<local::system::config::runner_settings::Settings> for Runner {
         local::system::config::runner_settings::Settings {
             python_path: self.python_path,
             r_path: self.r_path,
+            continue_on_error: self.continue_on_error,
         }
     }
 }

@@ -150,7 +150,7 @@ mod message {
                             view! {
                                 <div
                                     class:hidden=move || !show_body()
-                                    class="pt-4 max-h-48 overflow-auto select-text"
+                                    class="pt-4 max-h-48 overflow-auto select-text scrollbar-thin"
                                 >
                                     {body}
                                 </div>

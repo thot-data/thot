@@ -16,7 +16,6 @@ pub struct Builder<'a> {
     path: &'a dyn AsRef<Path>,
     project: &'a db::state::ProjectData,
     settings: Option<&'a config::runner_settings::Settings>,
-    ignore_errors: bool,
 }
 
 impl<'a> Builder<'a> {
@@ -31,20 +30,18 @@ impl<'a> Builder<'a> {
             path,
             project,
             settings,
-            ignore_errors: false,
         }
     }
 
-    pub fn ignore_errors(&mut self) -> &mut Self {
-        self.ignore_errors = true;
-        self
-    }
-
     pub fn build(self) -> Result<Runner, error::From> {
+        let ignore_errors = self
+            .settings
+            .map(|settings| settings.continue_on_error)
+            .unwrap_or(false);
         let analyses = Self::create_analyses(self.path, self.project, self.settings)?;
         Ok(Runner {
             analyses,
-            ignore_errors: self.ignore_errors,
+            ignore_errors,
         })
     }
 
