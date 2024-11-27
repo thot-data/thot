@@ -356,7 +356,7 @@ impl Analyzer {
         let Some(root) = tree.nodes().iter().find(|node| node.rid() == root).cloned() else {
             return Err(error::ContainerNotFound(root.clone()));
         };
-        let status = Arc::new(Mutex::new(Self::collect_analyses_to_perform(&tree)));
+        let status = Arc::new(Mutex::new(Self::collect_analyses_to_perform(&tree, &root)));
         Ok(Self {
             project,
             tree,
@@ -372,8 +372,8 @@ impl Analyzer {
         &self.status
     }
 
-    fn collect_analyses_to_perform(tree: &Tree) -> Vec<AnalysisState> {
-        tree.nodes()
+    fn collect_analyses_to_perform(tree: &Tree, root: &tree::Node) -> Vec<AnalysisState> {
+        tree.descendants(root)
             .iter()
             .flat_map(|node| {
                 node.analyses.iter().filter_map(|analysis| {
@@ -389,7 +389,7 @@ impl Analyzer {
     pub fn run(&mut self) -> Result<(), error::AnalyzerRun> {
         let mut analysis_ids = self
             .tree
-            .nodes()
+            .descendants(&self.root)
             .into_iter()
             .flat_map(|container| {
                 container

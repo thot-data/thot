@@ -13,6 +13,7 @@ pub fn ToggleExpand(expanded: RwSignal<bool>) -> impl IntoView {
         expanded.set(!expanded());
     };
 
+    // TODO: Center icon vertically.
     view! {
         <button on:mousedown=toggle type="button">
             <span class=("rotate-90", expanded) class="inline-block transition">
