@@ -55,6 +55,7 @@ features = [
 	"EventInit",
 	"EventTarget",
 	"EventTarget",
+	"FocusEvent",
 	"HtmlCollection",
 	"HtmlDialogElement",
 	"HtmlDivElement",

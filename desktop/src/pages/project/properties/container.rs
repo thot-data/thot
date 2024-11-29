@@ -97,45 +97,49 @@ pub fn Editor(container: state::Container) -> impl IntoView {
     let available_analyses = Signal::derive(available_analyses);
 
     let show_add_metadatum = move |e: MouseEvent| {
-        if e.button() == types::MouseButton::Primary {
-            let wrapper = wrapper_node.get_untracked().unwrap();
-            let base = metadata_node.get_untracked().unwrap();
-            let portal = popout_portal.get_untracked().unwrap();
-
-            let top = super::detail_popout_top(&portal, &base, &wrapper);
-            (*portal)
-                .style()
-                .set_property("top", &format!("{top}px"))
-                .unwrap();
-
-            set_widget.update(|widget| {
-                #[allow(unused_must_use)]
-                {
-                    widget.insert(Widget::AddMetadatum);
-                }
-            });
+        if e.button() != types::MouseButton::Primary {
+            return;
         }
+
+        let wrapper = wrapper_node.get_untracked().unwrap();
+        let base = metadata_node.get_untracked().unwrap();
+        let portal = popout_portal.get_untracked().unwrap();
+
+        let top = super::detail_popout_top(&portal, &base, &wrapper);
+        (*portal)
+            .style()
+            .set_property("top", &format!("{top}px"))
+            .unwrap();
+
+        set_widget.update(|widget| {
+            #[allow(unused_must_use)]
+            {
+                widget.insert(Widget::AddMetadatum);
+            }
+        });
     };
 
     let show_add_analysis = move |e: MouseEvent| {
-        if e.button() == types::MouseButton::Primary {
-            let wrapper = wrapper_node.get_untracked().unwrap();
-            let base = analyses_node.get_untracked().unwrap();
-            let portal = popout_portal.get_untracked().unwrap();
-
-            let top = super::detail_popout_top(&portal, &base, &wrapper);
-            (*portal)
-                .style()
-                .set_property("top", &format!("{top}px"))
-                .unwrap();
-
-            set_widget.update(|widget| {
-                #[allow(unused_must_use)]
-                {
-                    widget.insert(Widget::AddAnalysisAssociation);
-                }
-            });
+        if e.button() != types::MouseButton::Primary {
+            return;
         }
+
+        let wrapper = wrapper_node.get_untracked().unwrap();
+        let base = analyses_node.get_untracked().unwrap();
+        let portal = popout_portal.get_untracked().unwrap();
+
+        let top = super::detail_popout_top(&portal, &base, &wrapper);
+        (*portal)
+            .style()
+            .set_property("top", &format!("{top}px"))
+            .unwrap();
+
+        set_widget.update(|widget| {
+            #[allow(unused_must_use)]
+            {
+                widget.insert(Widget::AddAnalysisAssociation);
+            }
+        });
     };
 
     let scroll = move |_: Event| {
@@ -441,7 +445,6 @@ mod name {
                 on:input=move |e| {
                     set_input_value(value::State::set_from_input(event_target_value(&e)));
                 }
-
                 prop:value=move || input_value.with(|value| value.value().clone())
                 class=("border-red", error)
                 class="input-compact w-full"

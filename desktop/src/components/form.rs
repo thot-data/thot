@@ -96,7 +96,7 @@ pub mod debounced {
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
         let _ = watch(
-            value,
+            value.clone(),
             move |value, _, _| {
                 set_input_value(value::State::set_from_state(value.clone()));
             },
@@ -114,12 +114,16 @@ pub mod debounced {
         view! {
             <input
                 prop:value=move || { input_value.with(|value| { value.value().clone() }) }
-
                 on:input=move |e| {
                     let v = event_target_value(&e);
                     set_input_value(value::State::set_from_input(v))
                 }
-
+                on:blur=move |e| {
+                    let v = event_target_value(&e);
+                    if value.with(|value| *value != v) {
+                        oninput(v);
+                    }
+                }
                 placeholder=placeholder
                 minlength=minlength
                 class=class
@@ -140,7 +144,7 @@ pub mod debounced {
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
         let _ = watch(
-            value,
+            value.clone(),
             move |value, _, _| {
                 set_input_value(value::State::set_from_state(value.clone()));
             },
@@ -162,7 +166,12 @@ pub mod debounced {
                     let v = event_target_value(&e);
                     set_input_value(value::State::set_from_input(v))
                 }
-
+                on:blur=move |e| {
+                    let v = event_target_value(&e);
+                    if value.with(|value| *value != v) {
+                        oninput(v);
+                    }
+                }
                 placeholder=placeholder
                 class=class
             >
