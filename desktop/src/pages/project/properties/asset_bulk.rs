@@ -820,7 +820,7 @@ mod metadata {
         let modifications = leptos_use::signal_debounced(modifications, *input_debounce);
 
         let onremove = Callback::new({
-            let project = project.clone();
+            let project = project.rid().read_only();
             let graph = graph.clone();
             let assets = assets.clone();
             move |value: String| {
@@ -832,7 +832,7 @@ mod metadata {
                 };
 
                 spawn_local({
-                    let project = project.rid().get_untracked();
+                    let project = project.get_untracked();
                     let asset_ids =
                         assets.with_untracked(|assets| container_assets(assets, &graph));
                     let expected_results_len = asset_ids.len();
@@ -873,7 +873,7 @@ mod metadata {
         let _ = watch(
             modifications,
             {
-                let project = project.clone();
+                let project = project.rid().read_only();
                 let graph = graph.clone();
                 let assets = assets.clone();
                 move |modifications, _, _| {
@@ -886,7 +886,7 @@ mod metadata {
                     set_modifications.update_untracked(|modifications| modifications.clear());
 
                     spawn_local({
-                        let project = project.rid().get_untracked();
+                        let project = project.get_untracked();
                         let asset_ids =
                             assets.with_untracked(|assets| container_assets(assets, &graph));
                         let expected_results_len = asset_ids.len();

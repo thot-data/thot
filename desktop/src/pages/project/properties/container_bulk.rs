@@ -12,7 +12,7 @@ use metadata::{AddDatum, Editor as Metadata};
 use name::Editor as Name;
 use serde::Serialize;
 use state::{ActiveResources, State};
-use std::{fmt, path::PathBuf};
+use std::path::PathBuf;
 use syre_core::types::ResourceId;
 use syre_desktop_lib as lib;
 use tags::{AddTags, Editor as Tags};
@@ -1080,7 +1080,7 @@ mod metadata {
         let modifications = leptos_use::signal_debounced(modifications, *input_debounce);
 
         let onremove = Callback::new({
-            let project = project.clone();
+            let project = project.rid().read_only();
             let graph = graph.clone();
             let containers = containers.clone();
             move |value: String| {
@@ -1093,7 +1093,7 @@ mod metadata {
                 };
 
                 spawn_local({
-                    let project = project.rid().get_untracked();
+                    let project = project.get_untracked();
                     let containers = containers.with_untracked(|containers| {
                         containers
                             .iter()
@@ -1139,7 +1139,7 @@ mod metadata {
         let _ = watch(
             modifications,
             {
-                let project = project.clone();
+                let project = project.rid();
                 let graph = graph.clone();
                 let containers = containers.clone();
                 move |modifications, _, _| {
@@ -1153,7 +1153,7 @@ mod metadata {
                     set_modifications.update_untracked(|modifications| modifications.clear());
 
                     spawn_local({
-                        let project = project.rid().get_untracked();
+                        let project = project.get_untracked();
                         let containers = containers.with_untracked(|containers| {
                             containers
                                 .iter()

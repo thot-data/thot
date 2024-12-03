@@ -1450,7 +1450,7 @@ pub mod bulk {
             #[prop(into)] onremove: Callback<String>,
 
             /// # Arguments
-            /// (`key`, `value`)
+            /// `(key, value)`
             #[prop(into)]
             onmodify: Callback<(String, data::Value)>,
         ) -> impl IntoView {
