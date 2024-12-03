@@ -411,8 +411,8 @@ fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> 
     }
 
     view! {
-        <div>
-            <div class="grow flex relative overflow-hidden">
+        <div class="flex grow min-h-0">
+            <div class="grow flex min-h-0 relative overflow-hidden">
                 <Drawer
                     dock=drawer::Dock::East
                     absolute=true

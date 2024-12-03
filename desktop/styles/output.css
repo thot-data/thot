@@ -1123,6 +1123,10 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   max-height: 75%;
 }
 
+.min-h-0 {
+  min-height: 0px;
+}
+
 .w-1\/2 {
   width: 50%;
 }
