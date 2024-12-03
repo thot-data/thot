@@ -463,14 +463,7 @@ mod metadata {
         let input_debounce = expect_context::<InputDebounce>();
 
         let (input_value, set_input_value) = create_signal(value.get_untracked());
-        let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
-        let _ = watch(
-            input_value,
-            move |value, _, _| {
-                set_input_value(value.clone());
-            },
-            false,
-        );
+        let oninput = Callback::new(set_input_value);
 
         // TODO: Handle errors with messages.
         // See https://github.com/leptos-rs/leptos/issues/2041
@@ -581,7 +574,7 @@ mod metadata {
                         <Icon icon=components::icon::Remove />
                     </button>
                 </div>
-                <ValueEditor value=input_value set_value=set_input_value />
+                <ValueEditor value=input_value oninput debounce=*input_debounce />
             </div>
         }
     }

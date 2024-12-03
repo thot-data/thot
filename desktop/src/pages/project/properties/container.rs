@@ -388,14 +388,14 @@ mod name {
         let input_debounce = expect_context::<InputDebounce>();
 
         let (input_value, set_input_value) =
-            create_signal(value::State::set_from_state(value.get_untracked()));
+            create_signal(value::State::clean(value.get_untracked()));
         let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
         let (error, set_error) = create_signal(false);
 
         let _ = watch(
             value,
             move |value, _, _| {
-                set_input_value(value::State::set_from_state(value.clone()));
+                set_input_value(value::State::clean(value.clone()));
             },
             false,
         );
@@ -408,7 +408,7 @@ mod name {
                 let container = container.clone();
                 let messages = messages.write_only();
                 move |value, _, _| {
-                    if value.was_set_from_state() {
+                    if value.is_clean() {
                         return;
                     }
 
@@ -443,7 +443,7 @@ mod name {
             <input
                 name="name"
                 on:input=move |e| {
-                    set_input_value(value::State::set_from_input(event_target_value(&e)));
+                    set_input_value(value::State::dirty(event_target_value(&e)));
                 }
                 prop:value=move || input_value.with(|value| value.value().clone())
                 class=("border-red", error)
@@ -772,17 +772,8 @@ mod metadata {
         let container = expect_context::<ActiveResource>();
         let messages = expect_context::<types::Messages>();
         let input_debounce = expect_context::<InputDebounce>();
-
         let (input_value, set_input_value) = create_signal(value.get_untracked());
-        let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
-
-        let _ = watch(
-            value,
-            move |value, _, _| {
-                set_input_value(value.clone());
-            },
-            false,
-        );
+        let oninput = Callback::new(set_input_value);
 
         let _ = watch(
             input_value,
@@ -898,7 +889,7 @@ mod metadata {
                         <Icon icon=components::icon::Remove />
                     </button>
                 </div>
-                <ValueEditor value=input_value set_value=set_input_value />
+                <ValueEditor value=input_value oninput debounce=*input_debounce />
             </div>
         }
     }

@@ -132,10 +132,17 @@ pub mod tags {
 pub mod metadata {
     //! Common components for editing metadata
     use super::super::InputDebounce;
-    use crate::components::{self, form::InputNumber};
-    use leptos::{ev::SubmitEvent, *};
+    use crate::components::{
+        self,
+        form::{debounced, InputNumber},
+    };
+    use leptos::{
+        ev::{FocusEvent, SubmitEvent},
+        *,
+    };
     use leptos_icons::Icon;
     use syre_core::types::{data::ValueKind, Value};
+    use wasm_bindgen::JsCast;
 
     #[component]
     pub fn AddDatum(
@@ -169,6 +176,8 @@ pub mod metadata {
                 })
             }
         };
+
+        let oninput = Callback::new(move |value| set_value(value));
 
         let submit = {
             let keys = keys.clone();
@@ -215,7 +224,7 @@ pub mod metadata {
                         class="input-compact w-full"
                     />
                 </div>
-                <ValueEditor value set_value />
+                <ValueEditor value oninput debounce=*input_debounce />
                 <div class="py-1 flex justify-center">
                     <button class="rounded-sm hover:bg-primary-400 dark:hover:bg-primary-700">
                         <Icon icon=components::icon::Add />
@@ -228,26 +237,27 @@ pub mod metadata {
     #[component]
     pub fn ValueEditor(
         #[prop(into)] value: Signal<Value>,
-        set_value: WriteSignal<Value>,
-        #[prop(optional, into)] class: MaybeProp<String>,
+        oninput: Callback<Value>,
+        #[prop(into, optional)] debounce: MaybeSignal<f64>,
+        #[prop(into, optional)] class: MaybeProp<String>,
     ) -> impl IntoView {
         let value_kind = create_memo(move |_| value.with(|value| value.kind()));
         let value_editor = move || {
             value_kind.with(|kind| match kind {
                 ValueKind::Bool => {
-                    view! { <BoolEditor value set_value /> }
+                    view! { <BoolEditor value oninput debounce /> }
                 }
                 ValueKind::String => {
-                    view! { <StringEditor value set_value /> }
+                    view! { <StringEditor value oninput debounce /> }
                 }
                 ValueKind::Number => {
-                    view! { <NumberEditor value set_value /> }
+                    view! { <NumberEditor value oninput debounce /> }
                 }
                 ValueKind::Quantity => {
-                    view! { <QuantityEditor value set_value /> }
+                    view! { <QuantityEditor value oninput debounce /> }
                 }
                 ValueKind::Array => {
-                    view! { <ArrayEditor value set_value /> }
+                    view! { <ArrayEditor value oninput debounce /> }
                 }
             })
         };
@@ -260,14 +270,14 @@ pub mod metadata {
 
         view! {
             <div class=class>
-                <KindSelect value set_value />
+                <KindSelect value oninput />
                 {value_editor}
             </div>
         }
     }
 
     #[component]
-    fn KindSelect(value: Signal<Value>, set_value: WriteSignal<Value>) -> impl IntoView {
+    fn KindSelect(value: Signal<Value>, oninput: Callback<Value>) -> impl IntoView {
         let input_node = NodeRef::<html::Select>::new();
 
         create_effect(move |_| {
@@ -284,7 +294,7 @@ pub mod metadata {
 
         let change = move |e| {
             let kind = string_to_kind(event_target_value(&e)).unwrap();
-            set_value(convert_value_kind(value.get(), &kind));
+            oninput(convert_value_kind(value.get(), &kind));
         };
 
         view! {
@@ -310,43 +320,130 @@ pub mod metadata {
     }
 
     #[component]
-    fn BoolEditor(value: Signal<Value>, set_value: WriteSignal<Value>) -> impl IntoView {
-        let checked = move || {
-            value.with(|value| {
+    fn BoolEditor(
+        value: Signal<Value>,
+        oninput: Callback<Value>,
+        debounce: MaybeSignal<f64>,
+    ) -> impl IntoView {
+        let (input_value, set_input_value) = create_signal(value.with_untracked(|value| {
+            let Value::Bool(value) = value else {
+                panic!("invalid value kind");
+            };
+
+            debounced::value::State::clean(*value)
+        }));
+        let input_value = leptos_use::signal_debounced(input_value, debounce);
+
+        let _ = watch(
+            value.clone(),
+            move |value, _, _| {
                 let Value::Bool(value) = value else {
-                    panic!("invalid value");
+                    panic!("invalid value kind");
                 };
 
-                *value
-            })
+                set_input_value(debounced::value::State::clean(*value));
+            },
+            false,
+        );
+
+        let _ = watch(
+            input_value,
+            move |input_value, _, _| {
+                if input_value.is_dirty()
+                    && value.with_untracked(|value| {
+                        let Value::Bool(value) = value else {
+                            panic!("invalid value kind");
+                        };
+                        input_value.value() != value
+                    })
+                {
+                    oninput(Value::Bool(*input_value.value()));
+                }
+            },
+            false,
+        );
+
+        let onblur = move |e: FocusEvent| {
+            let v = event_target_checked(&e);
+            if value.with_untracked(|value| {
+                let Value::Bool(value) = value else {
+                    panic!("invalid value kind");
+                };
+                *value != v
+            }) {
+                oninput(Value::Bool(v));
+            }
         };
 
         view! {
             <input
                 type="checkbox"
-                on:input=move |e| set_value(Value::Bool(event_target_checked(&e)))
-                checked=checked
+                prop:value=move || { input_value.with(|value| { value.value().clone() }) }
+                on:input=move |e| {
+                    let v = event_target_checked(&e);
+                    set_input_value(debounced::value::State::dirty(v))
+                }
+                on:blur=onblur
             />
         }
     }
 
     #[component]
-    fn StringEditor(value: Signal<Value>, set_value: WriteSignal<Value>) -> impl IntoView {
-        let input_value = move || {
-            value.with(|value| {
+    fn StringEditor(
+        value: Signal<Value>,
+        oninput: Callback<Value>,
+        debounce: MaybeSignal<f64>,
+    ) -> impl IntoView {
+        let (input_value, set_input_value) = create_signal(value.with_untracked(|value| {
+            let Value::String(value) = value else {
+                panic!("invalid value kind");
+            };
+
+            debounced::value::State::clean(value.clone())
+        }));
+        let input_value = leptos_use::signal_debounced(input_value, debounce);
+
+        let _ = watch(
+            value.clone(),
+            move |value, _, _| {
                 let Value::String(value) = value else {
-                    panic!("invalid value");
+                    panic!("invalid value kind");
                 };
 
-                value.clone()
+                set_input_value(debounced::value::State::clean(value.clone()));
+            },
+            false,
+        );
+
+        create_effect(move |_| {
+            input_value.with(|input_value| {
+                if input_value.is_dirty() {
+                    oninput(Value::String(input_value.value().clone()));
+                }
             })
+        });
+
+        let onblur = move |e: FocusEvent| {
+            let v = event_target_value(&e);
+            if value.with(|value| {
+                let Value::String(ref value) = value else {
+                    panic!("invalid value kind");
+                };
+
+                v != *value
+            }) {
+                oninput(Value::String(v));
+            }
         };
 
         view! {
             <input
-                type="text"
-                prop:value=input_value
-                on:input=move |e| set_value(Value::String(event_target_value(&e)))
+                prop:value=move || { input_value.with(|value| { value.value().clone() }) }
+                on:input=move |e| {
+                    let v = event_target_value(&e);
+                    set_input_value(debounced::value::State::dirty(v))
+                }
+                on:blur=onblur
                 placeholder="Value"
                 class="input-compact w-full"
             />
@@ -354,26 +451,42 @@ pub mod metadata {
     }
 
     #[component]
-    fn NumberEditor(value: Signal<Value>, set_value: WriteSignal<Value>) -> impl IntoView {
+    fn NumberEditor(
+        value: Signal<Value>,
+        oninput: Callback<Value>,
+        debounce: MaybeSignal<f64>,
+    ) -> impl IntoView {
         let (is_valid, set_is_valid) = create_signal(true);
-        let input_value = move || {
-            value.with(|value| {
-                let Value::Number(value) = value else {
-                    panic!("invalid value");
+        let (input_value, set_input_value) = create_signal(value.with_untracked(|value| {
+            let Value::Number(value) = value else {
+                panic!("invalid value kind");
+            };
+            value.to_string()
+        }));
+        let input_value = leptos_use::signal_debounced(input_value, debounce);
+
+        let _ = watch(
+            input_value,
+            move |input_value, _, _| {
+                let value = input_value.trim_start_matches("0");
+                let Ok(value) = serde_json::from_str(value) else {
+                    return;
                 };
 
-                value.to_string()
-            })
-        };
+                oninput(Value::Number(value));
+            },
+            false,
+        );
 
-        let oninput = move |value: String| {
+        let onblur = Callback::new(move |e: FocusEvent| {
+            let value = event_target_value(&e);
             let value = value.trim_start_matches("0");
-            let Ok(value) = serde_json::from_str(&value) else {
+            let Ok(value) = serde_json::from_str(value) else {
                 return;
             };
 
-            set_value(Value::Number(value));
-        };
+            oninput(Value::Number(value));
+        });
 
         let class = move || {
             let mut class = "input-compact w-full".to_string();
@@ -386,7 +499,8 @@ pub mod metadata {
         view! {
             <InputNumber
                 value=Signal::derive(input_value)
-                oninput
+                oninput=Callback::new(set_input_value)
+                onblur
                 set_is_valid
                 class=Signal::derive(class)
                 placeholder="Value"
@@ -395,65 +509,150 @@ pub mod metadata {
     }
 
     #[component]
-    fn QuantityEditor(value: Signal<Value>, set_value: WriteSignal<Value>) -> impl IntoView {
-        let value_magnitude = move || {
-            value.with(|value| {
+    fn QuantityEditor(
+        value: Signal<Value>,
+        oninput: Callback<Value>,
+        debounce: MaybeSignal<f64>,
+    ) -> impl IntoView {
+        let node_ref_magnitude = create_node_ref::<html::Input>();
+        let node_ref_unit = create_node_ref::<html::Input>();
+        let (input_value_magnitude, set_input_value_magnitude) =
+            create_signal(value.with_untracked(|value| {
                 let Value::Quantity { magnitude, .. } = value else {
                     panic!("invalid value");
                 };
 
                 magnitude.to_string()
-            })
-        };
+            }));
 
-        let value_unit = move || {
-            value.with(|value| {
+        let (input_value_unit, set_input_value_unit) =
+            create_signal(value.with_untracked(|value| {
                 let Value::Quantity { unit, .. } = value else {
                     panic!("invalid value");
                 };
 
                 unit.clone()
-            })
-        };
+            }));
 
-        let oninput_magnitude = move |value: String| {
-            let Ok(mag) = value.parse::<f64>() else {
+        let input_value = Signal::derive(move || {
+            input_value_magnitude.with(|magnitude| {
+                let Ok(magnitude) = magnitude.parse::<f64>() else {
+                    return None;
+                };
+
+                Some(Value::Quantity {
+                    magnitude,
+                    unit: input_value_unit(),
+                })
+            })
+        });
+        let input_value = leptos_use::signal_debounced(input_value, debounce);
+
+        let _ = watch(
+            input_value,
+            move |input_value, _, _| {
+                if let Some(value) = input_value {
+                    oninput(value.clone());
+                }
+            },
+            false,
+        );
+
+        let onblur_magnitude = Callback::new(move |e: FocusEvent| {
+            let Some(related_target) = e.related_target() else {
+                return;
+            };
+            if let Some(related_target) = related_target.dyn_ref::<web_sys::HtmlInputElement>() {
+                let Some(node_unit) = node_ref_unit.get() else {
+                    return;
+                };
+                let node_unit = node_unit.dyn_ref::<web_sys::HtmlInputElement>().unwrap();
+
+                if related_target == node_unit {
+                    return;
+                }
+            }
+
+            let input_value = event_target_value(&e);
+            let Ok(input_value) = input_value.parse::<f64>() else {
                 return;
             };
 
-            set_value.update(move |value| {
-                let Value::Quantity { magnitude, .. } = value else {
-                    panic!("invalid value");
+            if value.with_untracked(|value| {
+                let Value::Quantity { magnitude, unit } = value else {
+                    panic!("invalid value kind");
                 };
 
-                *magnitude = mag;
-            });
-        };
+                input_value != *magnitude
+                    || input_value_unit.with_untracked(|input_value_unit| input_value_unit != unit)
+            }) {
+                let unit = input_value_unit.with(|input_value| input_value.trim().to_string());
+                oninput(Value::Quantity {
+                    magnitude: input_value,
+                    unit,
+                })
+            }
+        });
 
-        let oninput_unit = move |e| {
-            set_value.update(move |value| {
-                let Value::Quantity { unit, .. } = value else {
-                    panic!("invalid value");
+        let onblur_unit = move |e: FocusEvent| {
+            let Some(related_target) = e.related_target() else {
+                return;
+            };
+            if let Some(related_target) = related_target.dyn_ref::<web_sys::HtmlInputElement>() {
+                let Some(node_magnitude) = node_ref_magnitude.get() else {
+                    return;
+                };
+                let node_magnitude = node_magnitude
+                    .dyn_ref::<web_sys::HtmlInputElement>()
+                    .unwrap();
+
+                if related_target == node_magnitude {
+                    return;
+                }
+            }
+
+            let Ok(input_value_magnitude) = input_value_magnitude
+                .with_untracked(|input_value_magnitude| input_value_magnitude.parse::<f64>())
+            else {
+                return;
+            };
+
+            let input_value = event_target_value(&e);
+            let input_value = input_value.trim();
+            if value.with_untracked(|value| {
+                let Value::Quantity { magnitude, unit } = value else {
+                    panic!("invalid value kind");
                 };
 
-                *unit = event_target_value(&e).trim().to_string();
-            });
+                input_value != unit || input_value_magnitude != *magnitude
+            }) {
+                oninput(Value::Quantity {
+                    magnitude: input_value_magnitude,
+                    unit: input_value.to_string(),
+                })
+            }
         };
 
         view! {
             <div class="flex flex-wrap w-full">
                 <InputNumber
-                    value=Signal::derive(value_magnitude)
-                    oninput=oninput_magnitude
+                    node_ref=node_ref_magnitude
+                    value=Signal::derive(input_value_magnitude)
+                    oninput=Callback::new(set_input_value_magnitude)
+                    onblur=onblur_magnitude
                     placeholder="Magnitude"
                     class="input-compact"
                 />
 
                 <input
-                    prop:value=value_unit
+                    ref=node_ref_unit
+                    prop:value=input_value_unit
                     minlength=1
-                    on:input=oninput_unit
-                    placeholder="Units"
+                    on:input=move |e| set_input_value_unit(
+                        event_target_value(&e).trim().to_string(),
+                    )
+                    on:blur=onblur_unit
+                    placeholder="Unit"
                     class="input-compact"
                 />
             </div>
@@ -461,8 +660,11 @@ pub mod metadata {
     }
 
     #[component]
-    fn ArrayEditor(value: Signal<Value>, set_value: WriteSignal<Value>) -> impl IntoView {
-        let input_debounce = expect_context::<InputDebounce>();
+    fn ArrayEditor(
+        value: Signal<Value>,
+        oninput: Callback<Value>,
+        debounce: MaybeSignal<f64>,
+    ) -> impl IntoView {
         let (error, set_error) = create_signal(None);
         let (input_value, set_input_value) = create_signal(value.with_untracked(|value| {
             let Value::Array(value) = value else {
@@ -475,7 +677,7 @@ pub mod metadata {
                 .collect::<Vec<_>>()
                 .join("\n")
         }));
-        let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
+        let input_value = leptos_use::signal_debounced(input_value, debounce);
 
         let _ = watch(
             value,
@@ -499,23 +701,11 @@ pub mod metadata {
             input_value,
             move |input_value, _, _| {
                 set_error(None);
-                let val = input_value
-                    .split([',', '\n', ';'])
-                    .filter_map(|elm| {
-                        let value = elm.trim();
-                        if value.is_empty() {
-                            None
-                        } else {
-                            Some(serde_json::from_str::<Value>(elm))
-                        }
-                    })
-                    .collect::<serde_json::Result<Vec<_>>>();
-
-                match val {
+                match str_to_array_value(input_value) {
                     Ok(val) => {
                         let val = Value::Array(val);
                         if value.with_untracked(|value| *value != val) {
-                            set_value(val);
+                            oninput(val);
                         }
                     }
                     Err(err) => set_error(Some(err)),
@@ -524,9 +714,24 @@ pub mod metadata {
             false,
         );
 
+        let onblur = move |e| {
+            set_error(None);
+            let input_value = event_target_value(&e);
+            match str_to_array_value(&input_value) {
+                Ok(val) => {
+                    let val = Value::Array(val);
+                    if value.with_untracked(|value| *value != val) {
+                        oninput(val);
+                    }
+                }
+                Err(err) => set_error(Some(err)),
+            }
+        };
+
         view! {
             <textarea
                 on:input=move |e| set_input_value(event_target_value(&e))
+                on:blur=onblur
                 placeholder="Separate values by comma, semicolon, or new line."
                 class=(
                     ["border-2", "!border-syre-red-600", "focus:ring-syre-red-600"],
@@ -538,6 +743,17 @@ pub mod metadata {
                 {input_value}
             </textarea>
         }
+    }
+
+    fn str_to_array_value(value: impl AsRef<str>) -> serde_json::Result<Vec<Value>> {
+        value
+            .as_ref()
+            .split([',', '\n', ';'])
+            .filter_map(|elm| {
+                let value = elm.trim();
+                (!value.is_empty()).then_some(serde_json::from_str::<Value>(elm))
+            })
+            .collect::<serde_json::Result<Vec<_>>>()
     }
 
     pub(super) fn value_to_kind(value: &Value) -> Option<ValueKind> {

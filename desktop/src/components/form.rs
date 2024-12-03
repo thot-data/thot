@@ -1,4 +1,7 @@
-use leptos::*;
+use leptos::{
+    ev::{Event, FocusEvent, InputEvent},
+    *,
+};
 use std::str::FromStr;
 use wasm_bindgen::JsCast;
 
@@ -6,6 +9,8 @@ use wasm_bindgen::JsCast;
 /// Handles validation.
 #[component]
 pub fn InputNumber(
+    #[prop(optional)] node_ref: NodeRef<html::Input>,
+
     /// Read signal.
     /// Attached to `prop:value`.
     #[prop(into)]
@@ -15,12 +20,13 @@ pub fn InputNumber(
     #[prop(optional, into)]
     set_is_valid: Option<WriteSignal<bool>>,
 
-    #[prop(into)] oninput: Callback<String>,
+    #[prop(into, optional)] oninput: Option<Callback<String>>,
+    #[prop(into, optional)] onblur: Option<Callback<FocusEvent>>,
     #[prop(optional)] min: Option<f64>,
     #[prop(optional)] max: Option<f64>,
-    #[prop(optional, into)] placeholder: MaybeProp<String>,
+    #[prop(into, optional)] placeholder: MaybeProp<String>,
     #[prop(default = false)] required: bool,
-    #[prop(optional, into)] class: MaybeSignal<String>,
+    #[prop(into, optional)] class: MaybeSignal<String>,
 ) -> impl IntoView {
     const DECIMAL_MARKER: &'static str = ".";
 
@@ -53,26 +59,38 @@ pub fn InputNumber(
         true,
     );
 
-    // NB: Must check if the typed character was a period with nothing follwing it.
+    let handle_oninput = move |e: Event| {
+        let value = event_target_value(&e);
+        if let Some(e) = e.dyn_ref::<InputEvent>() {
+            if let Some(key) = e.data() {
+                if key == DECIMAL_MARKER && !value.contains(DECIMAL_MARKER) {
+                    return;
+                }
+            }
+        }
+        if let Some(oninput) = oninput {
+            oninput(value);
+        }
+    };
+
+    let handle_onblur = move |e: FocusEvent| {
+        if let Some(onblur) = onblur {
+            onblur(e);
+        }
+    };
+
+    // NB: Must check if the typed character was a period with nothing following it.
     // If input ends in a perdiod (`.`) the whole number part is reported
     // **without** the period, so the value maybe updated and the period erased,
     // making it impossible to type a period as the next character.
     view! {
         <input
+            ref=node_ref
             type="text"
             inputmode="decimal"
             prop:value=value
-            on:input=move |e: ev::Event| {
-                let value = event_target_value(&e);
-                if let Some(e) = e.dyn_ref::<ev::InputEvent>() {
-                    if let Some(key) = e.data() {
-                        if key == DECIMAL_MARKER && !value.contains(DECIMAL_MARKER) {
-                            return;
-                        }
-                    }
-                }
-                oninput(value);
-            }
+            on:input=handle_oninput
+            on:blur=handle_onblur
             placeholder=placeholder
             class=class
             required=required
@@ -92,20 +110,20 @@ pub mod debounced {
         #[prop(into, optional)] minlength: MaybeProp<usize>,
         #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let (input_value, set_input_value) = create_signal(value::State::set_from_state(value()));
+        let (input_value, set_input_value) = create_signal(value::State::clean(value()));
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
         let _ = watch(
             value.clone(),
             move |value, _, _| {
-                set_input_value(value::State::set_from_state(value.clone()));
+                set_input_value(value::State::clean(value.clone()));
             },
             false,
         );
 
         create_effect(move |_| {
             input_value.with(|value| {
-                if value.was_set_from_input() {
+                if value.is_dirty() {
                     oninput(value.value().clone());
                 }
             })
@@ -116,7 +134,7 @@ pub mod debounced {
                 prop:value=move || { input_value.with(|value| { value.value().clone() }) }
                 on:input=move |e| {
                     let v = event_target_value(&e);
-                    set_input_value(value::State::set_from_input(v))
+                    set_input_value(value::State::dirty(v))
                 }
                 on:blur=move |e| {
                     let v = event_target_value(&e);
@@ -132,6 +150,55 @@ pub mod debounced {
     }
 
     #[component]
+    pub fn InputCheckbox(
+        #[prop(into)] value: MaybeSignal<bool>,
+        #[prop(into)] oninput: Callback<bool>,
+        #[prop(into)] debounce: MaybeSignal<f64>,
+        #[prop(optional, into)] class: MaybeProp<String>,
+    ) -> impl IntoView {
+        let (input_value, set_input_value) = create_signal(value::State::clean(value()));
+        let input_value = leptos_use::signal_debounced(input_value, debounce);
+
+        let _ = watch(
+            value.clone(),
+            move |value, _, _| {
+                set_input_value(value::State::clean(*value));
+            },
+            false,
+        );
+
+        let _ = watch(
+            input_value,
+            move |input_value, _, _| {
+                if input_value.is_dirty()
+                    && value.with_untracked(|value| input_value.value() != value)
+                {
+                    oninput(*input_value.value());
+                }
+            },
+            false,
+        );
+
+        view! {
+            <input
+                type="checkbox"
+                prop:value=move || { input_value.with(|value| { value.value().clone() }) }
+                on:input=move |e| {
+                    let v = event_target_checked(&e);
+                    set_input_value(value::State::dirty(v))
+                }
+                on:blur=move |e| {
+                    let v = event_target_checked(&e);
+                    if value.with(|value| *value != v) {
+                        oninput(v);
+                    }
+                }
+                class=class
+            />
+        }
+    }
+
+    #[component]
     pub fn TextArea(
         #[prop(into)] value: MaybeSignal<String>,
         #[prop(into)] oninput: Callback<String>,
@@ -140,20 +207,20 @@ pub mod debounced {
         #[prop(into, optional)] class: MaybeProp<String>,
     ) -> impl IntoView {
         let (input_value, set_input_value) =
-            create_signal(value::State::set_from_state(value.get_untracked()));
+            create_signal(value::State::clean(value.get_untracked()));
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
         let _ = watch(
             value.clone(),
             move |value, _, _| {
-                set_input_value(value::State::set_from_state(value.clone()));
+                set_input_value(value::State::clean(value.clone()));
             },
             false,
         );
 
         create_effect(move |_| {
             input_value.with(|value| {
-                if value.was_set_from_input() {
+                if value.is_dirty() {
                     oninput(value.value().clone());
                 }
             })
@@ -164,7 +231,7 @@ pub mod debounced {
             <textarea
                 on:input=move |e| {
                     let v = event_target_value(&e);
-                    set_input_value(value::State::set_from_input(v))
+                    set_input_value(value::State::dirty(v))
                 }
                 on:blur=move |e| {
                     let v = event_target_value(&e);
@@ -185,53 +252,49 @@ pub mod debounced {
         /// Value and source.
         #[derive(derive_more::Deref, Clone, Debug)]
         pub struct State<T> {
-            /// Source of the value.
-            source: Source,
+            status: Status,
 
             #[deref]
             value: T,
         }
 
         impl<T> State<T> {
-            pub fn set_from_state(value: T) -> Self {
+            pub fn clean(value: T) -> Self {
                 Self {
-                    source: Source::State,
+                    status: Status::Clean,
                     value,
                 }
             }
 
-            pub fn set_from_input(value: T) -> Self {
+            pub fn dirty(value: T) -> Self {
                 Self {
-                    source: Source::Input,
+                    status: Status::Dirty,
                     value,
                 }
             }
 
-            pub fn source(&self) -> &Source {
-                &self.source
+            pub fn status(&self) -> &Status {
+                &self.status
             }
 
             pub fn value(&self) -> &T {
                 &self.value
             }
 
-            pub fn was_set_from_state(&self) -> bool {
-                self.source == Source::State
+            pub fn is_clean(&self) -> bool {
+                matches!(self.status, Status::Clean)
             }
 
-            pub fn was_set_from_input(&self) -> bool {
-                self.source == Source::Input
+            pub fn is_dirty(&self) -> bool {
+                matches!(self.status, Status::Dirty)
             }
         }
 
         /// Source of current value.
         #[derive(PartialEq, Clone, Debug)]
-        pub enum Source {
-            /// Value state.
-            State,
-
-            /// User input.
-            Input,
+        pub enum Status {
+            Clean,
+            Dirty,
         }
     }
 }
