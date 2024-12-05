@@ -7457,6 +7457,7 @@ dependencies = [
  "directories",
  "ignore",
  "open",
+ "rayon",
  "serde",
  "serde_json",
  "syre-core",

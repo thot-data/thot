@@ -1,6 +1,7 @@
+use rayon::prelude::*;
 use std::{assert_matches::assert_matches, fs, io, path::PathBuf};
 use syre_core::{project::ScriptLang, types::ResourceId};
-use syre_desktop_lib::{self as lib, command::error::IoErrorKind};
+use syre_desktop_lib::{self as lib};
 use syre_local as local;
 use syre_local_database as db;
 
@@ -105,5 +106,77 @@ pub async fn project_add_analyses(
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+/// Sets all associations within `root`'s subtree with `analysis` to `enable`.
+#[tauri::command]
+pub async fn analysis_toggle_associations(
+    db: tauri::State<'_, db::Client>,
+    project: PathBuf,
+    root: PathBuf,
+    analysis: ResourceId,
+    enable: bool,
+) -> Result<(), lib::command::analyses::error::ToggleSubtreeAssociations> {
+    use lib::command::analyses::error::ToggleSubtreeAssociations;
+
+    let Some(project) = db.project().get(project).unwrap() else {
+        return Err(ToggleSubtreeAssociations::ProjectNotFound);
+    };
+    let db::state::FolderResource::Present(project_data) = project.fs_resource().as_ref() else {
+        return Err(ToggleSubtreeAssociations::ProjectNotPresent);
+    };
+    let project_properties = match project_data.properties() {
+        db::state::DataResource::Ok(properties) => properties,
+        db::state::DataResource::Err(err) => {
+            return Err(ToggleSubtreeAssociations::InvalidProject(err))
+        }
+    };
+
+    let data_root = project.path().join(&project_properties.data_root);
+    let subtree_root = db::common::container_system_path(data_root, root);
+
+    let containers = local::common::ignore::WalkBuilder::new(subtree_root)
+        .build()
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
+        .collect::<Vec<_>>();
+
+    let errors = containers
+        .into_par_iter()
+        .filter_map(|entry| {
+            let mut container =
+                match local::loader::container::Loader::load_from_only_properties(entry.path())
+                    .map_err(|err| (entry.path().to_path_buf(), err))
+                {
+                    Ok(container) => container,
+                    Err(err) => return Some(err),
+                };
+
+            let Some(association) = container
+                .analyses
+                .iter_mut()
+                .find(|association| association.analysis() == &analysis)
+            else {
+                return None;
+            };
+
+            if association.autorun != enable {
+                association.autorun = enable;
+                container
+                    .save(entry.path())
+                    .map_err(|err| (entry.path().to_path_buf(), err.into()))
+                    .err()
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(ToggleSubtreeAssociations::Container(errors))
     }
 }

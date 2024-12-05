@@ -30,6 +30,11 @@ impl ContextMenuAnalysesOk {
 /// Active analysis for the analysis context menu.
 #[derive(derive_more::Deref, derive_more::From, Clone)]
 struct ContextMenuActiveAnalysis(ResourceId);
+impl ContextMenuActiveAnalysis {
+    pub fn into_inner(self) -> ResourceId {
+        self.0
+    }
+}
 
 #[component]
 pub fn Editor() -> impl IntoView {
@@ -85,19 +90,35 @@ fn AnalysesOk(analyses: ReadSignal<Vec<state::project::Analysis>>) -> impl IntoV
                 let mut analysis_open = tauri_sys::menu::item::MenuItemOptions::new("Open");
                 analysis_open.set_id("analyses:open");
 
+                let mut analysis_enable_all =
+                    tauri_sys::menu::item::MenuItemOptions::new("Enable all");
+                analysis_enable_all.set_id("analyses:enable_all");
+
+                let mut analysis_disable_all =
+                    tauri_sys::menu::item::MenuItemOptions::new("Disable all");
+                analysis_disable_all.set_id("analyses:disable_all");
+
                 let (menu, mut listeners) = menu::Menu::with_id_and_items(
                     "analyses:context_menu",
-                    vec![analysis_open.into()],
+                    vec![
+                        analysis_open.into(),
+                        analysis_enable_all.into(),
+                        analysis_disable_all.into(),
+                    ],
                 )
                 .await;
 
                 spawn_local({
+                    let analysis_disable_all = listeners.pop().unwrap().unwrap();
+                    let analysis_enable_all = listeners.pop().unwrap().unwrap();
                     let analysis_open = listeners.pop().unwrap().unwrap();
                     handle_context_menu_analyses_events(
                         project,
                         messages,
                         context_menu_active_analysis.read_only(),
                         analysis_open,
+                        analysis_enable_all,
+                        analysis_disable_all,
                     )
                 });
 
@@ -372,58 +393,206 @@ async fn handle_context_menu_analyses_events(
     messages: types::Messages,
     context_menu_active_analysis: ReadSignal<Option<ContextMenuActiveAnalysis>>,
     analysis_open: Channel<String>,
+    analysis_enable_all: Channel<String>,
+    analysis_disable_all: Channel<String>,
 ) {
     let mut analysis_open = analysis_open.fuse();
+    let mut analysis_enable_all = analysis_enable_all.fuse();
+    let mut analysis_disable_all = analysis_disable_all.fuse();
     loop {
         futures::select! {
             event = analysis_open.next() => match event {
                 None => continue,
                 Some(_id) => {
-                    let analysis_root = project
-                        .path()
-                        .get_untracked()
-                        .join(project.properties().analysis_root().get_untracked().unwrap());
+                    handle_context_menu_analyses_events_analysis_open(
+                        &project,
+                        messages,
+                        context_menu_active_analysis
+                    ).await;
+                }
+            },
 
-                    let analysis = context_menu_active_analysis.get_untracked().unwrap();
-                    let analysis_path = project.analyses().with_untracked(|analyses| {
-                        let db::state::DataResource::Ok(analyses) = analyses else {
-                            panic!("invalid state");
-                        };
+            event = analysis_enable_all.next() => match event {
+                None => continue,
+                Some(_id) => {
+                    handle_context_menu_analyses_events_analysis_enable_all(
+                        &project,
+                        messages,
+                        context_menu_active_analysis
+                    ).await;
+                }
+            },
 
-                        analyses.with_untracked(|analyses| {
-                            analyses.iter().find_map(|analysis_state| {
-                                analysis_state.properties().with_untracked(|analysis_kind| match analysis_kind {
-                                 AnalysisKind::Script(script) => {
-                                    if script.rid() == &*analysis {
-                                        Some(script.path.clone())
-                                    } else {
-                                        None
-                                    }
-                                 },
-                                 AnalysisKind::ExcelTemplate(template) => {
-                                    if template.rid() == &*analysis {
-                                        Some(template.template.path.clone())
-                                    } else {
-                                        None
-                                    }
-                                 },
-                                })
-
-                            }).unwrap()
-                        })
-                    });
-                    let path = analysis_root.join(analysis_path);
-
-                    if let Err(err) = commands::fs::open_file(path)
-                        .await {
-                            messages.update(|messages|{
-                                let mut msg = types::message::Builder::error("Could not open analysis file.");
-                                msg.body(format!("{err:?}"));
-                            messages.push(msg.build());
-                        });
-                    }
-            }
+            event = analysis_disable_all.next() => match event {
+                None => continue,
+                Some(_id) => {
+                    handle_context_menu_analyses_events_analysis_disable_all(
+                        &project,
+                        messages,
+                        context_menu_active_analysis
+                    ).await;
+                }
             }
         }
     }
+}
+
+async fn handle_context_menu_analyses_events_analysis_open(
+    project: &state::Project,
+    messages: types::Messages,
+    context_menu_active_analysis: ReadSignal<Option<ContextMenuActiveAnalysis>>,
+) {
+    let analysis_root = project.path().get_untracked().join(
+        project
+            .properties()
+            .analysis_root()
+            .get_untracked()
+            .unwrap(),
+    );
+
+    let analysis = context_menu_active_analysis.get_untracked().unwrap();
+    let analysis_path = project.analyses().with_untracked(|analyses| {
+        let db::state::DataResource::Ok(analyses) = analyses else {
+            panic!("invalid state");
+        };
+
+        analyses.with_untracked(|analyses| {
+            analyses
+                .iter()
+                .find_map(|analysis_state| {
+                    analysis_state.properties().with_untracked(
+                        |analysis_kind| match analysis_kind {
+                            AnalysisKind::Script(script) => {
+                                if script.rid() == &*analysis {
+                                    Some(script.path.clone())
+                                } else {
+                                    None
+                                }
+                            }
+                            AnalysisKind::ExcelTemplate(template) => {
+                                if template.rid() == &*analysis {
+                                    Some(template.template.path.clone())
+                                } else {
+                                    None
+                                }
+                            }
+                        },
+                    )
+                })
+                .unwrap()
+        })
+    });
+    let path = analysis_root.join(analysis_path);
+
+    if let Err(err) = commands::fs::open_file(path).await {
+        let mut msg = types::message::Builder::error("Could not open analysis file.");
+        msg.body(format!("{err:?}"));
+        let msg = msg.build();
+        messages.update(move |messages| {
+            messages.push(msg);
+        });
+    }
+}
+
+async fn handle_context_menu_analyses_events_analysis_enable_all(
+    project: &state::Project,
+    messages: types::Messages,
+    context_menu_active_analysis: ReadSignal<Option<ContextMenuActiveAnalysis>>,
+) {
+    let analysis = context_menu_active_analysis
+        .get_untracked()
+        .unwrap()
+        .into_inner();
+
+    if let Err(err) =
+        analysis_toggle_all_associations(project.path().get_untracked(), analysis, true).await
+    {
+        use lib::command::analyses::error::ToggleSubtreeAssociations;
+        match err {
+            ToggleSubtreeAssociations::ProjectNotFound
+            | ToggleSubtreeAssociations::ProjectNotPresent
+            | ToggleSubtreeAssociations::InvalidProject(_)
+            | ToggleSubtreeAssociations::RootNotFound => panic!("invalid project state"),
+
+            ToggleSubtreeAssociations::Container(errors) => {
+                let mut msg = types::message::Builder::error("Could not update all associations.");
+                msg.body(view! {
+                    <ul>
+                        {errors
+                            .into_iter()
+                            .map(|(path, err)| view! { <li>{format!("{path:?}: {err:?}")}</li> })
+                            .collect::<Vec<_>>()}
+                    </ul>
+                });
+                let msg = msg.build();
+                messages.update(|messages| {
+                    messages.push(msg);
+                });
+            }
+        }
+    }
+}
+
+async fn handle_context_menu_analyses_events_analysis_disable_all(
+    project: &state::Project,
+    messages: types::Messages,
+    context_menu_active_analysis: ReadSignal<Option<ContextMenuActiveAnalysis>>,
+) {
+    let analysis = context_menu_active_analysis
+        .get_untracked()
+        .unwrap()
+        .into_inner();
+
+    if let Err(err) =
+        analysis_toggle_all_associations(project.path().get_untracked(), analysis, false).await
+    {
+        use lib::command::analyses::error::ToggleSubtreeAssociations;
+        match err {
+            ToggleSubtreeAssociations::ProjectNotFound
+            | ToggleSubtreeAssociations::ProjectNotPresent
+            | ToggleSubtreeAssociations::InvalidProject(_)
+            | ToggleSubtreeAssociations::RootNotFound => panic!("invalid project state"),
+
+            ToggleSubtreeAssociations::Container(errors) => {
+                let mut msg = types::message::Builder::error("Could not update all associations.");
+                msg.body(view! {
+                    <ul>
+                        {errors
+                            .into_iter()
+                            .map(|(path, err)| view! { <li>{format!("{path:?}: {err:?}")}</li> })
+                            .collect::<Vec<_>>()}
+                    </ul>
+                });
+                let msg = msg.build();
+                messages.update(|messages| {
+                    messages.push(msg);
+                });
+            }
+        }
+    }
+}
+
+async fn analysis_toggle_all_associations(
+    project: PathBuf,
+    analysis: ResourceId,
+    enable: bool,
+) -> Result<(), lib::command::analyses::error::ToggleSubtreeAssociations> {
+    #[derive(Serialize)]
+    struct Args {
+        project: PathBuf,
+        root: PathBuf,
+        analysis: ResourceId,
+        enable: bool,
+    }
+
+    tauri_sys::core::invoke_result(
+        "analysis_toggle_associations",
+        Args {
+            project,
+            root: PathBuf::from("/"),
+            analysis,
+            enable,
+        },
+    )
+    .await
 }

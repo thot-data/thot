@@ -23,6 +23,7 @@ fn main() {
         .manage(state::new_slice(Option::<state::AnalyzerAction>::None))
         .invoke_handler(tauri::generate_handler![
             analyses::project_add_analyses,
+            analyses::analysis_toggle_associations,
             asset::asset_properties_update_bulk,
             asset::asset_properties_update,
             asset::asset_remove_file,

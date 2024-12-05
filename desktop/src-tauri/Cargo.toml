@@ -20,6 +20,7 @@ derive_more.workspace = true
 directories.workspace = true
 ignore.workspace = true
 open = "5.3.0"
+rayon.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 syre-core = { workspace = true, features = ["serde"] }

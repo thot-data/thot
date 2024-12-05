@@ -62,6 +62,24 @@ pub mod analyses {
             /// Updating the project's analyses failed.
             UpdateAnalyses(IoSerde),
         }
+
+        #[derive(Serialize, Deserialize, Debug)]
+        pub enum ToggleSubtreeAssociations {
+            /// Project data could not be found.
+            ProjectNotFound,
+
+            /// Project folder not present.
+            ProjectNotPresent,
+
+            /// Project properties are corrupt.
+            InvalidProject(IoSerde),
+
+            /// Subtree root not found.
+            RootNotFound,
+
+            /// Errors updating containers.
+            Container(Vec<(PathBuf, IoSerde)>),
+        }
     }
 }
 
