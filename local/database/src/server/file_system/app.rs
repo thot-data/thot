@@ -540,10 +540,23 @@ impl Database {
             event::StaticResourceEvent::Removed => {
                 self.handle_fs_event_app_local_config_removed(event)
             }
-            event::StaticResourceEvent::Modified(kind) => match kind {
-                event::ModifiedKind::Data => self.handle_fs_event_app_local_config_modified(event),
-                event::ModifiedKind::Other => todo!(),
-            },
+            event::StaticResourceEvent::Modified(kind) => {
+                #[cfg(target_os = "windows")]
+                match kind {
+                    event::ModifiedKind::Data => todo!(),
+                    event::ModifiedKind::Other => {
+                        self.handle_fs_event_app_local_config_modified(event)
+                    }
+                }
+
+                #[cfg(not(target_os = "windows"))]
+                match kind {
+                    event::ModifiedKind::Data => {
+                        self.handle_fs_event_app_local_config_modified(event)
+                    }
+                    event::ModifiedKind::Other => todo!(),
+                }
+            }
         }
     }
 
@@ -614,13 +627,22 @@ impl Database {
         event: syre_fs_watcher::Event,
     ) -> Vec<Update> {
         use state::config::{action::DataResource as DataAction, Action as ConfigAction};
+        #[cfg(target_os = "windows")]
+        assert_matches!(
+            event.kind(),
+            EventKind::Config(event::Config::LocalConfig(
+                event::StaticResourceEvent::Modified(event::ModifiedKind::Other),
+            ))
+        );
 
+        #[cfg(not(target_os = "windows"))]
         assert_matches!(
             event.kind(),
             EventKind::Config(event::Config::LocalConfig(
                 event::StaticResourceEvent::Modified(event::ModifiedKind::Data),
             ))
         );
+
         assert_eq!(event.paths().len(), 1);
         assert_eq!(event.paths()[0], *self.config.local_config());
 
