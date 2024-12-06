@@ -1,5 +1,5 @@
 use crate::{components::icon, types};
-use leptos::{ev::MouseEvent, *};
+use leptos::{ev::MouseEvent, prelude::*};
 use leptos_icons::*;
 use syre_desktop_lib as lib;
 
@@ -10,7 +10,7 @@ pub fn Settings(
     onclose: Callback<()>,
 ) -> impl IntoView {
     let user_settings = expect_context::<types::settings::User>();
-    let settings = create_resource(|| (), |_| async move { fetch_user_settings().await });
+    let settings = Resource::new(|| (), |_| async move { fetch_user_settings().await });
     view! {
         <Suspense fallback=Loading>
             {settings()
@@ -85,7 +85,7 @@ mod desktop {
         let prefers_dark_theme = expect_context::<PrefersDarkTheme>();
         let user_settings = expect_context::<types::settings::User>();
         let (input_debounce, set_input_debounce) =
-            create_signal(user_settings.with_untracked(|settings| {
+            signal(user_settings.with_untracked(|settings| {
                 settings
                     .desktop
                     .clone()
@@ -99,7 +99,7 @@ mod desktop {
 
         let _ = {
             let user = user.rid().clone();
-            watch(
+            Effect::watch(
                 input_debounce,
                 move |input_debounce, _, _| {
                     let update = user_settings.with_untracked(|settings| match &settings.desktop {
@@ -222,7 +222,8 @@ mod runner {
     use crate::{commands, types};
     use leptos::{
         ev::{Event, MouseEvent},
-        *,
+        prelude::*,
+        task::spawn_local,
     };
     use leptos_icons::*;
     use serde::{Deserialize, Serialize};
@@ -247,20 +248,19 @@ mod runner {
             })
         };
 
-        let (python_path, set_python_path) =
-            create_signal(user_settings.with_untracked(|settings| {
-                settings
-                    .runner
-                    .as_ref()
-                    .map(|settings| settings.python_path.as_ref())
-                    .ok()
-                    .flatten()
-                    .cloned()
-            }));
+        let (python_path, set_python_path) = signal(user_settings.with_untracked(|settings| {
+            settings
+                .runner
+                .as_ref()
+                .map(|settings| settings.python_path.as_ref())
+                .ok()
+                .flatten()
+                .cloned()
+        }));
         let python_path =
             leptos_use::signal_debounced(python_path, Signal::derive(input_debounce.clone()));
 
-        let (r_path, set_r_path) = create_signal(user_settings.with_untracked(|settings| {
+        let (r_path, set_r_path) = signal(user_settings.with_untracked(|settings| {
             settings
                 .runner
                 .as_ref()
@@ -272,7 +272,7 @@ mod runner {
         let r_path = leptos_use::signal_debounced(r_path, Signal::derive(input_debounce.clone()));
 
         let (continue_on_error, set_continue_on_error) =
-            create_signal(user_settings.with_untracked(|settings| {
+            signal(user_settings.with_untracked(|settings| {
                 settings
                     .runner
                     .as_ref()
@@ -284,7 +284,7 @@ mod runner {
 
         let _ = {
             let user = user.rid().clone();
-            watch(
+            Effect::watch(
                 move || (python_path.get(), r_path.get(), continue_on_error.get()),
                 move |(python_path, r_path, continue_on_error), _, _| {
                     let update = user_settings.with_untracked(|settings| match &settings.runner {

@@ -13,7 +13,8 @@ use futures::StreamExt;
 use has_id::HasId;
 use leptos::{
     ev::{DragEvent, MouseEvent, WheelEvent},
-    *,
+    html,
+    prelude::*,
 };
 use leptos_icons::*;
 use serde::Serialize;
@@ -106,13 +107,13 @@ pub fn Canvas() -> impl IntoView {
     let messages = expect_context::<types::Messages>();
 
     let context_menu_active_container: RwSignal<Option<ContextMenuActiveContainer>> =
-        create_rw_signal::<Option<ContextMenuActiveContainer>>(None);
+        RwSignal::new::<Option<ContextMenuActiveContainer>>(None);
 
-    let context_menu_active_asset = create_rw_signal::<Option<ContextMenuActiveAsset>>(None);
+    let context_menu_active_asset = RwSignal::new::<Option<ContextMenuActiveAsset>>(None);
     provide_context(context_menu_active_container.clone());
     provide_context(context_menu_active_asset);
 
-    let context_menu_container_root = create_local_resource(|| (), {
+    let context_menu_container_root = LocalResource::new(|| (), {
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
@@ -145,7 +146,7 @@ pub fn Canvas() -> impl IntoView {
         }
     });
 
-    let context_menu_container_ok = create_local_resource(|| (), {
+    let context_menu_container_ok = LocalResource::new(|| (), {
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
@@ -195,7 +196,7 @@ pub fn Canvas() -> impl IntoView {
         }
     });
 
-    let context_menu_container_err = create_local_resource(|| (), {
+    let context_menu_container_err = LocalResource::new(|| (), {
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
@@ -235,7 +236,7 @@ pub fn Canvas() -> impl IntoView {
         }
     });
 
-    let context_menu_asset = create_local_resource(|| (), {
+    let context_menu_asset = LocalResource::new(|| (), {
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
@@ -315,8 +316,8 @@ fn CanvasView(
     let workspace_state = expect_context::<state::Workspace>();
     let viewbox = expect_context::<ViewboxState>();
 
-    let portal_ref = create_node_ref();
-    let (container_preview_height, set_container_preview_height) = create_signal(0);
+    let portal_ref = NodeRef::new();
+    let (container_preview_height, set_container_preview_height) = signal(0);
 
     provide_context(ContextMenuContainerRoot::new(context_menu_container_root));
     provide_context(ContextMenuContainerOk::new(context_menu_container_ok));
@@ -325,7 +326,7 @@ fn CanvasView(
     provide_context(PortalRef(portal_ref));
     provide_context(ContainerPreviewHeight(container_preview_height));
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         let height = workspace_state.preview().with(|preview| {
             let mut height: usize = 0;
             if preview.assets {
@@ -353,8 +354,8 @@ fn CanvasView(
         set_container_preview_height(common::clamp(height, 0, MAX_CONTAINER_HEIGHT));
     });
 
-    let (pan_drag, set_pan_drag) = create_signal(None);
-    let (was_dragged, set_was_dragged) = create_signal(false);
+    let (pan_drag, set_pan_drag) = signal(None);
+    let (was_dragged, set_was_dragged) = signal(false);
     let vb_scale = {
         let width = viewbox.width().read_only();
         move || width.with(|width| VB_BASE as f64 / *width as f64)
@@ -509,7 +510,7 @@ fn CanvasView(
                 <Graph />
             </svg>
 
-            <div ref=portal_ref></div>
+            <div node_ref=portal_ref></div>
         </div>
     }
 }
@@ -657,7 +658,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
 
     let x_node = Signal::derive(move || (width.with(|width| (width - CONTAINER_WIDTH) / 2)));
 
-    let _ = watch(
+    let _ = Effect::watch(
         container_visibility.read_only(),
         {
             let subtree_width = root.subtree_width();
@@ -696,7 +697,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
     );
 
     view! {
-        <svg ref=wrapper_node width=width height=height x=x y=y>
+        <svg node_ref=wrapper_node width=width height=height x=x y=y>
             <GraphEdges x_node children_widths=display_data.children() container_visibility />
             <g class="group">
                 <foreignObject width=CONTAINER_WIDTH height=container_height x=x_node y=0>
@@ -954,9 +955,9 @@ fn CreateChildContainer(
 
     let project = expect_context::<state::Project>();
     let graph = expect_context::<state::Graph>();
-    let (name, set_name) = create_signal("".to_string());
+    let (name, set_name) = signal("".to_string());
 
-    let create_child = create_action({
+    let create_child = Action::new({
         move |name: &String| {
             let graph = graph.clone();
             let project = project.rid().clone();
@@ -1081,7 +1082,7 @@ fn ContainerOk(
     let context_menu_active_container =
         expect_context::<RwSignal<Option<ContextMenuActiveContainer>>>();
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
-    let (drag_over, set_drag_over) = create_signal(0);
+    let (drag_over, set_drag_over) = signal(0);
     provide_context(Container(container.clone()));
 
     let title = {
@@ -1245,7 +1246,7 @@ fn ContainerOk(
             data-path=path
         >
             // NB: inner div with node ref is used for resizing observer to obtain content height.
-            <div ref=node_ref class="h-full flex flex-col">
+            <div node_ref=node_ref class="h-full flex flex-col">
                 <div class="pb-2 text-center text-lg">
                     <span class="font-primary">{title}</span>
                 </div>
@@ -1446,7 +1447,7 @@ fn Asset(asset: state::Asset) -> impl IntoView {
         }
     };
 
-    let remove = create_action({
+    let remove = Action::new({
         let asset = asset.clone();
         let container = container.clone();
         let graph = graph.clone();
@@ -1627,7 +1628,7 @@ fn AnalysisAssociation(association: state::AnalysisAssociation) -> impl IntoView
         }
     };
 
-    let update_associations = create_action({
+    let update_associations = Action::new({
         let project = project.clone();
         let container = container.clone();
         let messages = messages.clone();
@@ -1795,7 +1796,7 @@ fn ContainerErr(
         }
     };
 
-    let show_details = create_rw_signal(false);
+    let show_details = RwSignal::new(false);
     let error = {
         let properties = container.properties().read_only();
         move || {
@@ -1837,7 +1838,7 @@ fn ContainerErr(
     view! {
         <div
             on:contextmenu=contextmenu
-            ref=node_ref
+            node_ref=node_ref
             class="h-full flex flex-col border-4 border-syre-red-600 rounded bg-white dark:bg-secondary-700"
             data-resource=DATA_KEY_CONTAINER
             data-path=path
@@ -2309,7 +2310,7 @@ async fn remove_asset(
 
 mod display {
     use super::state;
-    use leptos::*;
+    use leptos::prelude::*;
     use std::{num::NonZeroUsize, rc::Rc};
 
     // TODO: May be unnecesasry to wrap in `Rc`.
@@ -2336,7 +2337,7 @@ mod display {
             reactive_owner: Owner,
         ) -> Self {
             let state_children = children;
-            let children = with_owner(reactive_owner, || create_rw_signal(vec![]));
+            let children = with_owner(reactive_owner, || RwSignal::new(vec![]));
 
             let update = with_owner(reactive_owner, || {
                 Effect::new(move |_| {
@@ -2452,7 +2453,7 @@ mod display {
             visibilities: ReadSignal<state::workspace_graph::ContainerVisibility>,
         ) -> Self {
             let reactive_owner = Owner::current().unwrap(); // Needed so signals created in the effect aren't disposed of when the effect runs again.
-            let nodes = create_rw_signal(vec![]);
+            let nodes = RwSignal::new(vec![]);
 
             let data_nodes = edges.with_untracked(|children| {
                 children

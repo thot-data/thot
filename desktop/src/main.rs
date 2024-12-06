@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::prelude::*;
 
 fn main() {
     #[cfg(debug_assertions)]

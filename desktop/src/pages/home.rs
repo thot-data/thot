@@ -3,7 +3,7 @@ use crate::{
     pages::{Dashboard, Settings},
     types,
 };
-use leptos::*;
+use leptos::{ev::MouseEvent, prelude::*};
 use leptos_icons::Icon;
 use leptos_router::*;
 use syre_core::system::User;
@@ -13,14 +13,14 @@ use syre_desktop_lib as lib;
 struct ShowSettings(RwSignal<bool>);
 impl ShowSettings {
     pub fn new() -> Self {
-        Self(create_rw_signal(false))
+        Self(RwSignal::new(false))
     }
 }
 
 #[component]
 pub fn Home(user: User) -> impl IntoView {
     provide_context(user);
-    let user_settings = create_resource(|| (), move |_| fetch_user_settings());
+    let user_settings = Resource::new(|| (), fetch_user_settings);
 
     view! {
         <Suspense fallback=move || {
@@ -48,7 +48,7 @@ fn Loading() -> impl IntoView {
 #[component]
 fn NoSettings() -> impl IntoView {
     let messages = expect_context::<types::Messages>();
-    let navigate = leptos_router::use_navigate();
+    let navigate = leptos_router::hooks::use_navigate();
 
     let msg = types::message::Builder::error("Could not get user settings.");
     let msg = msg.build();
@@ -116,7 +116,7 @@ fn HomeView(user_settings: lib::settings::User) -> impl IntoView {
 #[component]
 fn MainNav() -> impl IntoView {
     let show_settings = expect_context::<ShowSettings>();
-    let open_settings = move |e: ev::MouseEvent| {
+    let open_settings = move |e: MouseEvent| {
         if e.button() != types::MouseButton::Primary {
             return;
         }

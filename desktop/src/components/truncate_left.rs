@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::prelude::*;
 
 // #[component]
 // pub fn TruncateLeft(children: Children, #[prop(optional, into)] class: TextProp) -> impl IntoView {
@@ -22,7 +22,7 @@ use leptos::*;
 //         <div class="flex">
 //             <span class:hidden=move || !content_overflow()>"..."</span>
 //             <div class=classes>
-//                 <div class="inline-block ltr" ref=content_ref>
+//                 <div class="inline-block ltr" node_ref=content_ref>
 //                     {children()}
 //                 </div>
 //             </div>

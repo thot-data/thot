@@ -25,9 +25,7 @@ impl PartialEq<MouseButton> for i16 {
 }
 
 pub mod message {
-    use std::usize;
-
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[derive(Clone, Copy, Debug)]
     pub enum MessageKind {
@@ -121,20 +119,20 @@ pub mod message {
     pub struct Messages(RwSignal<Vec<Message>>);
     impl Messages {
         pub fn new() -> Self {
-            Self(create_rw_signal(vec![]))
+            Self(RwSignal::new(vec![]))
         }
     }
 }
 
 pub mod settings {
-    use leptos::*;
+    use leptos::prelude::*;
     use syre_desktop_lib as lib;
 
     #[derive(derive_more::Deref, Clone, Copy)]
     pub struct User(RwSignal<lib::settings::User>);
     impl User {
         pub fn new(settings: lib::settings::User) -> Self {
-            Self(create_rw_signal(settings))
+            Self(RwSignal::new(settings))
         }
     }
 }

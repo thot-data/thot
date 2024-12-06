@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::prelude::*;
 
 /// Autofocuses the given element.
 ///
@@ -12,12 +12,12 @@ pub fn Autofocus(children: Children) -> impl IntoView {
     let mut children = children().nodes;
     assert_eq!(children.len(), 1, "<Autofocus> only accepts one child");
 
-    let node_ref = create_node_ref();
+    let node_ref = NodeRef::new();
     let child = children.remove(0);
     let child = child.into_html_element().unwrap();
     let child = child.node_ref(node_ref);
 
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(node) = node_ref.get() {
             node.focus().unwrap();
         }

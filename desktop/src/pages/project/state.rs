@@ -6,7 +6,7 @@ pub use workspace::State as Workspace;
 pub use workspace_graph::State as WorkspaceGraph;
 
 pub mod workspace {
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[derive(Clone)]
     pub struct State {
@@ -87,7 +87,7 @@ pub mod workspace {
 }
 
 pub mod workspace_graph {
-    use leptos::*;
+    use leptos::prelude::*;
     use std::rc::Rc;
     use syre_core::types::ResourceId;
     use syre_local_database as db;
@@ -140,7 +140,7 @@ pub mod workspace_graph {
                 nodes
                     .iter()
                     .cloned()
-                    .map(|node| (node, create_rw_signal(true)))
+                    .map(|node| (node, RwSignal::new(true)))
                     .collect()
             });
 
@@ -200,8 +200,8 @@ pub mod workspace_graph {
                 .collect();
 
             Self {
-                resources: create_rw_signal(resources),
-                selected: create_rw_signal(selected),
+                resources: RwSignal::new(resources),
+                selected: RwSignal::new(selected),
             }
         }
 
@@ -416,7 +416,7 @@ pub mod workspace_graph {
             Self {
                 rid,
                 kind,
-                selected: create_rw_signal(false),
+                selected: RwSignal::new(false),
             }
         }
     }
@@ -430,7 +430,7 @@ pub mod workspace_graph {
 
 pub mod project {
     use chrono::{DateTime, Utc};
-    use leptos::*;
+    use leptos::prelude::*;
     use std::path::PathBuf;
     use syre_core as core;
     use syre_core::{
@@ -616,7 +616,7 @@ pub mod project {
 pub mod graph {
     use super::Container;
     use crate::common;
-    use leptos::*;
+    use leptos::prelude::*;
     use std::{
         cell::RefCell,
         ffi::OsString,
@@ -695,9 +695,9 @@ pub mod graph {
             sibling_index: usize,
         ) -> Self {
             Self {
-                subtree_width: create_rw_signal(subtree_width),
-                subtree_height: create_rw_signal(subtree_height),
-                sibling_index: create_rw_signal(sibling_index),
+                subtree_width: RwSignal::new(subtree_width),
+                subtree_height: RwSignal::new(subtree_height),
+                sibling_index: RwSignal::new(sibling_index),
             }
         }
 
@@ -1336,7 +1336,7 @@ pub mod graph {
 pub mod container {
     use super::Metadata;
     use chrono::*;
-    use leptos::*;
+    use leptos::prelude::*;
     use std::{ffi::OsString, path::PathBuf};
     use syre_core::{
         self as core,
@@ -1688,7 +1688,7 @@ pub mod container {
 }
 
 mod metadata {
-    use leptos::*;
+    use leptos::prelude::*;
     use syre_core::types::data::Value;
 
     #[derive(derive_more::Deref, derive_more::DerefMut, Clone)]

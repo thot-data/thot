@@ -1,15 +1,15 @@
 pub mod kind {
     use crate::components::form::debounced::InputText;
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[component]
     pub fn Editor(
-        #[prop(into)] value: MaybeSignal<Option<String>>,
+        #[prop(into)] value: Signal<Option<String>>,
         #[prop(into)] oninput: Callback<Option<String>>,
-        #[prop(into)] debounce: MaybeSignal<f64>,
+        #[prop(into)] debounce: Signal<f64>,
         #[prop(into, optional)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let (processed_value, set_processed_value) = create_signal(value.get_untracked());
+        let (processed_value, set_processed_value) = signal(value.get_untracked());
         let input_value = Signal::derive(move || {
             value.with(|value| value.as_ref().cloned().unwrap_or(String::new()))
         });
@@ -26,7 +26,7 @@ pub mod kind {
             }
         };
 
-        let _ = watch(
+        let _ = Effect::watch(
             processed_value,
             move |processed_value, _, _| {
                 oninput(processed_value.clone());
@@ -40,16 +40,16 @@ pub mod kind {
 
 pub mod description {
     use crate::components::form::debounced::TextArea;
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[component]
     pub fn Editor(
-        #[prop(into)] value: MaybeSignal<Option<String>>,
+        #[prop(into)] value: Signal<Option<String>>,
         #[prop(into)] oninput: Callback<Option<String>>,
-        #[prop(into)] debounce: MaybeSignal<f64>,
+        #[prop(into)] debounce: Signal<f64>,
         #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let (processed_value, set_processed_value) = create_signal(value.get_untracked());
+        let (processed_value, set_processed_value) = signal(value.get_untracked());
 
         let input_value = move || value.with(|value| value.clone().unwrap_or(String::new()));
 
@@ -66,7 +66,7 @@ pub mod description {
             }
         };
 
-        let _ = watch(
+        let _ = Effect::watch(
             processed_value,
             move |processed_value, _, _| {
                 oninput(processed_value.clone());
@@ -80,16 +80,16 @@ pub mod description {
 
 pub mod tags {
     use crate::components::form::debounced::InputText;
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[component]
     pub fn Editor(
-        #[prop(into)] value: MaybeSignal<Vec<String>>,
+        #[prop(into)] value: Signal<Vec<String>>,
         #[prop(into)] oninput: Callback<Vec<String>>,
-        #[prop(into)] debounce: MaybeSignal<f64>,
+        #[prop(into)] debounce: Signal<f64>,
         #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let (processed_value, set_processed_value) = create_signal(value.get_untracked());
+        let (processed_value, set_processed_value) = signal(value.get_untracked());
         let input_value = Signal::derive(move || value.with(|value| value.join(", ")));
 
         let oninput_text = {
@@ -117,7 +117,7 @@ pub mod tags {
             }
         };
 
-        let _ = watch(
+        let _ = Effect::watch(
             processed_value,
             move |processed_value, _, _| {
                 oninput(processed_value.clone());
@@ -138,7 +138,8 @@ pub mod metadata {
     };
     use leptos::{
         ev::{FocusEvent, SubmitEvent},
-        *,
+        html,
+        prelude::*,
     };
     use leptos_icons::Icon;
     use syre_core::types::{data::ValueKind, Value};
@@ -146,7 +147,7 @@ pub mod metadata {
 
     #[component]
     pub fn AddDatum(
-        #[prop(into)] keys: MaybeSignal<Vec<String>>,
+        #[prop(into)] keys: Signal<Vec<String>>,
         #[prop(into)] onadd: Callback<(String, Value)>,
         /// Reset the state of the form.
         #[prop(optional, into)]
@@ -155,12 +156,12 @@ pub mod metadata {
         #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
         let input_debounce = expect_context::<InputDebounce>();
-        let (key, set_key) = create_signal("".to_string());
+        let (key, set_key) = signal("".to_string());
         let key = leptos_use::signal_debounced(key, *input_debounce);
-        let (value, set_value) = create_signal(Value::Number(serde_json::Number::from(0)));
+        let (value, set_value) = signal(Value::Number(serde_json::Number::from(0)));
 
         if let Some(reset) = reset {
-            let _ = watch(
+            let _ = Effect::watch(
                 reset,
                 move |_, _, _| set_value(Value::Number(serde_json::Number::from(0))),
                 false,
@@ -238,7 +239,7 @@ pub mod metadata {
     pub fn ValueEditor(
         #[prop(into)] value: Signal<Value>,
         oninput: Callback<Value>,
-        #[prop(into, optional)] debounce: MaybeSignal<f64>,
+        #[prop(into, optional)] debounce: Signal<f64>,
         #[prop(into, optional)] class: MaybeProp<String>,
     ) -> impl IntoView {
         let value_kind = create_memo(move |_| value.with(|value| value.kind()));
@@ -280,7 +281,7 @@ pub mod metadata {
     fn KindSelect(value: Signal<Value>, oninput: Callback<Value>) -> impl IntoView {
         let input_node = NodeRef::<html::Select>::new();
 
-        create_effect(move |_| {
+        Effect::new(move |_| {
             let Some(input) = input_node.get() else {
                 return;
             };
@@ -299,7 +300,7 @@ pub mod metadata {
 
         view! {
             <select
-                ref=input_node
+                node_ref=input_node
                 prop:value=move || {
                     value
                         .with(|value| {
@@ -323,9 +324,9 @@ pub mod metadata {
     fn BoolEditor(
         value: Signal<Value>,
         oninput: Callback<Value>,
-        debounce: MaybeSignal<f64>,
+        debounce: Signal<f64>,
     ) -> impl IntoView {
-        let (input_value, set_input_value) = create_signal(value.with_untracked(|value| {
+        let (input_value, set_input_value) = signal(value.with_untracked(|value| {
             let Value::Bool(value) = value else {
                 panic!("invalid value kind");
             };
@@ -334,7 +335,7 @@ pub mod metadata {
         }));
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
-        let _ = watch(
+        let _ = Effect::watch(
             value.clone(),
             move |value, _, _| {
                 let Value::Bool(value) = value else {
@@ -346,7 +347,7 @@ pub mod metadata {
             false,
         );
 
-        let _ = watch(
+        let _ = Effect::watch(
             input_value,
             move |input_value, _, _| {
                 if input_value.is_dirty()
@@ -392,9 +393,9 @@ pub mod metadata {
     fn StringEditor(
         value: Signal<Value>,
         oninput: Callback<Value>,
-        debounce: MaybeSignal<f64>,
+        debounce: Signal<f64>,
     ) -> impl IntoView {
-        let (input_value, set_input_value) = create_signal(value.with_untracked(|value| {
+        let (input_value, set_input_value) = signal(value.with_untracked(|value| {
             let Value::String(value) = value else {
                 panic!("invalid value kind");
             };
@@ -403,7 +404,7 @@ pub mod metadata {
         }));
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
-        let _ = watch(
+        let _ = Effect::watch(
             value.clone(),
             move |value, _, _| {
                 let Value::String(value) = value else {
@@ -415,7 +416,7 @@ pub mod metadata {
             false,
         );
 
-        create_effect(move |_| {
+        Effect::new(move |_| {
             input_value.with(|input_value| {
                 if input_value.is_dirty() {
                     oninput(Value::String(input_value.value().clone()));
@@ -454,10 +455,10 @@ pub mod metadata {
     fn NumberEditor(
         value: Signal<Value>,
         oninput: Callback<Value>,
-        debounce: MaybeSignal<f64>,
+        debounce: Signal<f64>,
     ) -> impl IntoView {
-        let (is_valid, set_is_valid) = create_signal(true);
-        let (input_value, set_input_value) = create_signal(value.with_untracked(|value| {
+        let (is_valid, set_is_valid) = signal(true);
+        let (input_value, set_input_value) = signal(value.with_untracked(|value| {
             let Value::Number(value) = value else {
                 panic!("invalid value kind");
             };
@@ -465,7 +466,7 @@ pub mod metadata {
         }));
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
-        let _ = watch(
+        let _ = Effect::watch(
             input_value,
             move |input_value, _, _| {
                 let value = input_value.trim_start_matches("0");
@@ -512,12 +513,12 @@ pub mod metadata {
     fn QuantityEditor(
         value: Signal<Value>,
         oninput: Callback<Value>,
-        debounce: MaybeSignal<f64>,
+        debounce: Signal<f64>,
     ) -> impl IntoView {
-        let node_ref_magnitude = create_node_ref::<html::Input>();
-        let node_ref_unit = create_node_ref::<html::Input>();
+        let node_ref_magnitude = NodeRef::new::<html::Input>();
+        let node_ref_unit = NodeRef::new::<html::Input>();
         let (input_value_magnitude, set_input_value_magnitude) =
-            create_signal(value.with_untracked(|value| {
+            signal(value.with_untracked(|value| {
                 let Value::Quantity { magnitude, .. } = value else {
                     panic!("invalid value");
                 };
@@ -525,14 +526,13 @@ pub mod metadata {
                 magnitude.to_string()
             }));
 
-        let (input_value_unit, set_input_value_unit) =
-            create_signal(value.with_untracked(|value| {
-                let Value::Quantity { unit, .. } = value else {
-                    panic!("invalid value");
-                };
+        let (input_value_unit, set_input_value_unit) = signal(value.with_untracked(|value| {
+            let Value::Quantity { unit, .. } = value else {
+                panic!("invalid value");
+            };
 
-                unit.clone()
-            }));
+            unit.clone()
+        }));
 
         let input_value = Signal::derive(move || {
             input_value_magnitude.with(|magnitude| {
@@ -548,7 +548,7 @@ pub mod metadata {
         });
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
-        let _ = watch(
+        let _ = Effect::watch(
             input_value,
             move |input_value, _, _| {
                 if let Some(value) = input_value {
@@ -645,7 +645,7 @@ pub mod metadata {
                 />
 
                 <input
-                    ref=node_ref_unit
+                    node_ref=node_ref_unit
                     prop:value=input_value_unit
                     minlength=1
                     on:input=move |e| set_input_value_unit(
@@ -663,10 +663,10 @@ pub mod metadata {
     fn ArrayEditor(
         value: Signal<Value>,
         oninput: Callback<Value>,
-        debounce: MaybeSignal<f64>,
+        debounce: Signal<f64>,
     ) -> impl IntoView {
-        let (error, set_error) = create_signal(None);
-        let (input_value, set_input_value) = create_signal(value.with_untracked(|value| {
+        let (error, set_error) = signal(None);
+        let (input_value, set_input_value) = signal(value.with_untracked(|value| {
             let Value::Array(value) = value else {
                 panic!("invalid value kind");
             };
@@ -679,7 +679,7 @@ pub mod metadata {
         }));
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
-        let _ = watch(
+        let _ = Effect::watch(
             value,
             move |value, _, _| {
                 let Value::Array(value) = value else {
@@ -697,7 +697,7 @@ pub mod metadata {
             false,
         );
 
-        let _ = watch(
+        let _ = Effect::watch(
             input_value,
             move |input_value, _, _| {
                 set_error(None);
@@ -914,7 +914,7 @@ pub mod metadata {
 
 pub mod analysis_associations {
     use crate::components;
-    use leptos::*;
+    use leptos::{html, prelude::*};
     use leptos_icons::Icon;
     use std::str::FromStr;
     use syre_core::{self as core, types::ResourceId};
@@ -958,9 +958,9 @@ pub mod analysis_associations {
         #[prop(into)] onadd: Callback<core::project::AnalysisAssociation>,
         #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let analysis_node = create_node_ref::<html::Select>();
-        let priority_node = create_node_ref::<html::Input>();
-        let autorun_node = create_node_ref::<html::Input>();
+        let analysis_node = NodeRef::new::<html::Select>();
+        let priority_node = NodeRef::new::<html::Input>();
+        let autorun_node = NodeRef::new::<html::Input>();
 
         let add = move |_| {
             let analysis = analysis_node.get().unwrap();
@@ -983,7 +983,7 @@ pub mod analysis_associations {
             <div class=class>
                 <div>
                     <div class="pb-1">
-                        <select ref=analysis_node class="input-compact w-full">
+                        <select node_ref=analysis_node class="input-compact w-full">
                             <Show
                                 when=move || {
                                     available_analyses.with(|analyses| !analyses.is_empty())
@@ -1010,7 +1010,7 @@ pub mod analysis_associations {
                     </div>
                     <div class="flex gap-1">
                         <input
-                            ref=priority_node
+                            node_ref=priority_node
                             type="number"
                             name="priority"
                             value="0"
@@ -1018,7 +1018,7 @@ pub mod analysis_associations {
                             class="input-compact min-w-14"
                         />
                         <input
-                            ref=autorun_node
+                            node_ref=autorun_node
                             type="checkbox"
                             name="autorun"
                             checked=true
@@ -1088,15 +1088,15 @@ pub mod bulk {
     pub mod kind {
         use super::Value;
         use crate::components::form::debounced::InputText;
-        use leptos::*;
+        use leptos::prelude::*;
 
         #[component]
         pub fn Editor(
-            #[prop(into)] value: MaybeSignal<Value<Option<String>>>,
+            #[prop(into)] value: Signal<Value<Option<String>>>,
             #[prop(into)] oninput: Callback<Option<String>>,
-            #[prop(into)] debounce: MaybeSignal<f64>,
+            #[prop(into)] debounce: Signal<f64>,
         ) -> impl IntoView {
-            let (processed_value, set_processed_value) = create_signal({
+            let (processed_value, set_processed_value) = signal({
                 value.with_untracked(|value| match value {
                     Value::Mixed | Value::Equal(None) => None,
                     Value::Equal(Some(value)) => Some(value.clone()),
@@ -1136,7 +1136,7 @@ pub mod bulk {
                 }
             };
 
-            let _ = watch(
+            let _ = Effect::watch(
                 processed_value,
                 move |processed_value, _, _| {
                     oninput(processed_value.clone());
@@ -1159,16 +1159,16 @@ pub mod bulk {
     pub mod description {
         use super::Value;
         use crate::components::form::debounced::TextArea;
-        use leptos::*;
+        use leptos::prelude::*;
 
         #[component]
         pub fn Editor(
-            #[prop(into)] value: MaybeSignal<Value<Option<String>>>,
+            #[prop(into)] value: Signal<Value<Option<String>>>,
             #[prop(into)] oninput: Callback<Option<String>>,
-            #[prop(into)] debounce: MaybeSignal<f64>,
+            #[prop(into)] debounce: Signal<f64>,
             #[prop(optional, into)] class: MaybeProp<String>,
         ) -> impl IntoView {
-            let (processed_value, set_processed_value) = create_signal({
+            let (processed_value, set_processed_value) = signal({
                 value.with_untracked(|value| match value {
                     Value::Mixed | Value::Equal(None) => None,
                     Value::Equal(Some(value)) => Some(value.clone()),
@@ -1208,7 +1208,7 @@ pub mod bulk {
                 }
             };
 
-            let _ = watch(
+            let _ = Effect::watch(
                 processed_value,
                 move |processed_value, _, _| {
                     oninput(processed_value.clone());
@@ -1239,7 +1239,7 @@ pub mod bulk {
 
         #[component]
         pub fn Editor(
-            #[prop(into)] value: MaybeSignal<Vec<String>>,
+            #[prop(into)] value: Signal<Vec<String>>,
             #[prop(into)] onremove: Callback<String>,
 
             /// Classes applied to outer container.
@@ -1303,10 +1303,10 @@ pub mod bulk {
             reset: Option<ReadSignal<()>>,
             #[prop(optional, into)] class: MaybeProp<String>,
         ) -> impl IntoView {
-            let input_ref = create_node_ref::<html::Input>();
+            let input_ref = NodeRef::new::<html::Input>();
 
             if let Some(reset) = reset {
-                let _ = watch(
+                let _ = Effect::watch(
                     reset,
                     move |_, _, _| {
                         let input = input_ref.get_untracked().unwrap();
@@ -1347,7 +1347,7 @@ pub mod bulk {
             view! {
                 <form on:submit=add_tags class=class>
                     <input
-                        ref=input_ref
+                        node_ref=input_ref
                         type="text"
                         placeholder="Add tags"
                         class="input-compact w-full"
@@ -1371,7 +1371,7 @@ pub mod bulk {
             metadata::{convert_value_kind, kind_to_str, string_to_kind, value_to_kind_str},
         };
         use crate::components::{self, form::InputNumber};
-        use leptos::*;
+        use leptos::prelude::*;
         use leptos_icons::Icon;
         use syre_core::types::data;
 
@@ -1446,7 +1446,7 @@ pub mod bulk {
 
         #[component]
         pub fn Editor(
-            #[prop(into)] value: MaybeSignal<Metadata>,
+            #[prop(into)] value: Signal<Metadata>,
             #[prop(into)] onremove: Callback<String>,
 
             /// # Arguments
@@ -1557,7 +1557,7 @@ pub mod bulk {
         #[component]
         fn KindSelect(value: Signal<Value>, onchange: Callback<data::Value>) -> impl IntoView {
             let input_node = NodeRef::<html::Select>::new();
-            create_effect(move |_| {
+            Effect::new(move |_| {
                 let Some(input) = input_node.get() else {
                     return;
                 };
@@ -1590,7 +1590,7 @@ pub mod bulk {
 
             view! {
                 <select
-                    ref=input_node
+                    node_ref=input_node
                     prop:value=move || {
                         value
                             .with(|value| match value {
@@ -1717,7 +1717,7 @@ pub mod bulk {
 
         #[component]
         fn QuantityEditor(value: Signal<Value>, oninput: Callback<data::Value>) -> impl IntoView {
-            let (magnitude, set_magnitude) = create_signal({
+            let (magnitude, set_magnitude) = signal({
                 value.with_untracked(|value| match value {
                     Value::EqualKind(_) => "".to_string(),
                     Value::Equal(data::Value::Quantity { ref magnitude, .. }) => {
@@ -1727,7 +1727,7 @@ pub mod bulk {
                 })
             });
 
-            let (unit, set_unit) = create_signal({
+            let (unit, set_unit) = signal({
                 value.with_untracked(|value| match value {
                     Value::EqualKind(_) => "".to_string(),
                     Value::Equal(data::Value::Quantity { ref unit, .. }) => unit.clone(),
@@ -1743,7 +1743,7 @@ pub mod bulk {
                 set_unit(event_target_value(&e));
             };
 
-            let _ = watch(
+            let _ = Effect::watch(
                 move || (magnitude, unit),
                 move |(magnitude, unit), _, _| {
                     let Ok(magnitude) = magnitude.with(|magnitude| magnitude.parse::<f64>()) else {
@@ -1784,8 +1784,8 @@ pub mod bulk {
         #[component]
         fn ArrayEditor(value: Signal<Value>, oninput: Callback<data::Value>) -> impl IntoView {
             let input_debounce = expect_context::<InputDebounce>();
-            let (error, set_error) = create_signal(None);
-            let (input_value, set_input_value) = create_signal(value.with_untracked(|value| {
+            let (error, set_error) = signal(None);
+            let (input_value, set_input_value) = signal(value.with_untracked(|value| {
                 match value {
                     Value::EqualKind(_) => "".to_string(),
                     Value::Equal(data::Value::Array(ref value)) => value
@@ -1808,7 +1808,7 @@ pub mod bulk {
                 })
             };
 
-            let _ = watch(
+            let _ = Effect::watch(
                 input_value,
                 move |value, _, _| {
                     let val = value

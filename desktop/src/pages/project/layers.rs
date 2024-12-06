@@ -9,7 +9,7 @@ use crate::{
     types,
 };
 use futures::StreamExt;
-use leptos::{ev::MouseEvent, *};
+use leptos::{ev::MouseEvent, prelude::*, task::spawn_local};
 use leptos_icons::Icon;
 use std::rc::Rc;
 use syre_core::types::ResourceId;
@@ -49,14 +49,13 @@ pub fn LayersNav() -> impl IntoView {
     let graph = expect_context::<state::Graph>();
     let messages = expect_context::<types::Messages>();
 
-    let context_menu_active_container =
-        create_rw_signal::<Option<ContextMenuActiveContainer>>(None);
-    let context_menu_active_asset = create_rw_signal::<Option<ContextMenuActiveAsset>>(None);
+    let context_menu_active_container = RwSignal::<Option<ContextMenuActiveContainer>>::new(None);
+    let context_menu_active_asset = RwSignal::<Option<ContextMenuActiveAsset>>::new(None);
 
     provide_context(context_menu_active_container);
     provide_context(context_menu_active_asset);
 
-    let context_menu_container_ok = create_local_resource(|| (), {
+    let context_menu_container_ok = LocalResource::new({
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
@@ -90,7 +89,7 @@ pub fn LayersNav() -> impl IntoView {
         }
     });
 
-    let context_menu_asset = create_local_resource(|| (), {
+    let context_menu_asset = LocalResource::new({
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
@@ -166,7 +165,7 @@ pub fn LayersNavView(
 #[component]
 fn ContainerLayer(root: state::graph::Node, #[prop(optional)] depth: usize) -> impl IntoView {
     let graph = expect_context::<state::Graph>();
-    let expanded = create_rw_signal(true);
+    let expanded = RwSignal::new(true);
 
     view! {
         <div>
@@ -219,7 +218,7 @@ fn ContainerLayerTitleOk(
         expect_context::<RwSignal<Option<ContextMenuActiveContainer>>>();
     let viewbox = expect_context::<ViewboxState>();
 
-    let (click_event, set_click_event) = create_signal::<Option<MouseEvent>>(None);
+    let (click_event, set_click_event) = signal::<Option<MouseEvent>>(None);
     let click_event = leptos_use::signal_debounced(click_event, CLICK_DEBOUNCE);
 
     let properties = {
@@ -381,7 +380,7 @@ fn ContainerLayerTitleOk(
         }
     };
 
-    let _ = watch(
+    let _ = Effect::watch(
         move || click_event.get(),
         move |e, _, _| {
             let Some(e) = e else {
@@ -493,7 +492,7 @@ fn AssetsLayer(container: state::graph::Node, depth: usize) -> impl IntoView {
 
 #[component]
 fn AssetsLayerOk(assets: ReadSignal<Vec<state::Asset>>, depth: usize) -> impl IntoView {
-    let expanded = create_rw_signal(false);
+    let expanded = RwSignal::new(false);
     let assets_sorted = move || {
         let mut assets = assets.get();
         assets.sort_by_key(|asset| {

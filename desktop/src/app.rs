@@ -6,9 +6,12 @@ use crate::{
     },
     types,
 };
-use leptos::*;
+use leptos::prelude::*;
 use leptos_meta::*;
-use leptos_router::*;
+use leptos_router::{
+    components::{FlatRoutes, Route, Router},
+    path,
+};
 use message::Messages;
 
 /// For Tailwind to include classes
@@ -21,7 +24,7 @@ static _TAILWIND_CLASSES: &'static [&'static str] = &["hidden", "invisible"];
 pub struct PrefersDarkTheme(RwSignal<bool>);
 impl PrefersDarkTheme {
     pub fn new(prefers_dark: bool) -> Self {
-        Self(create_rw_signal(prefers_dark))
+        Self(RwSignal::new(prefers_dark))
     }
 }
 
@@ -35,7 +38,7 @@ pub fn App() -> impl IntoView {
     >("dark_mode");
     let prefers_dark_theme = PrefersDarkTheme::new(stored_prefers_dark.get_untracked());
     provide_context(prefers_dark_theme);
-    create_effect(move |_| {
+    Effect::new(move |_| {
         set_stored_prefers_dark(prefers_dark_theme());
     });
 
@@ -53,16 +56,21 @@ pub fn App() -> impl IntoView {
         <Body class="h-screen font-secondary overflow-hidden dark:bg-secondary-800 dark:text-white" />
 
         <Router>
-            <Routes>
-                <Route path="" view=Index />
-                <Route path="register" view=move || view! { <Register /> } />
-                <Route path="login" view=Login />
-                <Route path="logout" view=Logout />
-                <Route path=":id" view=Workspace />
-            </Routes>
+            <FlatRoutes fallback=NotFound>
+                <Route path=path!("") view=Index />
+                <Route path=path!("register") view=move || view! { <Register /> } />
+                <Route path=path!("login") view=Login />
+                <Route path=path!("logout") view=Logout />
+                <Route path=path!(":id") view=Workspace />
+            </FlatRoutes>
         </Router>
         <Messages />
     }
+}
+
+#[component]
+fn NotFound() -> impl IntoView {
+    view! { <div class="text-center text-lg">"Page not found"</div> }
 }
 
 mod message {
@@ -70,7 +78,7 @@ mod message {
         components::{self, ToggleExpand},
         types,
     };
-    use leptos::{ev::MouseEvent, *};
+    use leptos::{ev::MouseEvent, prelude::*};
     use leptos_icons::Icon;
 
     #[component]
@@ -97,7 +105,7 @@ mod message {
     #[component]
     fn Message<'a>(message: &'a types::Message) -> impl IntoView {
         let messages = expect_context::<types::Messages>();
-        let show_body = create_rw_signal(false);
+        let show_body = RwSignal::new(false);
 
         let close = {
             let message_id = message.id();

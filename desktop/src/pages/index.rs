@@ -1,13 +1,13 @@
 use super::{Home, Landing};
 use crate::{commands, types::Messages};
 use futures::StreamExt;
-use leptos::*;
+use leptos::{prelude::*, task::spawn_local};
 use syre_core as core;
 use syre_desktop_lib as lib;
 
 #[component]
 pub fn Index() -> impl IntoView {
-    let active_user = create_resource(|| (), |_| async move { commands::user::fetch_user().await });
+    let active_user = Resource::new(|| (), |_| async move { commands::user::fetch_user().await });
 
     view! {
         <Suspense fallback=Initializing>
@@ -34,7 +34,7 @@ fn ActiveUserErrors(errors: RwSignal<Errors>) -> impl IntoView {
 
 #[component]
 fn IndexView(user: Option<core::system::User>) -> impl IntoView {
-    let (user, set_user) = create_signal(user);
+    let (user, set_user) = signal(user);
     spawn_local(async move {
         let mut listener = tauri_sys::event::listen::<Vec<lib::Event>>(lib::event::topic::USER)
             .await

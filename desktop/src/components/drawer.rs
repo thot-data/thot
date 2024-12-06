@@ -1,5 +1,5 @@
 use crate::types::MouseButton;
-use leptos::{ev::MouseEvent, *};
+use leptos::{ev::MouseEvent, html, prelude::*};
 use wasm_bindgen::{prelude::Closure, JsCast};
 
 /// Which side the drawer is docked on.
@@ -12,13 +12,13 @@ pub enum Dock {
 /// A drawer that can be resized.
 #[component]
 pub fn Drawer(
-    #[prop(into)] dock: MaybeSignal<Dock>,
-    #[prop(into)] class: MaybeSignal<String>,
+    #[prop(into)] dock: Signal<Dock>,
+    #[prop(into)] class: Signal<String>,
 
     /// `absolute`ly position the drawer, if `true`,
     /// otherwise `relative`ly position it.
     #[prop(into, optional)]
-    absolute: MaybeSignal<bool>,
+    absolute: Signal<bool>,
     children: Children,
 ) -> impl IntoView {
     let root_node = NodeRef::<html::Div>::new();
@@ -102,7 +102,7 @@ pub fn Drawer(
     };
 
     view! {
-        <div ref=root_node class=classes>
+        <div node_ref=root_node class=classes>
             <div on:mousedown=resize_start class=drawer_class></div>
             {children()}
         </div>

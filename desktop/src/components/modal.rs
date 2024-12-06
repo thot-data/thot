@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::{html, prelude::*};
 use wasm_bindgen::JsCast;
 use web_sys::{EventTarget, HtmlDialogElement, MouseEvent};
 

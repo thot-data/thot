@@ -7,9 +7,9 @@ use crate::{
     types,
 };
 use futures::stream::StreamExt;
-use leptos::*;
+use leptos::{html, prelude::*};
 use leptos_icons::*;
-use leptos_router::*;
+use leptos_router::hooks::use_params_map;
 use serde::Serialize;
 use std::{io, path::PathBuf, rc::Rc, str::FromStr};
 use syre_core::{self as core, types::ResourceId};
@@ -26,7 +26,7 @@ const THROTTLE_DRAG_EVENT: f64 = 50.0;
 struct ShowSettings(RwSignal<bool>);
 impl ShowSettings {
     pub fn new() -> Self {
-        Self(create_rw_signal(false))
+        Self(RwSignal::new(false))
     }
 }
 
@@ -47,8 +47,8 @@ pub fn Workspace() -> impl IntoView {
     let params = use_params_map();
     let id =
         move || params.with(|params| ResourceId::from_str(&params.get("id").unwrap()).unwrap());
-    let active_user = create_resource(|| (), |_| async move { commands::user::fetch_user().await });
-    let resources = create_resource(id, |id| async move { fetch_project_resources(id).await });
+    let active_user = Resource::new(|| (), |_| async move { commands::user::fetch_user().await });
+    let resources = Resource::new(id, |id| async move { fetch_project_resources(id).await });
 
     view! {
         <Suspense fallback=Loading>
@@ -156,7 +156,7 @@ fn WorkspaceView(
     provide_context(state::Workspace::new());
     provide_context(project.clone());
     provide_context(DragOverWorkspaceResource::new());
-    provide_context(create_rw_signal(properties::EditorKind::default()));
+    provide_context(RwSignal::new(properties::EditorKind::default()));
     let user_settings = types::settings::User::new(lib::settings::User::default());
     provide_context(user_settings.clone());
 
@@ -244,12 +244,11 @@ fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> 
     provide_context(workspace_graph_state.clone());
     provide_context(viewbox.clone());
 
-    let (drag_over_event, set_drag_over_event) =
-        create_signal(tauri_sys::window::DragDropEvent::Leave);
+    let (drag_over_event, set_drag_over_event) = signal(tauri_sys::window::DragDropEvent::Leave);
     let drag_over_event = leptos_use::signal_throttled(drag_over_event, THROTTLE_DRAG_EVENT);
-    let (drag_over_container_elm, set_drag_over_container_elm) = create_signal(None);
+    let (drag_over_container_elm, set_drag_over_container_elm) = signal(None);
     let (drag_over_workspace_resource, set_drag_over_workspace_resource) =
-        create_signal(DragOverWorkspaceResource::new());
+        signal(DragOverWorkspaceResource::new());
     provide_context(Signal::from(drag_over_workspace_resource));
 
     spawn_local({
@@ -297,7 +296,7 @@ fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> 
         // Need to test on Mac.
         // Check if needed on unix systems.
         use tauri_sys::window::DragDropEvent;
-        let _ = watch(
+        let _ = Effect::watch(
             move || drag_over_event.get(),
             {
                 let graph = graph.clone();
@@ -381,7 +380,7 @@ fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> 
             false,
         );
 
-        let _ = watch(
+        let _ = Effect::watch(
             drag_over_container_elm,
             move |elm, prev_container, _| {
                 if let Some(elm) = prev_container {
@@ -488,7 +487,7 @@ mod analyze {
     use super::state;
     use crate::{components, types};
     use futures::stream::StreamExt;
-    use leptos::{ev::MouseEvent, *};
+    use leptos::{ev::MouseEvent, prelude::*};
     use leptos_icons::*;
     use std::path::PathBuf;
     use syre_core::types::ResourceId;
@@ -524,10 +523,10 @@ mod analyze {
         let project = expect_context::<state::Project>();
         let graph = expect_context::<state::Graph>();
         let messages = expect_context::<types::Messages>();
-        let analysis_state = create_rw_signal(AnalysisState::Idle);
+        let analysis_state = RwSignal::new(AnalysisState::Idle);
         provide_context(analysis_state);
 
-        let action = create_action({
+        let action = Action::new({
             let analyses = project.analyses();
             let project = project.rid().read_only();
             move |root: &PathBuf| {
@@ -1062,10 +1061,10 @@ impl Default for ViewboxState {
         use super::canvas;
 
         Self {
-            x: create_rw_signal(0),
-            y: create_rw_signal(0),
-            width: create_rw_signal(canvas::VB_BASE),
-            height: create_rw_signal(canvas::VB_BASE),
+            x: RwSignal::new(0),
+            y: RwSignal::new(0),
+            width: RwSignal::new(canvas::VB_BASE),
+            height: RwSignal::new(canvas::VB_BASE),
         }
     }
 }
@@ -1671,7 +1670,7 @@ fn handle_event_graph_graph_inserted(
         nodes
             .iter()
             .cloned()
-            .map(|container| (container, create_rw_signal(true)))
+            .map(|container| (container, RwSignal::new(true)))
             .collect::<Vec<_>>()
     });
 
@@ -2191,7 +2190,7 @@ fn handle_event_graph_container_assets_created(
 
                 container
                     .assets()
-                    .set(db::state::DataResource::Ok(create_rw_signal(assets)));
+                    .set(db::state::DataResource::Ok(RwSignal::new(assets)));
             } else {
                 let removed = container.assets().with_untracked(|assets| {
                     assets.as_ref().unwrap().with_untracked(|assets| {
@@ -2525,7 +2524,7 @@ fn handle_event_graph_container_assets_repaired(
     selection_resources.extend(selections);
 
     container.assets().update(|container_assets| {
-        *container_assets = db::state::DataResource::Ok(create_rw_signal(assets));
+        *container_assets = db::state::DataResource::Ok(RwSignal::new(assets));
     });
 }
 
@@ -2648,7 +2647,7 @@ fn handle_event_graph_asset(event: lib::Event, graph: state::Graph) {
                             } else {
                                 metadata.push((
                                     update_key.clone(),
-                                    create_rw_signal(update_value.clone()),
+                                    RwSignal::new(update_value.clone()),
                                 ));
                             }
                         });
@@ -2686,7 +2685,7 @@ fn update_metadata(metadata: RwSignal<state::Metadata>, update: &syre_core::proj
             .iter()
             .filter_map(|(key, value)| {
                 if keys_new.contains(&key) {
-                    Some((key.clone(), create_rw_signal(value.clone())))
+                    Some((key.clone(), RwSignal::new(value.clone())))
                 } else {
                     None
                 }

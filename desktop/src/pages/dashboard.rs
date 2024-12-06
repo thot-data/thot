@@ -4,7 +4,7 @@ use crate::{
     types,
 };
 use futures::stream::StreamExt;
-use leptos::*;
+use leptos::{html, prelude::*, task::spawn_local};
 use leptos_router::*;
 use serde::Serialize;
 use std::{path::PathBuf, rc::Rc};
@@ -32,10 +32,10 @@ struct ContextMenuActiveProject(PathBuf);
 pub fn Dashboard() -> impl IntoView {
     let user = expect_context::<User>();
     let messages = expect_context::<types::Messages>();
-    let context_menu_active_project_ok = create_rw_signal::<Option<ContextMenuActiveProject>>(None);
+    let context_menu_active_project_ok = RwSignal::<Option<ContextMenuActiveProject>>::new(None);
     provide_context(context_menu_active_project_ok.clone());
 
-    let projects = create_resource(|| (), {
+    let projects = Resource::new(|| (), {
         let user = user.rid().clone();
         move |_| {
             let user = user.clone();
@@ -43,7 +43,7 @@ pub fn Dashboard() -> impl IntoView {
         }
     });
 
-    let context_menu_project_ok = create_local_resource(|| (), {
+    let context_menu_project_ok = LocalResource::new({
         let messages = messages.clone();
         move |_| {
             let messages = messages.clone();
@@ -94,7 +94,7 @@ fn DashboardView(
     context_menu_project_ok: Rc<menu::Menu>,
 ) -> impl IntoView {
     provide_context(ContextMenuProjectOk::new(context_menu_project_ok));
-    let (projects, set_projects) = create_signal(
+    let (projects, set_projects) = signal(
         projects
             .into_iter()
             .map(|project| RwSignal::new(project))
@@ -345,9 +345,9 @@ fn CreateProject(
 #[component]
 fn CreateProjectDialog(path: RwSignal<Option<PathBuf>>) -> impl IntoView {
     let user = expect_context::<User>();
-    let (error, set_error) = create_signal(None);
+    let (error, set_error) = signal(None);
 
-    let create_project_action = create_action({
+    let create_project_action = Action::new({
         let user = user.rid().clone();
         move |project_path: &PathBuf| {
             let project_path = project_path.clone();
@@ -391,7 +391,9 @@ fn CreateProjectDialog(path: RwSignal<Option<PathBuf>>) -> impl IntoView {
                     .unwrap_or(PathBuf::new()),
             });
 
-            if let Some(p) = commands::fs::pick_folder_with_location("Create a new project", init_dir).await {
+            if let Some(p) =
+                commands::fs::pick_folder_with_location("Create a new project", init_dir).await
+            {
                 path.update(|path| {
                     let _ = path.insert(p);
                 });
@@ -457,16 +459,19 @@ fn InitializeProject(
 ) -> impl IntoView {
     let user = expect_context::<User>();
     let messages = expect_context::<types::Messages>();
-    let initialize_project_action = create_action({
+    let initialize_project_action = Action::new({
         let user = user.rid().clone();
         let messages = messages.clone();
         move |_| {
             let user = user.clone();
             let messages = messages.clone();
             async move {
-                if let Some(path) = commands::fs::pick_folder("Initialize an existing directory").await {
+                if let Some(path) =
+                    commands::fs::pick_folder("Initialize an existing directory").await
+                {
                     if let Err(err) = initialize_project(user, path).await {
-                        let mut msg = types::message::Builder::error("Could not initialize project");
+                        let mut msg =
+                            types::message::Builder::error("Could not initialize project");
                         msg.body(format!("{err:?}"));
                         messages.update(|messages| messages.push(msg.build()));
                     }
@@ -497,7 +502,7 @@ fn ImportProject(
     let user = expect_context::<User>();
     let messages = expect_context::<types::Messages>();
 
-    let import_project_action = create_action({
+    let import_project_action = Action::new({
         let user = user.rid().clone();
         move |_| {
             let user = user.clone();

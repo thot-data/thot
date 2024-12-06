@@ -71,7 +71,7 @@ fn AnalysesOk(analyses: ReadSignal<Vec<state::project::Analysis>>) -> impl IntoV
     let messages = expect_context::<types::Messages>();
     let drag_over_workspace_resource = expect_context::<Signal<DragOverWorkspaceResource>>();
 
-    let context_menu_active_analysis = create_rw_signal::<Option<ContextMenuActiveAnalysis>>(None);
+    let context_menu_active_analysis = RwSignal::new::<Option<ContextMenuActiveAnalysis>>(None);
     provide_context(context_menu_active_analysis.clone());
 
     let highlight = move || {
@@ -79,7 +79,7 @@ fn AnalysesOk(analyses: ReadSignal<Vec<state::project::Analysis>>) -> impl IntoV
             .with(|resource| matches!(resource.as_ref(), Some(WorkspaceResource::Analyses)))
     };
 
-    let context_menu_analyses_ok = create_local_resource(|| (), {
+    let context_menu_analyses_ok = LocalResource::new(|| (), {
         let project = project.clone();
         let messages = messages.clone();
 

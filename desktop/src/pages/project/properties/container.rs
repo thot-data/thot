@@ -6,7 +6,8 @@ use has_id::HasId;
 use kind::Editor as Kind;
 use leptos::{
     ev::{Event, MouseEvent},
-    *,
+    html,
+    prelude::*,
 };
 use leptos_icons::Icon;
 use metadata::{AddDatum, Editor as Metadata};
@@ -30,7 +31,7 @@ enum Widget {
 pub fn Editor(container: state::Container) -> impl IntoView {
     let project = expect_context::<state::Project>();
     let popout_portal = expect_context::<PopoutPortal>();
-    let (widget, set_widget) = create_signal(None);
+    let (widget, set_widget) = signal(None);
     let wrapper_node = NodeRef::<html::Div>::new();
     let metadata_node = NodeRef::<html::Div>::new();
     let analyses_node = NodeRef::<html::Div>::new();
@@ -169,7 +170,11 @@ pub fn Editor(container: state::Container) -> impl IntoView {
     };
 
     view! {
-        <div ref=wrapper_node on:scroll=scroll class="overflow-y-auto pr-2 h-full scrollbar-thin">
+        <div
+            node_ref=wrapper_node
+            on:scroll=scroll
+            class="overflow-y-auto pr-2 h-full scrollbar-thin"
+        >
             <div class="text-center pt-1 pb-2">
                 <h3 class="font-primary">"Container"</h3>
             </div>
@@ -262,7 +267,7 @@ pub fn Editor(container: state::Container) -> impl IntoView {
                     </label>
                 </div>
                 <div
-                    ref=analyses_node
+                    node_ref=analyses_node
                     class="relative pt-4 pb-1 border-t border-t-secondary-200 dark:border-t-secondary-700"
                 >
                     <label class="px-1 block">
@@ -369,7 +374,7 @@ pub fn Editor(container: state::Container) -> impl IntoView {
 mod name {
     use super::InputDebounce;
     use crate::{components::form::debounced::value, pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
     use serde::Serialize;
     use std::{ffi::OsString, path::PathBuf};
     use syre_core::types::ResourceId;
@@ -387,12 +392,11 @@ mod name {
         let messages = expect_context::<types::Messages>();
         let input_debounce = expect_context::<InputDebounce>();
 
-        let (input_value, set_input_value) =
-            create_signal(value::State::clean(value.get_untracked()));
+        let (input_value, set_input_value) = signal(value::State::clean(value.get_untracked()));
         let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
-        let (error, set_error) = create_signal(false);
+        let (error, set_error) = signal(false);
 
-        let _ = watch(
+        let _ = Effect::watch(
             value,
             move |value, _, _| {
                 set_input_value(value::State::clean(value.clone()));
@@ -400,7 +404,7 @@ mod name {
             false,
         );
 
-        let _ = watch(
+        let _ = Effect::watch(
             input_value,
             {
                 let project = project.clone();
@@ -481,7 +485,7 @@ mod name {
 mod kind {
     use super::{super::common::kind::Editor as KindEditor, update_properties, InputDebounce};
     use crate::{pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
     use syre_core::types::ResourceId;
     use syre_local_database as db;
 
@@ -539,7 +543,7 @@ mod description {
         super::common::description::Editor as DescriptionEditor, update_properties, InputDebounce,
     };
     use crate::{pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
     use syre_core::types::ResourceId;
     use syre_local_database as db;
 
@@ -599,7 +603,7 @@ mod description {
 mod tags {
     use super::{super::common::tags::Editor as TagsEditor, update_properties, InputDebounce};
     use crate::{pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
     use syre_core::types::ResourceId;
     use syre_local_database as db;
 
@@ -666,7 +670,7 @@ mod metadata {
         pages::project::state,
         types,
     };
-    use leptos::{ev::MouseEvent, *};
+    use leptos::{ev::MouseEvent, prelude::*};
     use leptos_icons::Icon;
     use syre_core::types::{ResourceId, Value};
     use syre_local_database as db;
@@ -689,7 +693,7 @@ mod metadata {
         };
 
         view! {
-            <div ref=node_ref class="pt-0.5">
+            <div node_ref=node_ref class="pt-0.5">
                 <For each=value_sorted key=|(key, _)| key.clone() let:datum>
                     <DatumEditor key=datum.0.clone() value=datum.1.read_only() />
                 </For>
@@ -772,10 +776,10 @@ mod metadata {
         let container = expect_context::<ActiveResource>();
         let messages = expect_context::<types::Messages>();
         let input_debounce = expect_context::<InputDebounce>();
-        let (input_value, set_input_value) = create_signal(value.get_untracked());
+        let (input_value, set_input_value) = signal(value.get_untracked());
         let oninput = Callback::new(set_input_value);
 
-        let _ = watch(
+        let _ = Effect::watch(
             input_value,
             {
                 let key = key.clone();
@@ -907,7 +911,7 @@ mod analysis_associations {
         types,
     };
     use has_id::HasId;
-    use leptos::{ev::MouseEvent, *};
+    use leptos::{ev::MouseEvent, html, prelude::*};
     use leptos_icons::Icon;
     use syre_core::{project::AnalysisAssociation, types::ResourceId};
     use syre_local as local;
@@ -923,7 +927,7 @@ mod analysis_associations {
         let graph = expect_context::<state::Graph>();
         let messages = expect_context::<types::Messages>();
 
-        let add_association = create_action(move |association: &AnalysisAssociation| {
+        let add_association = Action::new(move |association: &AnalysisAssociation| {
             let node = container.with(|rid| graph.find_by_id(rid).unwrap());
             let mut associations = node.analyses().with_untracked(|associations| {
                 let db::state::DataResource::Ok(associations) = associations else {
@@ -990,7 +994,7 @@ mod analysis_associations {
         let graph = expect_context::<state::Graph>();
         let messages = expect_context::<types::Messages>();
 
-        let update_associations = create_action({
+        let update_associations = Action::new({
             let project = project.rid().read_only();
             let graph = graph.clone();
             let container = container.clone();
@@ -1081,14 +1085,14 @@ mod analysis_associations {
         let input_debounce = expect_context::<InputDebounce>();
 
         let autorun_input_node = NodeRef::<html::Input>::new();
-        let (value, set_value) = create_signal(AnalysisAssociation::with_params(
+        let (value, set_value) = signal(AnalysisAssociation::with_params(
             association.analysis().clone(),
             association.autorun().get_untracked(),
             association.priority().get_untracked(),
         ));
         let value = leptos_use::signal_debounced(value, *input_debounce);
 
-        let _ = watch(
+        let _ = Effect::watch(
             {
                 let autorun = association.autorun().read_only();
                 move || autorun.get()
@@ -1100,7 +1104,7 @@ mod analysis_associations {
             false,
         );
 
-        let update_association = create_action({
+        let update_association = Action::new({
             let graph = graph.clone();
             let project = project.rid().read_only();
             move |association: &AnalysisAssociation| {
@@ -1145,7 +1149,7 @@ mod analysis_associations {
             }
         });
 
-        let _ = watch(
+        let _ = Effect::watch(
             value,
             move |value, _, _| {
                 update_association.dispatch(value.clone());
@@ -1222,7 +1226,7 @@ mod analysis_associations {
                     />
 
                     <input
-                        ref=autorun_input_node
+                        node_ref=autorun_input_node
                         type="checkbox"
                         name="autorun"
                         checked=value.with_untracked(|value| value.autorun)

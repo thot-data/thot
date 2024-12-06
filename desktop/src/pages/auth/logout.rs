@@ -1,17 +1,17 @@
-use leptos::*;
-use leptos_router::use_navigate;
+use leptos::prelude::*;
+use leptos_router::hooks::use_navigate;
 use serde::Serialize;
 use syre_local::error::IoSerde;
 
 #[component]
 pub fn Logout() -> impl IntoView {
-    let status = create_resource(|| (), |_| async move { logout().await });
+    let status = Resource::new(|| (), |_| async move { logout().await });
 
     move || {
         status.with(|status| match status {
-            None => view! { <Pending/> },
-            Some(Ok(_)) => view! { <Redirecting/> },
-            Some(Err(err)) => view! { <LogoutErr err=err.clone()/> },
+            None => view! { <Pending /> },
+            Some(Ok(_)) => view! { <Redirecting /> },
+            Some(Err(err)) => view! { <LogoutErr err=err.clone() /> },
         })
     }
 }

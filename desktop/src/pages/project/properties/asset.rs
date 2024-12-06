@@ -20,7 +20,7 @@ struct ActiveAsset(state::Asset);
 #[component]
 pub fn Editor(asset: state::Asset) -> impl IntoView {
     let popout_portal = expect_context::<PopoutPortal>();
-    let add_metadatum_visible = create_rw_signal(false);
+    let add_metadatum_visible = RwSignal::new(false);
     let wrapper_node = NodeRef::<html::Div>::new();
     let metadata_node = NodeRef::<html::Div>::new();
     provide_context(ActiveAsset(asset.clone()));
@@ -54,7 +54,11 @@ pub fn Editor(asset: state::Asset) -> impl IntoView {
     };
 
     view! {
-        <div ref=wrapper_node on:scroll=scroll class="overflow-y-auto pr-2 h-full scrollbar-thin">
+        <div
+            node_ref=wrapper_node
+            on:scroll=scroll
+            class="overflow-y-auto pr-2 h-full scrollbar-thin"
+        >
             <div class="text-center pt-1 pb-2">
                 <h3 class="font-primary">"Asset"</h3>
             </div>
@@ -84,7 +88,7 @@ pub fn Editor(asset: state::Asset) -> impl IntoView {
                     </label>
                 </div>
                 <div
-                    ref=metadata_node
+                    node_ref=metadata_node
                     class="relative py-4 border-t border-t-secondary-200 dark:border-t-secondary-700"
                 >
                     <label class="px-1 block">
@@ -140,7 +144,7 @@ pub fn Editor(asset: state::Asset) -> impl IntoView {
 mod name {
     use super::{update_properties, ActiveAsset, InputDebounce};
     use crate::{components::form::debounced::InputText, pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[component]
     pub fn Editor() -> impl IntoView {
@@ -195,7 +199,7 @@ mod kind {
         super::common::kind::Editor as KindEditor, update_properties, ActiveAsset, InputDebounce,
     };
     use crate::{pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[component]
     pub fn Editor() -> impl IntoView {
@@ -249,7 +253,7 @@ mod description {
         InputDebounce,
     };
     use crate::{pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[component]
     pub fn Editor() -> impl IntoView {
@@ -302,7 +306,7 @@ mod tags {
         super::common::tags::Editor as TagsEditor, update_properties, ActiveAsset, InputDebounce,
     };
     use crate::{pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[component]
     pub fn Editor() -> impl IntoView {
@@ -360,7 +364,7 @@ mod metadata {
         pages::project::state,
         types,
     };
-    use leptos::{ev::MouseEvent, *};
+    use leptos::{ev::MouseEvent, prelude::*};
     use leptos_icons::Icon;
     use syre_core::types::{ResourceId, Value};
 
@@ -462,12 +466,12 @@ mod metadata {
         let messages = expect_context::<types::Messages>();
         let input_debounce = expect_context::<InputDebounce>();
 
-        let (input_value, set_input_value) = create_signal(value.get_untracked());
+        let (input_value, set_input_value) = signal(value.get_untracked());
         let oninput = Callback::new(set_input_value);
 
         // TODO: Handle errors with messages.
         // See https://github.com/leptos-rs/leptos/issues/2041
-        let _ = watch(
+        let _ = Effect::watch(
             input_value,
             {
                 let project = project.clone();

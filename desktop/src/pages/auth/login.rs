@@ -1,6 +1,6 @@
 use crate::components::{Autofocus, Logo};
-use leptos::*;
-use leptos_router::{use_navigate, *};
+use leptos::{task::spawn_local,prelude::*};
+use leptos_router::{hooks::use_navigate, *};
 use serde::Serialize;
 use syre_core::system::User;
 use web_sys::{FormData, SubmitEvent};
@@ -8,8 +8,8 @@ use web_sys::{FormData, SubmitEvent};
 #[component]
 pub fn Login() -> impl IntoView {
     let navigate = use_navigate();
-    let (loading, set_loading) = create_signal(false);
-    let (error, set_error) = create_signal(None);
+    let (loading, set_loading) = signal(false);
+    let (error, set_error) = signal(None);
     let form_ref = NodeRef::new();
 
     let login_user = {

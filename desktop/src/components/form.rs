@@ -1,6 +1,7 @@
 use leptos::{
     ev::{Event, FocusEvent, InputEvent},
-    *,
+    html,
+    prelude::*,
 };
 use std::str::FromStr;
 use wasm_bindgen::JsCast;
@@ -26,11 +27,11 @@ pub fn InputNumber(
     #[prop(optional)] max: Option<f64>,
     #[prop(into, optional)] placeholder: MaybeProp<String>,
     #[prop(default = false)] required: bool,
-    #[prop(into, optional)] class: MaybeSignal<String>,
+    #[prop(into, optional)] class: Signal<String>,
 ) -> impl IntoView {
     const DECIMAL_MARKER: &'static str = ".";
 
-    let _ = watch(
+    let _ = Effect::watch(
         value,
         move |value, _, prev_validity| {
             let Some(set_is_valid) = set_is_valid else {
@@ -85,7 +86,7 @@ pub fn InputNumber(
     // making it impossible to type a period as the next character.
     view! {
         <input
-            ref=node_ref
+            node_ref=node_ref
             type="text"
             inputmode="decimal"
             prop:value=value
@@ -99,21 +100,21 @@ pub fn InputNumber(
 }
 
 pub mod debounced {
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[component]
     pub fn InputText(
-        #[prop(into)] value: MaybeSignal<String>,
+        #[prop(into)] value: Signal<String>,
         #[prop(into)] oninput: Callback<String>,
-        #[prop(into)] debounce: MaybeSignal<f64>,
+        #[prop(into)] debounce: Signal<f64>,
         #[prop(into, optional)] placeholder: MaybeProp<String>,
         #[prop(into, optional)] minlength: MaybeProp<usize>,
         #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let (input_value, set_input_value) = create_signal(value::State::clean(value()));
+        let (input_value, set_input_value) = signal(value::State::clean(value()));
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
-        let _ = watch(
+        let _ = Effect::watch(
             value.clone(),
             move |value, _, _| {
                 set_input_value(value::State::clean(value.clone()));
@@ -121,7 +122,7 @@ pub mod debounced {
             false,
         );
 
-        create_effect(move |_| {
+        Effect::new(move |_| {
             input_value.with(|value| {
                 if value.is_dirty() {
                     oninput(value.value().clone());
@@ -151,15 +152,15 @@ pub mod debounced {
 
     #[component]
     pub fn InputCheckbox(
-        #[prop(into)] value: MaybeSignal<bool>,
+        #[prop(into)] value: Signal<bool>,
         #[prop(into)] oninput: Callback<bool>,
-        #[prop(into)] debounce: MaybeSignal<f64>,
+        #[prop(into)] debounce: Signal<f64>,
         #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let (input_value, set_input_value) = create_signal(value::State::clean(value()));
+        let (input_value, set_input_value) = signal(value::State::clean(value()));
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
-        let _ = watch(
+        let _ = Effect::watch(
             value.clone(),
             move |value, _, _| {
                 set_input_value(value::State::clean(*value));
@@ -167,7 +168,7 @@ pub mod debounced {
             false,
         );
 
-        let _ = watch(
+        let _ = Effect::watch(
             input_value,
             move |input_value, _, _| {
                 if input_value.is_dirty()
@@ -200,17 +201,16 @@ pub mod debounced {
 
     #[component]
     pub fn TextArea(
-        #[prop(into)] value: MaybeSignal<String>,
+        #[prop(into)] value: Signal<String>,
         #[prop(into)] oninput: Callback<String>,
-        #[prop(into)] debounce: MaybeSignal<f64>,
+        #[prop(into)] debounce: Signal<f64>,
         #[prop(into, optional)] placeholder: MaybeProp<String>,
         #[prop(into, optional)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let (input_value, set_input_value) =
-            create_signal(value::State::clean(value.get_untracked()));
+        let (input_value, set_input_value) = signal(value::State::clean(value.get_untracked()));
         let input_value = leptos_use::signal_debounced(input_value, debounce);
 
-        let _ = watch(
+        let _ = Effect::watch(
             value.clone(),
             move |value, _, _| {
                 set_input_value(value::State::clean(value.clone()));
@@ -218,7 +218,7 @@ pub mod debounced {
             false,
         );
 
-        create_effect(move |_| {
+        Effect::new(move |_| {
             input_value.with(|value| {
                 if value.is_dirty() {
                     oninput(value.value().clone());

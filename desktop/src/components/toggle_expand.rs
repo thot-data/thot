@@ -1,5 +1,5 @@
 use crate::{components, types};
-use leptos::{ev::MouseEvent, *};
+use leptos::{ev::MouseEvent, prelude::*};
 use leptos_icons::Icon;
 
 #[component]

@@ -1,6 +1,6 @@
 use super::{properties, state};
 use crate::{components, types};
-use leptos::{ev::MouseEvent, *};
+use leptos::{ev::MouseEvent, html, prelude::*};
 use leptos_icons::Icon;
 use wasm_bindgen::{closure::Closure, JsCast};
 
@@ -13,7 +13,7 @@ pub fn ProjectBar(
         <div class="flex px-2 py-1">
             <div class="w-1/3 inline-flex gap-2">
                 <PreviewSelector />
-                <div ref=analyze_node></div>
+                <div node_ref=analyze_node></div>
             </div>
             <div class="w-1/3 text-center">
                 <ProjectInfo />
@@ -31,7 +31,7 @@ fn PreviewSelector() -> impl IntoView {
 
     let workspace_state = expect_context::<state::Workspace>();
     let state = workspace_state.preview().clone();
-    let (active, set_active) = create_signal::<Option<Closure<dyn FnMut(MouseEvent)>>>(None);
+    let (active, set_active) = signal::<Option<Closure<dyn FnMut(MouseEvent)>>>(None);
 
     let preview_list = move || {
         let mut out = vec![];

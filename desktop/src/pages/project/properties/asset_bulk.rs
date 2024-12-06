@@ -4,7 +4,8 @@ use description::Editor as Description;
 use kind::Editor as Kind;
 use leptos::{
     ev::{Event, MouseEvent},
-    *,
+    html,
+    prelude::*,
 };
 use leptos_icons::Icon;
 use metadata::{AddDatum, Editor as Metadata};
@@ -25,7 +26,7 @@ enum Widget {
 mod state {
     use super::super::common::bulk;
     use crate::pages::project::state;
-    use leptos::*;
+    use leptos::prelude::*;
     use std::collections::HashMap;
     use syre_core::types::ResourceId;
 
@@ -184,7 +185,7 @@ pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
     assert!(assets.with(|assets| assets.len()) > 1);
     let graph = expect_context::<project::state::Graph>();
     let popout_portal = expect_context::<PopoutPortal>();
-    let (widget, set_widget) = create_signal(None);
+    let (widget, set_widget) = signal(None);
     let wrapper_node = NodeRef::<html::Div>::new();
     let tags_node = NodeRef::<html::Div>::new();
     let metadata_node = NodeRef::<html::Div>::new();
@@ -271,7 +272,11 @@ pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
     };
 
     view! {
-        <div ref=wrapper_node on:scroll=scroll class="overflow-y-auto pr-2 h-full scrollbar-thin">
+        <div
+            node_ref=wrapper_node
+            on:scroll=scroll
+            class="overflow-y-auto pr-2 h-full scrollbar-thin"
+        >
             <div class="text-center pt-1 pb-2">
                 <h3 class="font-primary">"Bulk assets"</h3>
                 <span class="text-sm text-secondary-500 dark:text-secondary-400">
@@ -298,7 +303,7 @@ pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
                     </label>
                 </div>
                 <div
-                    ref=tags_node
+                    node_ref=tags_node
                     class="relative py-4 border-t border-t-secondary-200 dark:border-t-secondary-700"
                 >
                     <label class="block px-1">
@@ -341,7 +346,7 @@ pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
                     </label>
                 </div>
                 <div
-                    ref=metadata_node
+                    node_ref=metadata_node
                     class="relative py-4 border-t border-t-secondary-200 dark:border-t-secondary-700"
                 >
                     <label class="px-1 block">
@@ -419,7 +424,7 @@ mod name {
         container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{components::form::debounced::InputText, pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
     use syre_desktop_lib::command::asset::bulk::PropertiesUpdate;
 
     #[component]
@@ -471,11 +476,11 @@ mod name {
 
     #[component]
     fn NameEditor(
-        #[prop(into)] value: MaybeSignal<Value<Option<String>>>,
+        #[prop(into)] value: Signal<Value<Option<String>>>,
         #[prop(into)] oninput: Callback<Option<String>>,
-        #[prop(into)] debounce: MaybeSignal<f64>,
+        #[prop(into)] debounce: Signal<f64>,
     ) -> impl IntoView {
-        let (processed_value, set_processed_value) = create_signal({
+        let (processed_value, set_processed_value) = signal({
             value.with_untracked(|value| match value {
                 Value::Mixed | Value::Equal(None) => None,
                 Value::Equal(Some(value)) => Some(value.clone()),
@@ -515,7 +520,7 @@ mod name {
             }
         };
 
-        let _ = watch(
+        let _ = Effect::watch(
             processed_value,
             move |processed_value, _, _| {
                 oninput(processed_value.clone());
@@ -541,7 +546,7 @@ mod kind {
         container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
     use syre_desktop_lib::command::asset::bulk::PropertiesUpdate;
 
     #[component]
@@ -598,7 +603,7 @@ mod description {
         container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
     use syre_desktop_lib::command::asset::bulk::PropertiesUpdate;
 
     #[component]
@@ -665,7 +670,7 @@ mod tags {
         container_assets, update_properties, ActiveResources, State,
     };
     use crate::{components::DetailPopout, pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
     use syre_desktop_lib::command::{asset::bulk::PropertiesUpdate, bulk::TagsAction};
 
     #[component]
@@ -804,7 +809,7 @@ mod metadata {
         container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{components::DetailPopout, pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
     use syre_core::types::data;
     use syre_desktop_lib::command::{asset::bulk::PropertiesUpdate, bulk::MetadataAction};
 
@@ -816,7 +821,7 @@ mod metadata {
         let assets = expect_context::<ActiveResources>();
         let state = expect_context::<Signal<State>>();
         let input_debounce = expect_context::<InputDebounce>();
-        let (modifications, set_modifications) = create_signal(vec![]);
+        let (modifications, set_modifications) = signal(vec![]);
         let modifications = leptos_use::signal_debounced(modifications, *input_debounce);
 
         let onremove = Callback::new({
@@ -870,7 +875,7 @@ mod metadata {
             set_modifications.update(|modifications| modifications.push(value));
         });
 
-        let _ = watch(
+        let _ = Effect::watch(
             modifications,
             {
                 let project = project.rid().read_only();

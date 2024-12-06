@@ -1,5 +1,5 @@
 use crate::components::{Autofocus, Logo};
-use leptos::*;
+use leptos::prelude::*;
 use leptos_router::*;
 use serde::Serialize;
 use std::io;
@@ -9,7 +9,7 @@ use web_sys::{FormData, SubmitEvent};
 
 #[component]
 pub fn Landing() -> impl IntoView {
-    let user_count = create_resource(|| (), |_| async move { fetch_user_count().await });
+    let user_count = Resource::new(|| (), |_| async move { fetch_user_count().await });
     let fallback = move |errors: RwSignal<Errors>| {
         errors.with(|errors| {
             let errors = errors
@@ -89,10 +89,10 @@ fn Loading() -> impl IntoView {
 
 #[component]
 pub fn Register() -> impl IntoView {
-    let (error, set_error) = create_signal(None);
+    let (error, set_error) = signal(None);
     let form_ref = NodeRef::new();
 
-    let register_user_action = create_action(move |(email, name): &(String, Option<String>)| {
+    let register_user_action = Action::new(move |(email, name): &(String, Option<String>)| {
         let email = email.clone();
         let name = name.clone();
         async move {

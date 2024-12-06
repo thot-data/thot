@@ -5,8 +5,11 @@ use crate::{
     types::{self},
 };
 use description::Editor as Description;
-use ev::SubmitEvent;
-use leptos::{ev::MouseEvent, *};
+use leptos::{
+    ev::{MouseEvent, SubmitEvent},
+    html,
+    prelude::*,
+};
 use name::Editor as Name;
 use serde::Serialize;
 use std::{io, path::PathBuf};
@@ -85,7 +88,7 @@ fn DeleteProjectConfirmation() -> impl IntoView {
     let project = expect_context::<state::Project>();
     let messages = expect_context::<types::Messages>();
     let navigate = leptos_router::use_navigate();
-    let (confirmation_text, set_confirmation_text) = create_signal("".to_string());
+    let (confirmation_text, set_confirmation_text) = signal("".to_string());
 
     let confirmation_valid = {
         let project = project.clone();
@@ -169,7 +172,7 @@ fn DeleteProjectConfirmation() -> impl IntoView {
 mod name {
     use super::{update_properties, InputDebounce};
     use crate::{components::form::debounced::InputText, pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[component]
     pub fn Editor() -> impl IntoView {
@@ -218,7 +221,7 @@ mod description {
         super::common::description::Editor as DescriptionEditor, update_properties, InputDebounce,
     };
     use crate::{pages::project::state, types};
-    use leptos::*;
+    use leptos::prelude::*;
 
     #[component]
     pub fn Editor() -> impl IntoView {

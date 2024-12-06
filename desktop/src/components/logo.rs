@@ -1,5 +1,5 @@
 use crate::app::PrefersDarkTheme;
-use leptos::*;
+use leptos::prelude::*;
 
 #[component]
 pub fn Logo(#[prop(into, optional)] class: MaybeProp<TextProp>) -> impl IntoView {
