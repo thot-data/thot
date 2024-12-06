@@ -7438,18 +7438,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "syre-data"
-version = "0.10.0-intermediate"
-dependencies = [
- "serde",
- "serde_json",
- "syre-core",
- "syre-local",
- "syre-local-database",
- "zmq",
-]
-
-[[package]]
 name = "syre-desktop"
 version = "0.11.0"
 dependencies = [

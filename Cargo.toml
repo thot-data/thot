@@ -11,7 +11,6 @@ members = [
     "has_id",
     "has_id/has_id_derive",
     "in_trash",
-    "lang/rust",
     "local",
     "local/database",
     "local/database/cli",
