@@ -1,48 +1,44 @@
 [package]
-name = "syre-desktop-tauri"
-version = "0.10.2"
+name = "syre-desktop"
+version = "0.11.0"
 description = "Syre desktop application."
 authors = ["Brian Carlsen <carlsen.bri@gmail.com>"]
+edition = "2021"
 
 homepage = "https://syre.ai"
 repository = "https://github.com/syre-data/syre"
 keywords = ["syre", "syre-data", "data", "data-analysis", "data-management"]
 categories = ["gui", "science"]
-edition = "2021"
-rust-version = "1.57"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-tauri-build = { version = "1.1", features = [] }
+tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
-calamine = { workspace = true }
-csv = { workspace = true }
-directories = { workspace = true }
-open = "5.0"
-regex = { workspace = true } # TODO: Only needed for parsing errors in commands/assets.
-serde_json = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-tauri = { version = "1.5", features = ["dialog-open", "process-command-api", "shell-sidecar", "system-tray", "updater"] }
-thiserror = { workspace = true }
-tracing = {  workspace = true}
-tracing-appender = "0.2.2"
-tracing-subscriber = { version = "0.3", features = ["time", "json"] }
-trash = { workspace = true }
-uuid = { workspace = true , features = ["serde", "v4"] }
-zmq = { workspace = true }
-
-syre-core = { path = "../../core", features = ["serde"] }
-syre-desktop-lib = { path = "../src-lib" }
-syre-local = { path = "../../local" }
-syre-local-database = { path = "../../local/database", features = ["server", "client"] }
-syre-local-runner = { path = "../../local/runner" }
-
-[features]
-# by default Tauri runs in production mode
-# when `tauri dev` runs it is executed with `cargo run --no-default-features` if `devPath` is an URL
-default = ["custom-protocol"]
-# this feature is used used for production builds where `devPath` points to the filesystem
-# DO NOT remove this
-custom-protocol = ["tauri/custom-protocol"]
+derive_more.workspace = true
+directories.workspace = true
+ignore.workspace = true
+open = "5.3.0"
+rayon.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+syre-core = { workspace = true, features = ["serde"] }
+syre-local = { workspace = true, features = ["fs"] }
+syre-local-database = { workspace = true, features = ["client"] }
+syre-local-runner = { workspace = true }
+syre-desktop-lib = { path = "../src-lib", features = ["server"] }
+tauri = { version = "2.0", features = [] }
+tauri-plugin-dialog = "2.0"
+tauri-plugin-devtools = { git = "https://github.com/crabnebula-dev/devtools" }
+tauri-plugin-shell = "2.0"
+tempfile.workspace = true
+tokio = { version = "1.40", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["full"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["json", "time"] }
+tracing-appender.workspace = true
+trash.workspace = true
+uuid.workspace = true
+walkdir.workspace = true
+zmq.workspace = true

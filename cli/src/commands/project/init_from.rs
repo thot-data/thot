@@ -44,7 +44,7 @@ pub struct InitFromArgs {
 ///     |   |- group_1
 ///     |   |   |- group_1_data.csv
 ///
-pub fn main(args: InitFromArgs, verbose: bool) -> Result {
+pub fn main(args: InitFromArgs) -> Result {
     let root = match args.root {
         Some(root) => root.clone(),
         None => match env::current_dir() {
@@ -58,13 +58,11 @@ pub fn main(args: InitFromArgs, verbose: bool) -> Result {
     if args.no_scripts {
         converter.without_scripts();
     } else {
-        converter.with_scripts(&args.analysis_root)?;
+        converter.set_analysis_root(&args.analysis_root)?;
     }
 
     converter.convert(&root)?;
-    if verbose {
-        println!("Initialized {root:?} as a Syre project.");
-    }
+    tracing::info!("Initialized {root:?} as a Syre project.");
 
     Ok(())
 }

@@ -13,7 +13,7 @@ pub struct NewArgs {
 }
 
 /// Creates a new Syre project.
-pub fn main(args: NewArgs, verbose: bool) -> Result {
+pub fn main(args: NewArgs) -> Result {
     // get root path
     let root = match args.root {
         Some(p) => p,
@@ -29,10 +29,6 @@ pub fn main(args: NewArgs, verbose: bool) -> Result {
 
     // set project properties
     // project and root container: creator, name, permissions, lid
-
-    if verbose {
-        println!("New project created at {:?}", &root);
-    }
-
+    tracing::info!("New project created at {:?}", &root);
     Ok(())
 }

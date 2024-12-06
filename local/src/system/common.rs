@@ -5,15 +5,15 @@ use std::io;
 use std::path::PathBuf;
 use syre_core::identifier::Identifier as CoreIdentifier;
 
-/// Returns directories for the user's Syre.
+/// Returns app config directories for the system user.
 pub fn system_dirs() -> Result<ProjectDirs, io::Error> {
-    let dirs_opt = ProjectDirs::from(
+    let dirs = ProjectDirs::from(
         &CoreIdentifier::qualifier(),
         &CoreIdentifier::organization(),
         &Identifier::application(),
     );
 
-    match dirs_opt {
+    match dirs {
         Some(dirs) => Ok(dirs),
         None => Err(io::Error::new(
             io::ErrorKind::NotFound,
@@ -22,9 +22,7 @@ pub fn system_dirs() -> Result<ProjectDirs, io::Error> {
     }
 }
 
-/// Returns the path to the user's config directory for Syre.
+/// Returns the path to the system user's app config directory.
 pub fn config_dir_path() -> Result<PathBuf, io::Error> {
-    let dirs = system_dirs()?;
-    let path = dirs.config_dir();
-    Ok(path.to_path_buf())
+    Ok(system_dirs()?.config_dir().to_path_buf())
 }

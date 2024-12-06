@@ -1,176 +1,418 @@
-//! Graph commands.
-use crate::error::{DesktopSettings as DesktopSettingsError, Result};
-use crate::state::AppState;
-use std::fs;
-use std::path::PathBuf;
-use std::result::Result as StdResult;
-use syre_core::error::{Error as CoreError, Resource as ResourceError};
-use syre_core::graph::ResourceTree;
-use syre_core::project::{Container as CoreContainer, Project};
-use syre_core::types::{Creator, ResourceId, UserId};
-use syre_desktop_lib::error::RemoveResource as RemoveResourceError;
-use syre_local::error::{ContainerError, Error as LocalError};
-use syre_local::project::resources::Container as LocalContainer;
-use syre_local_database::client::Client as DbClient;
-use syre_local_database::command::{ContainerCommand, GraphCommand, ProjectCommand};
-use syre_local_database::Result as DbResult;
-use tauri::State;
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
+use syre_core::types::ResourceId;
+use syre_desktop_lib as lib;
+use syre_local as local;
+use syre_local_database::{self as db, common::is_root_path};
 
-type ContainerTree = ResourceTree<CoreContainer>;
-
-/// Initializes a directory as a [`Container`](LocalContainer).
-///
-/// # Argument
-/// 1. `path`: Path to the desired child directory.
-/// 2. `container`: [`Container`](Container) to initialize with.
-///     The [`ResourceId`] is ignored.
-///
-/// # Returns
-/// [`ResourceId`] of the initialized [`Container`](Container).
-///
-/// # See also
-/// + [`syre_local::project::container::init`] for details.
 #[tauri::command]
-pub fn init_project_graph(
-    db: State<DbClient>,
-    app_state: State<AppState>,
+pub fn create_child_container(
+    db: tauri::State<db::Client>,
     project: ResourceId,
     path: PathBuf,
-) -> Result<ContainerTree> {
-    // create container
-    let user = app_state
-        .user
-        .lock()
-        .expect("could not lock `AppState.user`");
-
-    let Some(user) = user.as_ref() else {
-        return Err(DesktopSettingsError::NoUser.into());
+) -> Result<ResourceId, local::project::container::error::Build> {
+    assert!(is_root_path(&path));
+    let (project_path, project_state) = db.project().get_by_id(project).unwrap().unwrap();
+    let db::state::DataResource::Ok(properties) = project_state.properties() else {
+        panic!("invalid state");
     };
 
-    // create data folder
-    let user = UserId::Id(user.rid.clone());
-    let mut container = LocalContainer::new(path.clone());
-    container.properties.creator = Creator::User(Some(user));
-    container.save()?;
+    let container_path =
+        db::common::container_system_path(project_path.join(&properties.data_root), path);
+    local::project::container::new(container_path).map_err(|err| match err {
+        local::project::container::error::Build::Load
+        | local::project::container::error::Build::NotADirectory => {
+            unreachable!("should not occure when creating a new container");
+        }
+        local::project::container::error::Build::Save(_)
+        | local::project::container::error::Build::AlreadyResource => err,
+    })
+}
 
-    // set project data root
-    let project = db
-        .send(ProjectCommand::Get(project).into())
-        .expect("could not get `Project`");
+// TODO: Clean up return type.
+/// Adds file system resources to the project.
+///
+/// # Returns
+/// `Vec` of `Result`s corresponding to each resource.
+#[tauri::command]
+pub async fn add_file_system_resources(
+    db: tauri::State<'_, db::Client>,
+    resources: Vec<lib::types::AddFsGraphResourceData>,
+) -> Result<(), Vec<(PathBuf, lib::command::error::IoErrorKind)>> {
+    let mut projects = resources
+        .iter()
+        .map(|resource| &resource.project)
+        .collect::<Vec<_>>();
+    projects.sort();
+    projects.dedup();
 
-    let project: Option<Project> =
-        serde_json::from_value(project).expect("could not convert `Get` result to `Project`");
+    let project_paths = projects
+        .into_iter()
+        .cloned()
+        .map(|project| {
+            let (path, state) = db.project().get_by_id(project.clone()).unwrap().unwrap();
+            let db::state::DataResource::Ok(properties) = state.properties() else {
+                todo!();
+            };
 
-    let Some(mut project) = project else {
-        return Err(
-            CoreError::Resource(ResourceError::does_not_exist("`Project` not loaded")).into(),
-        );
+            (project, path.join(&properties.data_root))
+        })
+        .collect::<Vec<_>>();
+
+    let mut results = tokio::task::JoinSet::new();
+    for resource in resources {
+        let project_path = project_paths
+            .iter()
+            .find_map(|(project, path)| {
+                if *project == resource.project {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .unwrap();
+
+        results.spawn(async move { add_file_system_resource(resource, project_path).await });
+    }
+    let results = results.join_all().await;
+
+    let errors = results
+        .into_iter()
+        .filter_map(|result| result.err())
+        .flat_map(|errors| {
+            errors
+                .into_iter()
+                .map(|(path, err)| (path, err.into()))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+async fn add_file_system_resource(
+    resource: lib::types::AddFsGraphResourceData,
+    project: impl AsRef<Path>,
+) -> Result<(), Vec<(PathBuf, io::ErrorKind)>> {
+    use syre_local::types::FsResourceAction;
+
+    let to_path = lib::utils::join_path_absolute(project, &resource.parent);
+    let to_path = to_path.join(resource.path.file_name().unwrap());
+    match resource.action {
+        FsResourceAction::Move => {
+            if to_path == resource.path {
+                return Err(vec![(resource.path.clone(), io::ErrorKind::AlreadyExists)]);
+            }
+
+            tokio::fs::rename(&resource.path, &resource.parent)
+                .await
+                .map_err(|err| vec![(resource.path.clone(), err.kind())])
+        }
+        FsResourceAction::Copy => {
+            if to_path == resource.path {
+                return Err(vec![(resource.path.clone(), io::ErrorKind::AlreadyExists)]);
+            }
+
+            let to_name = local::common::unique_file_name(&to_path)
+                .map_err(|err| vec![(resource.path.clone(), err)])?;
+            let to_path = resource.parent.join(to_name);
+            if resource.path.is_file() {
+                tokio::fs::copy(&resource.path, &to_path)
+                    .await
+                    .map(|_| ())
+                    .map_err(|err| vec![(resource.path.clone(), err.kind())])
+
+                // TODO: Set creator. What if already a resource and current creator differs from original?
+                // TODO: If file is already a resource, copy info.
+            } else if resource.path.is_dir() {
+                copy_dir(&resource.path, &to_path).await
+            } else {
+                todo!();
+            }
+        }
+        FsResourceAction::Reference => todo!(),
+    }
+}
+
+#[tauri::command]
+pub async fn container_duplicate(
+    db: tauri::State<'_, db::Client>,
+    project: ResourceId,
+    container: PathBuf,
+) -> Result<(), lib::command::graph::error::duplicate::Error> {
+    assert!(is_root_path(&container));
+    let (project_path, project_state) = db.project().get_by_id(project).unwrap().unwrap();
+    let db::state::DataResource::Ok(properties) = project_state.properties() else {
+        panic!("invalid state");
     };
 
-    project.data_root = path.clone();
-    let pid = project.rid.clone();
-    let res = db
-        .send(ProjectCommand::Update(project).into())
-        .expect("could not update `Project`");
+    let root_path =
+        db::common::container_system_path(project_path.join(&properties.data_root), &container);
 
-    let res: DbResult =
-        serde_json::from_value(res).expect("could not convert `Update` result to `Result");
-
-    res?;
-
-    // load and store container
-    let graph = db
-        .send(GraphCommand::GetOrLoad(pid).into())
-        .expect("could not load graph");
-
-    let graph: DbResult<ContainerTree> =
-        serde_json::from_value(graph).expect("could not convert `Load` result to `Container` tree");
-
-    Ok(graph?)
+    duplicate::duplicate_subgraph(root_path)
+        .await
+        .map(|_path| ())
+        .map_err(|err| err.into())
 }
 
-/// Loads a Container graph from path.
-///
-/// # Argments
-/// 1. `Project` id.
 #[tauri::command]
-pub fn load_project_graph(
-    db: State<DbClient>,
-    rid: ResourceId,
-) -> StdResult<ContainerTree, syre_local_database::error::server::LoadProjectGraph> {
-    let res = db.send(GraphCommand::Load(rid).into()).unwrap();
-    serde_json::from_value(res).unwrap()
-}
-
-/// Gets a Container graph from path, loading it if needed.
-///
-/// # Argments
-/// 1. `Project` id.
-#[tauri::command]
-pub fn get_or_load_project_graph(
-    db: State<DbClient>,
-    rid: ResourceId,
-) -> StdResult<ContainerTree, syre_local_database::error::server::LoadProjectGraph> {
-    let res = db.send(GraphCommand::GetOrLoad(rid).into()).unwrap();
-    serde_json::from_value(res).unwrap()
-}
-
-/// Creates a new child [`Container`](LocalContainer).
-///
-/// # Arguments
-/// 1. `name`: Name of the child.
-/// 2. `parent`: [`ResourceId`] of the parent [`Container`](LocalContainer).
-#[tauri::command]
-pub fn new_child(db: State<DbClient>, name: String, parent: ResourceId) -> Result {
-    let path = db.send(ContainerCommand::Path(parent).into()).unwrap();
-    let Some(mut path) = serde_json::from_value::<Option<PathBuf>>(path).unwrap() else {
-        panic!("could not get container path");
+pub fn container_trash(
+    db: tauri::State<db::Client>,
+    project: ResourceId,
+    container: PathBuf,
+) -> Result<(), lib::command::error::IoErrorKind> {
+    assert!(is_root_path(&container));
+    let (project_path, project_state) = db.project().get_by_id(project).unwrap().unwrap();
+    let db::state::DataResource::Ok(properties) = project_state.properties() else {
+        panic!("invalid state");
     };
 
-    path.push(name);
-    if path.exists() {
-        return Err(LocalError::ContainerError(ContainerError::InvalidChildPath(path)).into());
+    let container_path =
+        db::common::container_system_path(project_path.join(&properties.data_root), container);
+
+    trash::delete(&container_path).map_err(|err| match err {
+        _ => todo!("{container_path:?}: {err:?}"),
+    })
+}
+
+/// # Returns
+/// `Err` if any path fails to be copied.
+pub async fn copy_dir(
+    src: impl AsRef<Path>,
+    dst: impl AsRef<Path>,
+) -> Result<(), Vec<(PathBuf, io::ErrorKind)>> {
+    let src: &Path = src.as_ref();
+    let dst: &Path = dst.as_ref();
+    let mut results = tokio::task::JoinSet::new();
+    for entry in walkdir::WalkDir::new(src)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+    {
+        let rel_path = entry.path().strip_prefix(src).unwrap();
+        let dst = dst.join(rel_path);
+
+        results.spawn(async move {
+            if entry.file_type().is_file() {
+                match tokio::fs::copy(entry.path(), dst).await {
+                    Ok(_) => Ok(()),
+                    Err(err) => Err((entry.path().to_path_buf(), err.kind())),
+                }
+            } else if entry.file_type().is_dir() {
+                match tokio::fs::create_dir(dst).await {
+                    Ok(_) => Ok(()),
+                    Err(err) => Err((entry.path().to_path_buf(), err.kind())),
+                }
+            } else {
+                todo!();
+            }
+        });
+    }
+    let results = results.join_all().await;
+
+    let errors = results
+        .into_iter()
+        .filter_map(|result| match result {
+            Ok(_) => None,
+            Err(err) => Some(err),
+        })
+        .collect::<Vec<_>>();
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+mod duplicate {
+    use std::{
+        fs, io,
+        path::{Path, PathBuf},
+    };
+    use syre_local as local;
+
+    /// Duplicate a subgraph.
+    ///
+    /// # Returns
+    /// Path to the duplicated root.
+    pub async fn duplicate_subgraph(root: impl AsRef<Path>) -> Result<PathBuf, error::Error> {
+        /// Name for directory within temporary directory, to place publicated containers.
+        const ROOT_DIR_NAME: &str = "data";
+        /// How long to wait between moving duplicated tree folder.
+        const MOVE_DUPLICATED_TREE_DELAY_MS: u64 = 50;
+        /// Maximum number of attempts to move duplicated tree folder.
+        const MOVE_DUPLICATED_TREE_ATTEMPTS: usize = 20;
+
+        let dup_root =
+            local::common::unique_file_name(&root).map_err(|err| error::Error::Filename(err))?;
+
+        let parent = dup_root.parent().unwrap();
+        let tmp_dir = local::common::fs::TempDir::hidden_in(parent)
+            .map_err(|err| error::Error::Tmp(err.kind()))?;
+        let tmp_root = tmp_dir.path().join(ROOT_DIR_NAME);
+        let dir_walker = local::common::ignore::WalkBuilder::new(&root)
+            .filter_entry(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
+            .build();
+
+        let containers = dir_walker
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| {
+                let rel_path = entry.path().strip_prefix(&root).unwrap();
+                let path = tmp_root.join(rel_path);
+
+                let mut container = local::project::resources::Container::new(path);
+                let (properties, analyses, settings) =
+                    match local::loader::container::Loader::load(entry.path()) {
+                        Ok(container) => (
+                            container.properties.clone(),
+                            container.analyses.clone(),
+                            container.settings,
+                        ),
+                        Err(local::loader::container::State {
+                            properties,
+                            settings,
+                            ..
+                        }) if properties.is_ok() && settings.is_ok() => {
+                            let properties = properties.unwrap();
+                            (
+                                properties.properties,
+                                properties.analyses,
+                                settings.unwrap(),
+                            )
+                        }
+                        Err(state) => {
+                            return Err((
+                                entry.path().to_path_buf(),
+                                error::Duplicate::Load(state),
+                            ));
+                        }
+                    };
+
+                container.properties = properties;
+                container.analyses = analyses;
+                container.settings = settings;
+
+                if rel_path.as_os_str() == "" {
+                    container.properties.name =
+                        dup_root.file_name().unwrap().to_string_lossy().to_string();
+                }
+
+                container.save().map_err(|err| {
+                    (
+                        container.base_path().to_path_buf(),
+                        error::Duplicate::Save(err),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let errors = containers
+            .into_iter()
+            .filter_map(|container| container.err())
+            .collect::<Vec<_>>();
+        if !errors.is_empty() {
+            return Err(error::Error::Duplicate(errors));
+        }
+
+        // NB: Files may not be fully created at this point.
+        // When trying to rename a folder at this time a `PermissionDenied` error is raised.
+        // This allows a delay for full creation before moving.
+        for attempt in 1..=MOVE_DUPLICATED_TREE_ATTEMPTS {
+            match fs::rename(&tmp_root, &dup_root) {
+                Ok(_) => return Ok(dup_root),
+                Err(err)
+                    if matches!(err.kind(), io::ErrorKind::PermissionDenied)
+                        && attempt < MOVE_DUPLICATED_TREE_ATTEMPTS =>
+                {
+                    continue
+                }
+                Err(err) => return Err(error::Error::Move(err.kind())),
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(
+                MOVE_DUPLICATED_TREE_DELAY_MS,
+            ))
+            .await;
+        }
+        unreachable!("fn terminated in loop above");
     }
 
-    fs::create_dir(path).unwrap();
-    Ok(())
-}
+    pub mod error {
+        use std::{io, path::PathBuf};
+        use syre_desktop_lib as lib;
+        use syre_local as local;
 
-/// Duplicates a [`Container`](LocalContainer) tree.
-///
-/// # Arguments
-/// 1. Id of the root of the `Container` tree to duplicate.
-#[tauri::command]
-pub fn duplicate_container_tree(db: State<DbClient>, rid: ResourceId) -> DbResult<ContainerTree> {
-    let dup = db
-        .send(GraphCommand::Duplicate(rid).into())
-        .expect("could not duplicate graph");
+        #[derive(Debug)]
+        pub enum Error {
+            /// Creating a unique file name for the duplicate root failed.
+            Filename(io::ErrorKind),
 
-    serde_json::from_value(dup).unwrap()
-}
+            /// Creating a temporary directory in which to duplicate the tree failed.
+            Tmp(io::ErrorKind),
 
-/// Removes a [`Container`](LocalContainer) tree.
-///
-/// # Arguments
-/// 1. Id of the root of the `Container` tree to remove.
-#[tauri::command]
-pub fn remove_container_tree(
-    db: State<DbClient>,
-    rid: ResourceId,
-) -> StdResult<(), RemoveResourceError> {
-    let path = match db.send(ContainerCommand::Path(rid).into()) {
-        Ok(path) => path,
-        Err(err) => return Err(RemoveResourceError::ZMQ(format!("{err:?}"))),
-    };
+            /// Duplicating the tree failed.
+            Duplicate(Vec<(PathBuf, Duplicate)>),
 
-    let Some(path) = serde_json::from_value::<Option<PathBuf>>(path).unwrap() else {
-        return Err(RemoveResourceError::Database(
-            "Could not get Container's path".to_string(),
-        ));
-    };
+            /// Relocating the duplicated tree to its final destination failed.
+            Move(io::ErrorKind),
+        }
 
-    match trash::delete(path) {
-        Ok(_) => Ok(()),
-        Err(_err) => todo!(), // See asset.rs
+        #[derive(Debug)]
+        pub enum Duplicate {
+            /// Loading the parent failed.
+            Load(local::loader::container::State),
+
+            /// Saving the child failed.
+            Save(local::project::resources::container::error::Save),
+        }
+
+        impl Into<lib::command::graph::error::duplicate::Error> for Error {
+            fn into(self) -> lib::command::graph::error::duplicate::Error {
+                use lib::command::graph::error;
+
+                match self {
+                    Self::Filename(err) => error::duplicate::Error::Filename(err.into()),
+                    Self::Tmp(err) => error::duplicate::Error::Tmp(err.into()),
+                    Self::Move(err) => error::duplicate::Error::Move(err.into()),
+                    Self::Duplicate(errors) => {
+                        let errors = errors
+                            .into_iter()
+                            .map(|(path, err)| {
+                                let err = match err {
+                                    Duplicate::Load(local::loader::container::State {
+                                        properties,
+                                        settings,
+                                        ..
+                                    }) => error::duplicate::Duplicate::Load {
+                                        properties: properties.err(),
+                                        settings: settings.err(),
+                                    },
+                                    Duplicate::Save(err) => { match err {
+                                        local::project::resources::container::error::Save::CreateDir(error) => error::duplicate::Duplicate::Save(error::duplicate::SaveContainer::CreateDir(error.into())),
+                                        local::project::resources::container::error::Save::SaveFiles{properties, assets, settings} => error::duplicate::Duplicate::Save(error::duplicate::SaveContainer::SaveFiles{
+                                            properties: properties.map(|err| err.into()) ,
+                                            assets: assets.map(|err| err.into()),
+                                            settings: settings.map(|err| err.into())
+                                        }),
+                                    }
+                                    }
+                                };
+
+                                (path, err)
+                            })
+                            .collect();
+
+                        error::duplicate::Error::Duplicate(errors)
+                    }
+                }
+            }
+        }
     }
 }

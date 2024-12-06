@@ -1,12 +1,15 @@
 /// Asset.
 use super::{asset_properties::Builder as PropertiesBuilder, AssetProperties, Metadata};
-use crate::db::Resource;
-use crate::types::{Creator, ResourceId};
+use crate::{
+    db::Resource,
+    types::{Creator, ResourceId, Value},
+};
 use chrono::prelude::*;
 use has_id::HasId;
-use serde_json::Value as JsValue;
-use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
+use std::{
+    hash::{Hash, Hasher},
+    path::PathBuf,
+};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -16,11 +19,10 @@ use has_id::HasIdSerde;
 
 /// Assets represent a consumable or producable resource.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize, HasIdSerde))]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass)]
 #[derive(HasId, Debug, Clone, PartialEq, Eq)]
 pub struct Asset {
     #[id]
-    pub rid: ResourceId,
+    rid: ResourceId,
     pub properties: AssetProperties,
 
     /// Path to the `Asset`'s resource file.
@@ -28,12 +30,24 @@ pub struct Asset {
 }
 
 impl Asset {
-    pub fn new(path: PathBuf) -> Asset {
-        Asset {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
             rid: ResourceId::new(),
             properties: AssetProperties::new(),
-            path,
+            path: path.into(),
         }
+    }
+
+    pub fn with_properties(path: impl Into<PathBuf>, properties: AssetProperties) -> Self {
+        Self {
+            rid: ResourceId::new(),
+            properties,
+            path: path.into(),
+        }
+    }
+
+    pub fn rid(&self) -> &ResourceId {
+        &self.rid
     }
 
     /// Returns the `bucket` path of the `Asset`
@@ -86,7 +100,7 @@ impl<P> Builder<P> {
         self
     }
 
-    pub fn set_name(&mut self, value: String) -> &mut Self {
+    pub fn set_name(&mut self, value: impl Into<String>) -> &mut Self {
         self.properties.set_name(value);
         self
     }
@@ -96,7 +110,7 @@ impl<P> Builder<P> {
         self
     }
 
-    pub fn set_kind(&mut self, value: String) -> &mut Self {
+    pub fn set_kind(&mut self, value: impl Into<String>) -> &mut Self {
         self.properties.set_kind(value);
         self
     }
@@ -106,7 +120,7 @@ impl<P> Builder<P> {
         self
     }
 
-    pub fn set_description(&mut self, value: String) -> &mut Self {
+    pub fn set_description(&mut self, value: impl Into<String>) -> &mut Self {
         self.properties.set_description(value);
         self
     }
@@ -116,7 +130,7 @@ impl<P> Builder<P> {
         self
     }
 
-    pub fn set_tags(&mut self, value: Vec<String>) -> &mut Self {
+    pub fn set_tags(&mut self, value: Vec<impl Into<String>>) -> &mut Self {
         self.properties.set_tags(value);
         self
     }
@@ -146,12 +160,8 @@ impl<P> Builder<P> {
         self
     }
 
-    pub fn set_metadatum(
-        &mut self,
-        key: impl Into<String>,
-        value: impl Into<JsValue>,
-    ) -> &mut Self {
-        self.properties.set_metadatum(key.into(), value.into());
+    pub fn set_metadatum(&mut self, key: impl Into<String>, value: impl Into<Value>) -> &mut Self {
+        self.properties.set_metadatum(key, value);
         self
     }
 
@@ -175,11 +185,22 @@ impl Builder<NoPath> {
 }
 
 impl Builder<Path> {
+    pub fn with_path(path: impl Into<PathBuf>) -> Self {
+        Self {
+            properties: PropertiesBuilder::default(),
+            path: Path(path.into()),
+        }
+    }
+
     pub fn clear_path(self) -> Builder<NoPath> {
         Builder {
             properties: self.properties,
             path: NoPath,
         }
+    }
+
+    pub fn build(self) -> Asset {
+        self.into()
     }
 }
 

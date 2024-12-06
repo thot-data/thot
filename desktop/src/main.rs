@@ -1,52 +1,28 @@
-//! User interface for Syre Desktop.
-mod actions;
-mod app;
-mod commands;
-mod common;
-mod components;
-mod constants;
-mod error;
-mod hooks;
-mod invoke;
-mod navigation;
-mod pages;
-mod routes;
-mod types;
-mod widgets;
-
-pub use error::Result;
+use leptos::*;
 
 fn main() {
     #[cfg(debug_assertions)]
     tracing::enable();
-
-    yew::Renderer::<app::App>::new().render();
+    console_error_panic_hook::set_once();
+    mount_to_body(syre_desktop_ui::App);
 }
 
 #[cfg(debug_assertions)]
 mod tracing {
-    use tracing::level_filters::LevelFilter;
-    use tracing_subscriber::fmt::format::Pretty;
-    use tracing_subscriber::fmt::time::UtcTime;
-    use tracing_subscriber::prelude::*;
-    use tracing_web::{performance_layer, MakeConsoleWriter};
-
-    const MAX_LOG_LEVEL: LevelFilter = LevelFilter::DEBUG;
+    use tracing_subscriber::{filter, fmt::time::UtcTime, prelude::*};
+    use tracing_web::MakeConsoleWriter;
 
     pub fn enable() {
+        let target_filter = filter::Targets::new().with_target("syre", tracing::Level::TRACE);
         let fmt_layer = tracing_subscriber::fmt::layer()
             .with_ansi(false) // Only partially supported across browsers
-            .with_timer(UtcTime::rfc_3339()) // std::time is not available in browsers
-            .with_writer(MakeConsoleWriter) // write events to the console
-            .with_filter(MAX_LOG_LEVEL);
-
-        let perf_layer = performance_layer()
-            .with_details_from_fields(Pretty::default())
-            .with_filter(MAX_LOG_LEVEL);
+            .with_timer(UtcTime::rfc_3339())
+            .pretty()
+            .with_writer(MakeConsoleWriter); // write events to the console
 
         tracing_subscriber::registry()
             .with(fmt_layer)
-            .with(perf_layer)
+            .with(target_filter)
             .init();
     }
 }

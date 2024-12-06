@@ -1,21 +1,16 @@
-//! Common functionality.
 use crate::identifier::Identifier;
-use directories::ProjectDirs;
-use std::io;
-use std::path::PathBuf;
+use std::{io, path::PathBuf};
 use syre_core::identifier::Identifier as CoreIdentifier;
-use syre_core::types::ResourceId;
-use syre_local::system::common;
 
-/// Returns directories for the user's Syre.
-pub fn system_dirs() -> Result<ProjectDirs, io::Error> {
-    let dirs_opt = ProjectDirs::from(
+/// Returns app config directories for the system user.
+pub fn system_dirs() -> Result<directories::ProjectDirs, io::Error> {
+    let dirs = directories::ProjectDirs::from(
         &CoreIdentifier::qualifier(),
         &CoreIdentifier::organization(),
         &Identifier::application(),
     );
 
-    match dirs_opt {
+    match dirs {
         Some(dirs) => Ok(dirs),
         None => Err(io::Error::new(
             io::ErrorKind::NotFound,
@@ -24,23 +19,7 @@ pub fn system_dirs() -> Result<ProjectDirs, io::Error> {
     }
 }
 
-/// Returns the path to the user's config directory for Syre.
+/// Returns the path to the system user's app config directory.
 pub fn config_dir_path() -> Result<PathBuf, io::Error> {
-    let dirs = system_dirs()?;
-    let path = dirs.config_dir();
-    Ok(path.to_path_buf())
-}
-
-/// Path to user config directory.
-pub fn users_config_dir() -> Result<PathBuf, io::Error> {
-    let mut path = common::config_dir_path()?;
-    path.push("users");
-    Ok(path)
-}
-
-/// Path to a user's config directory.
-pub fn user_config_dir(user: &ResourceId) -> Result<PathBuf, io::Error> {
-    let mut path = users_config_dir()?;
-    path.push(user.to_string());
-    Ok(path)
+    Ok(system_dirs()?.config_dir().to_path_buf())
 }

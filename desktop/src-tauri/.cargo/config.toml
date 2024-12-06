@@ -1,0 +1,3 @@
+[build]
+rustflags = ["-Z", "threads=8"]
+target-dir = "target"

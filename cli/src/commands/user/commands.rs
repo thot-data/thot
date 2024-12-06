@@ -7,27 +7,20 @@ use syre_local::system::collections::UserManifest;
 use syre_local::system::user_manifest;
 
 /// List all users.
-///
-/// If verbose, output is of the form `name <email> (id)` with each user on a new line.
-/// If not verbose, output is of the form `name <email>` with each user on a new line.
-pub fn list(verbose: bool) -> Result {
+pub fn list() -> Result {
     let users = match UserManifest::load() {
         Ok(sets) => sets,
         Err(err) => panic!("Something went wrong: {:?}", err),
     };
 
-    let user_str = match verbose {
-        true => |user: &User| match &user.name {
-            None => format!("{} ({})", user.email, user.rid),
-            Some(name) => format!("{} <{}> ({})", user.email, name, user.rid),
-        },
-        false => |user: &User| match &user.name {
-            None => format!("{}", user.email),
-            Some(name) => format!("{} <{}>", user.email, name),
-        },
-    };
+    let users = users
+        .iter()
+        .map(|user: &User| match &user.name {
+            None => format!("{} ({})", user.email, user.rid()),
+            Some(name) => format!("{} <{}> ({})", user.email, name, user.rid()),
+        })
+        .collect::<Vec<_>>();
 
-    let users = users.values().map(user_str).collect::<Vec<_>>();
     if users.len() == 0 {
         println!("No users");
         return Ok(());
@@ -38,7 +31,12 @@ pub fn list(verbose: bool) -> Result {
 }
 
 pub fn add(user: AddArgs) -> Result {
-    let u = User::new(user.email, user.name);
+    let u = if let Some(name) = user.name {
+        User::with_name(user.email, name)
+    } else {
+        User::new(user.email)
+    };
+
     match user_manifest::add_user(u) {
         Ok(_) => Ok(()),
         Err(err) => Err(err.into()),
@@ -56,7 +54,7 @@ pub fn delete(id: UserId) -> Result {
 
             match user {
                 None => return Ok(()),
-                Some(u) => u.rid,
+                Some(u) => u.rid().clone(),
             }
         }
     };

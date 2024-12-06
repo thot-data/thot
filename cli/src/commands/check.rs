@@ -16,7 +16,7 @@ pub struct CheckArgs {
 }
 
 /// Check a path to ensure no files are corrupted.
-pub fn main(args: CheckArgs, verbose: bool) -> Result {
+pub fn main(args: CheckArgs) -> Result {
     let path = match args.path {
         Some(path) => path.clone(),
         None => match env::current_dir() {

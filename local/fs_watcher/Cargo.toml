@@ -1,0 +1,53 @@
+[package]
+name = "syre-fs-watcher"
+version = "0.0.1"
+edition = "2021"
+
+authors = [ "Brian Carlsen <carlsen.bri@gmail.com>" ]
+description = "Local file system watcher for Syre resources."
+license = "MIT OR Apache-2.0"
+
+homepage = "https://syre.ai"
+repository = "https://github.com/syre-data/syre"
+keywords = [ "syre", "syre-data" ]
+categories = []
+
+
+[dependencies]
+crossbeam = { workspace = true, features = ["crossbeam-channel"] }
+derive_more = { workspace = true, features = ["from"] }
+file_path_from_id.workspace = true
+file-id = {version = "0.2", optional = true }
+glob.workspace = true
+has_id = { workspace = true, features = ["derive"], optional = true }
+in_trash.workspace = true
+notify = { workspace = true, default-features = false, features = ["macos_kqueue"], optional = true }
+notify-debouncer-full = { workspace = true, default-features = false, features = ["crossbeam-channel"], optional = true }
+rayon.workspace = true
+syre-core = { workspace = true, optional = true }
+syre-local = { workspace = true, features = ["fs"], optional = true }
+tracing-appender = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, features = ["time", "json"] }
+tracing.workspace = true
+uuid = { workspace = true, features = ["v7"], optional = true }
+
+[dev-dependencies]
+serde_json.workspace = true
+serde.workspace = true
+tempfile.workspace = true
+test-log = { version = "0.2.15", features = ["trace"] }
+test-utils = { path = "test_utils", features = ["syre_core", "fs"] }
+
+[features]
+default = ["client", "server"]
+server = [
+	"dep:file-id",
+	"dep:has_id",
+	"dep:notify-debouncer-full",
+	"dep:notify",
+	"dep:syre-core",
+	"dep:syre-local",
+	"dep:tracing-appender",
+	"dep:uuid",
+]
+client = []

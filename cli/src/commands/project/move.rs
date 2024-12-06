@@ -2,10 +2,8 @@ use crate::Result;
 use clap::Args;
 use std::path::PathBuf;
 use std::{env, fs};
-use syre_core::error::{Error as CoreError, Project as CoreProjectError};
 use syre_local::error::{Error as LocalError, Project as ProjectError};
 use syre_local::project::project;
-use syre_local::system::project_manifest;
 
 #[derive(Debug, Args)]
 pub struct MoveArgs {
@@ -16,7 +14,7 @@ pub struct MoveArgs {
 }
 
 /// Move a Syre project to a new location.
-pub fn main(args: MoveArgs, verbose: bool) -> Result {
+pub fn main(args: MoveArgs) -> Result {
     // parse to and from args
     let from = match args.from {
         Some(path) => fs::canonicalize(path)?,
@@ -35,9 +33,6 @@ pub fn main(args: MoveArgs, verbose: bool) -> Result {
     };
 
     project::mv(&from, args.to.as_path())?;
-    if verbose {
-        println!("Project moved from `{from:?}` to `{:?}`", args.to);
-    }
-
+    tracing::info!("Project moved from `{from:?}` to `{:?}`", args.to);
     Ok(())
 }

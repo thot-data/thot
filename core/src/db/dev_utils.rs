@@ -1,10 +1,10 @@
 //! Dev utils for database.
 use crate::project::{Asset, Container};
+use crate::types::data::Value;
 use fake::faker::filesystem::raw::FilePath;
 use fake::faker::lorem::raw::{Word, Words};
 use fake::locales::EN;
 use fake::Fake;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

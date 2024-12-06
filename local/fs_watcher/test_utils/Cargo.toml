@@ -1,0 +1,21 @@
+[package]
+name = "test-utils"
+version = "0.0.1"
+edition = "2021"
+
+authors = [ "Brian Carlsen <carlsen.bri@gmail.com>" ]
+description = "Developer utilities."
+license = 'GPL-3.0'
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+fake = "2.5.0"
+lazy_static = "1.4.0"
+tempfile = "3.3"
+syre-core = { workspace = true, optional = true}
+syre-local = { workspace = true, optional = true}
+
+[features]
+syre_core = ["dep:syre-core"]
+fs = ["syre_core", "dep:syre-local"]

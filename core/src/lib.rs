@@ -1,7 +1,5 @@
 #![feature(io_error_more)]
 #![feature(assert_matches)]
-// TODO: `is_sorted` only needed for testing.
-#![feature(is_sorted)]
 
 //! # Syre Core
 //!

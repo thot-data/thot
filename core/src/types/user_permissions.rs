@@ -23,11 +23,25 @@ impl UserPermissions {
         Self::default()
     }
 
+    pub fn all() -> Self {
+        Self {
+            read: true,
+            write: true,
+            execute: true,
+        }
+    }
+
     pub fn with_permissions(read: bool, write: bool, execute: bool) -> Self {
         Self {
             read,
             write,
             execute,
         }
+    }
+
+    /// # Returns
+    /// `true` if any of the permissions are `true`, `false` otherwise.
+    pub fn any(&self) -> bool {
+        self.read || self.write || self.execute
     }
 }

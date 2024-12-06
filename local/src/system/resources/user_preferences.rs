@@ -1,5 +1,5 @@
 //! User settings related to default actions.
-use crate::types::AssetFileAction;
+use crate::types::FsResourceAction;
 use serde::{Deserialize, Serialize};
 
 // ************************
@@ -19,7 +19,7 @@ pub struct UserPreferences {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProjectUserPreferences {
     /// How asset files should be manipulated when changed into an asset
-    asset_file_action: AssetFileAction,
+    asset_file_action: FsResourceAction,
 
     /// Rename container flder when name is changed
     rename_folder_on_name_change: bool,
@@ -37,7 +37,7 @@ pub struct ProjectUserPreferences {
 impl Default for ProjectUserPreferences {
     fn default() -> Self {
         Self {
-            asset_file_action: AssetFileAction::Move,
+            asset_file_action: FsResourceAction::Move,
             rename_folder_on_name_change: true,
             delete_on_exclude: false,
             format_metdata_objects: true,

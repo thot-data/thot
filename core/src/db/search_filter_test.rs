@@ -1,5 +1,6 @@
 use super::super::dev_utils;
 use super::*;
+use crate::types::data::Value;
 use rand::Rng;
 use std::collections::HashMap;
 
@@ -39,7 +40,7 @@ fn standard_search_filter_container_matches_should_work() {
 
     // filters
     let mut rid_filter = StandardSearchFilter::default();
-    rid_filter.rid = Some(obj0.rid.clone());
+    rid_filter.rid = Some(obj0.rid().clone());
 
     let mut name_filter = StandardSearchFilter::default();
     name_filter.name = Some(Some(obj0.properties.name.clone()));
@@ -82,7 +83,7 @@ fn standard_search_filter_container_matches_should_work() {
     }
     if md.len() == 1 {
         for (k, v) in &md {
-            if let serde_json::Value::Bool(_) = v {
+            if let Value::Bool(_) = v {
                 // ensure if matching on boolean value only
                 // obj1 has opposite value of obj0
                 let p0_val = obj0
@@ -93,7 +94,7 @@ fn standard_search_filter_container_matches_should_work() {
                 let p0_val = p0_val.as_bool().expect("metadata value should be a bool");
                 obj1.properties
                     .metadata
-                    .insert(k.clone(), serde_json::Value::Bool(!p0_val));
+                    .insert(k.clone(), Value::Bool(!p0_val));
             }
         }
     }
@@ -157,7 +158,7 @@ fn standard_search_filter_asset_matches_should_work() {
 
     // filters
     let mut rid_filter = StandardSearchFilter::default();
-    rid_filter.rid = Some(obj0.rid.clone());
+    rid_filter.rid = Some(obj0.rid().clone());
 
     let mut name_filter = StandardSearchFilter::default();
     name_filter.name = Some(obj0.properties.name.clone());
@@ -200,7 +201,7 @@ fn standard_search_filter_asset_matches_should_work() {
     }
     if md.len() == 1 {
         for (k, v) in &md {
-            if let serde_json::Value::Bool(_) = v {
+            if let Value::Bool(_) = v {
                 // ensure if matching on boolean value only
                 // obj1 has opposite value of obj0
                 let p0_val = obj0
@@ -211,7 +212,7 @@ fn standard_search_filter_asset_matches_should_work() {
                 let p0_val = p0_val.as_bool().expect("metadata value should be a bool");
                 obj1.properties
                     .metadata
-                    .insert(k.clone(), serde_json::Value::Bool(!p0_val));
+                    .insert(k.clone(), Value::Bool(!p0_val));
             }
         }
     }

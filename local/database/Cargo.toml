@@ -15,38 +15,67 @@ categories = [ "science", "data-structures" ]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-file-id = "0.2.1"
-futures = "0.3.28"
-indexmap = { workspace = true, features = ["serde"] }
-notify = { version = "6.1", default-features = false, features = ["macos_kqueue"], optional = true}
-notify-debouncer-full = { version = "0.3", default-features = false, optional = true}
-regex = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+crossbeam = { workspace = true, optional = true }
+derive_more = { workspace = true, features = ["full"] }
+file-id = { version = "0.2", optional = true }
+futures  = { workspace = true, optional = true }
+glob  = { workspace = true, optional = true }
+ignore  = { workspace = true, optional = true }
+notify = { workspace = true, default-features = false, optional = true }
+rayon = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
+surrealdb = { workspace = true, features = ["kv-mem"], optional = true }
 thiserror = { workspace = true }
+tokio = { version = "1.36", features = ["sync", "macros", "rt-multi-thread"], optional = true }
 tracing = { workspace = true }
-tracing-appender = "0.2.2"
-tracing-subscriber = { version = "0.3.16", features = ["time", "json"] }
-trash = { version = "3.0", optional = true }
-uuid = { workspace = true, features = ["serde", "v4"] }
+tracing-appender = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["time", "json", "env-filter"] }
+trash = { workspace = true, optional = true }
+uuid = { workspace = true, features = ["serde", "v4", "v7"] }
+walkdir = { workspace = true, optional = true }
 zmq = { workspace = true, optional = true }
 
-has_id = { path = "../../has_id", optional = true }
-file_path_from_id = { path = "../../file_path_from_id" }
-syre-core = { path = "../../core" }
-syre-local = { path = "..", default-features = false }
+syre-core = { workspace = true }
+syre-local = { workspace = true }
+syre-fs-watcher = { workspace = true, optional = true }
+has_id = { workspace = true, optional = true }
+file_path_from_id = { workspace = true, optional = true }
 
 [dev-dependencies]
 rand = "0.8"
-fake = "2.4"
+fake.workspace = true
 lazy_static = "1.4"
-tempfile = "3.9.0"
-
-dev_utils = { path = "../../dev_utils", features = ["syre_core"] }
+tempfile.workspace = true
+test-log = { version = "0.2.16", features = ["trace"] }
+zmq.workspace = true
 
 [features]
 default = ["error"]
-server = ["dep:zmq", "syre-local/fs", "dep:has_id", "dep:trash", "dep:notify", "dep:notify-debouncer-full"]
-client = ["dep:zmq"]
+server = [
+	"syre-local/fs",
+	"syre-core/surreal_db",
+	"dep:syre-fs-watcher",
+	"dep:crossbeam",
+	"dep:file_path_from_id",
+	"dep:file-id",
+	"dep:futures",
+	"dep:glob",
+	"dep:has_id",
+	"dep:ignore",
+	"dep:notify",
+	"dep:rayon",
+	"dep:regex",
+	"dep:surrealdb",
+	"dep:tokio",
+	"dep:trash",
+	"dep:walkdir",
+	"dep:zmq",
+]
+client = [
+	"dep:zmq",
+	"dep:crossbeam",
+]
 error = []

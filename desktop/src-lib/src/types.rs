@@ -1,17 +1,33 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use syre_local::types::AssetFileAction;
+use syre_core::types::ResourceId;
+use syre_local::types::FsResourceAction;
 
-// TODO Merge with `syre_local::types::AssetFileAction`.
-/// Info for adding an [`Asset`](syre_core::project::Asset).
+/// Info for adding a file system resource to the analysis of a project.
+///
+/// # Notes
+/// + `path` should be absolute from the file system root.
+/// + `parent` should be absolute from the analysis root.
+///     i.e. The analysis root has path `/`.
 #[derive(Serialize, Deserialize, Debug)]
-pub struct AddAssetInfo {
-    /// Path of the file to make an [`Asset`](syre_core::project::Asset).
+pub struct AddFsAnalysisResourceData {
+    /// Absolute path to the file system resource.
     pub path: PathBuf,
 
-    /// How to handle the file on disk.
-    pub action: AssetFileAction,
+    /// Relative path within the analysis root in which to insert the resources.
+    pub parent: PathBuf,
+    pub action: FsResourceAction,
+}
 
-    /// The bucket to place the [`Asset`](syre_core::project::Asset)'s file in.
-    pub bucket: Option<PathBuf>,
+/// Info for adding a file system resource to a data graph.
+///
+/// # Arguments
+/// + `path`: Absolute path from system root of resource.
+/// + `parent`: Absolute path from data root of parent container in which to place the resource.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AddFsGraphResourceData {
+    pub project: ResourceId,
+    pub path: PathBuf,
+    pub parent: PathBuf,
+    pub action: FsResourceAction,
 }

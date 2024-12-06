@@ -1,6 +1,4 @@
 use super::*;
-use dev_utils::fs::TempDir;
-use syre_core::project::RunParameters;
 
 // *****************
 // *** Container ***
@@ -13,11 +11,11 @@ use syre_core::project::RunParameters;
 #[test]
 fn container_contains_script_association_should_work() {
     // setup
-    let dir = TempDir::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let mut container = Container::new(dir.path());
     let sid = ResourceId::new();
     let assoc = AnalysisAssociation::new(sid.clone());
-    container.analyses.insert(sid.clone(), assoc.into());
+    container.analyses.push(assoc);
 
     // test
     assert!(
@@ -34,7 +32,7 @@ fn container_contains_script_association_should_work() {
 #[test]
 fn container_add_script_association_should_work() {
     // setup
-    let dir = TempDir::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let mut container = Container::new(dir.path());
     let sid = ResourceId::new();
     let assoc = AnalysisAssociation::new(sid.clone());
@@ -53,7 +51,7 @@ fn container_add_script_association_should_work() {
 #[should_panic(expected = "AlreadyExists")]
 fn container_add_script_association_if_already_exists_should_error() {
     // setup
-    let dir = TempDir::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let mut container = Container::new(dir.path());
     let sid = ResourceId::new();
     let assoc = AnalysisAssociation::new(sid.clone());
@@ -68,19 +66,20 @@ fn container_add_script_association_if_already_exists_should_error() {
 #[test]
 fn container_set_script_association_should_work() {
     // setup
-    let dir = TempDir::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let mut container = Container::new(dir.path());
     let sid = ResourceId::new();
     let mut assoc = AnalysisAssociation::new(sid.clone());
 
     // test
     // initial
-    let init = container.set_analysis_association(assoc.clone());
-    let found = container.analyses.get(&sid);
-    assert!(found.is_some(), "association should be added");
+    container.set_analysis_association(assoc.clone());
+    let found = container
+        .analyses
+        .iter()
+        .find(|association| association.analysis() == &sid)
+        .unwrap();
 
-    let found = found.unwrap();
-    assert!(init, "initial association add should return true");
     assert_eq!(
         &assoc.priority, &found.priority,
         "association should be set"
@@ -88,12 +87,13 @@ fn container_set_script_association_should_work() {
 
     // second
     assoc.priority = 1;
-    let sec = container.set_analysis_association(assoc.clone());
-    let found = container.analyses.get(&sid);
-    assert!(found.is_some(), "association should still exist");
+    container.set_analysis_association(assoc.clone());
+    let found = container
+        .analyses
+        .iter()
+        .find(|association| association.analysis() == &sid)
+        .unwrap();
 
-    let found = found.unwrap();
-    assert_eq!(false, sec, "second associaiton set should return false");
     assert_eq!(
         &assoc.priority, &found.priority,
         "association should be updated"
@@ -103,23 +103,17 @@ fn container_set_script_association_should_work() {
 #[test]
 fn container_remove_script_association_should_work() {
     // setup
-    let dir = TempDir::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
     let mut container = Container::new(dir.path());
     let sid = ResourceId::new();
-    let params = RunParameters::new();
-    container.analyses.insert(sid.clone(), params);
+    container
+        .analyses
+        .push(AnalysisAssociation::new(sid.clone()));
 
-    // test
-    // first
-    let init = container.remove_analysis_association(&sid);
+    container.remove_analysis_association(&sid);
     assert_eq!(
         false,
         container.contains_analysis_association(&sid),
         "association should no longer exist"
     );
-    assert!(init, "remove should return true");
-
-    // second
-    let sec = container.remove_analysis_association(&sid);
-    assert_eq!(false, sec, "remove should return false");
 }

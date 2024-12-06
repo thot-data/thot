@@ -1,7 +1,8 @@
 //! Crate wide constant values.
+use std::ffi::OsStr;
 
 /// Current project format version.
-pub static PROJECT_FORMAT_VERSION: &str = "0.10.0";
+pub static PROJECT_FORMAT_VERSION: &str = "0.11.0";
 
 // ***********
 // *** app ***
@@ -14,9 +15,13 @@ pub const CONTAINER_FILE: &str = "container.json";
 pub const CONTAINER_SETTINGS_FILE: &str = "container_settings.json";
 pub const ASSETS_FILE: &str = "assets.json";
 pub const ANALYSES_FILE: &str = "analyses.json";
+pub const IGNORE_FILE: &str = ".syreignore";
 
 // ************
 // *** misc ***
 // ************
 
 pub const WINDOWS_UNC_PREFIX: &str = "\\\\?\\";
+
+/// Common prefix for temporary files and directories.
+pub const TEMPFILE_PREFIX: &str = ".~syretmp.";

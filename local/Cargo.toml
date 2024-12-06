@@ -15,34 +15,37 @@ categories = [ "science", "data-structures" ]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aquamarine = { workspace = true }  # TODO Only needed for documentation.
-calamine = { workspace = true }
-csv = { workspace = true }
+aquamarine.workspace = true  # TODO Only needed for documentation.
+calamine.workspace = true
+chrono = { workspace = true, features = ["serde"] }
+csv.workspace = true
 derivative = "2.2"
+derive_more = { workspace = true, features = ["deref", "deref_mut"] }
 directories = { workspace = true, optional = true }
-glob = { version = "0.3.1", optional = true }
+fastrand = "2.1"
+glob = { workspace = true, optional = true }
+has_id = { workspace = true, features = ["derive", "serde"] }
+ignore = { workspace = true, optional = true }
+io_error_serde.workspace = true
+rayon.workspace = true
+regex.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
-rayon = { workspace = true }
-regex = { workspace = true }
+tempfile.workspace = true
 thiserror = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4"] }
-validator = "0.16"
+validator = "0.19"
+walkdir.workspace = true
+windows-sys = { version = "0.59.0", features = ["Win32_Foundation", "Win32_Storage"] }
 
-has_id = { path  = "../has_id", features = ["derive", "serde"] }
-syre-core = { path = "../core", features = ["serde"] }
-erased-serde = "0.4.2"
+syre-core = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 fake = { workspace = true }
 lazy_static = "1.4.0"
 rand = { workspace = true }
-tempfile = { workspace = true }
-
-dev_utils = { path = "../dev_utils", features = ["syre_core"] }
+tempfile.workspace = true
 
 [features]
-default = ["fs"]
-fs = ["dep:directories", "dep:glob"]
+fs = ["dep:directories", "dep:glob", "dep:ignore"]

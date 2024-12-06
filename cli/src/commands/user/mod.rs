@@ -3,9 +3,9 @@ use clap::{ArgGroup, Args, Subcommand};
 use syre_core::types::UserId;
 mod commands;
 
-pub fn main(args: UserArgs, verbose: bool) -> Result {
+pub fn main(args: UserArgs) -> Result {
     match args.command {
-        Command::List => commands::list(verbose),
+        Command::List => commands::list(),
         Command::Add(user) => commands::add(user),
         Command::Delete(user) => commands::delete(user),
         Command::Edit(e_args) => {

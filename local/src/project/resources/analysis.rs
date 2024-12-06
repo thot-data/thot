@@ -1,17 +1,20 @@
 //! Local [`Script`].
-use crate::common::analyses_file;
-use crate::file_resource::LocalResource;
-// use crate::types::analysis::AnalysisStore;
-use crate::types::analysis::{AnalysisKind, Store};
-use crate::Result;
+use crate::{
+    common::analyses_file,
+    error,
+    file_resource::LocalResource,
+    types::analysis::{AnalysisKind, Store},
+};
 use serde::Serialize;
-use std::fs;
-use std::ops::{Deref, DerefMut};
-use std::path::{Path, PathBuf};
-use std::result::Result as StdResult;
-use syre_core::error::Resource as ResourceError;
-use syre_core::project::Script;
-use syre_core::types::resource_map::values_only;
+use std::{
+    fs, io,
+    ops::{Deref, DerefMut},
+    path::{Path, PathBuf},
+    result::Result as StdResult,
+};
+use syre_core::{
+    error::Resource as ResourceError, project::Script, types::resource_map::values_only,
+};
 
 #[derive(Serialize, Clone, PartialEq, Debug)]
 #[serde(transparent)]
@@ -24,14 +27,14 @@ pub struct Analyses {
 }
 
 impl Analyses {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
-            base_path: path,
+            base_path: path.into(),
             inner: Store::new(),
         }
     }
 
-    pub fn load_from(base_path: impl Into<PathBuf>) -> Result<Self> {
+    pub fn load_from(base_path: impl Into<PathBuf>) -> StdResult<Self, error::IoSerde> {
         let base_path = base_path.into();
         let path = base_path.join(Self::rel_path());
         let fh = fs::OpenOptions::new().read(true).open(path)?;
@@ -40,8 +43,8 @@ impl Analyses {
             .into_iter()
             .map(|analysis| {
                 let rid = match &analysis {
-                    AnalysisKind::Script(script) => script.rid.clone(),
-                    AnalysisKind::ExcelTemplate(template) => template.rid.clone(),
+                    AnalysisKind::Script(script) => script.rid().clone(),
+                    AnalysisKind::ExcelTemplate(template) => template.rid().clone(),
                 };
 
                 (rid, analysis)
@@ -51,8 +54,8 @@ impl Analyses {
         Ok(Self { base_path, inner })
     }
 
-    pub fn save(&self) -> Result {
-        fs::write(self.path(), serde_json::to_string_pretty(&self)?)?;
+    pub fn save(&self) -> StdResult<(), io::Error> {
+        fs::write(self.path(), serde_json::to_string_pretty(&self).unwrap())?;
         Ok(())
     }
 
@@ -77,7 +80,7 @@ impl Analyses {
             ));
         }
 
-        self.insert(script.rid.clone(), script.into());
+        self.insert(script.rid().clone(), script.into());
 
         Ok(())
     }
@@ -97,6 +100,11 @@ impl Analyses {
         }
 
         None
+    }
+
+    /// Consumes `self`, returning the underlying `Vec`.
+    pub fn to_vec(self) -> Vec<AnalysisKind> {
+        self.inner.into_values().collect()
     }
 }
 

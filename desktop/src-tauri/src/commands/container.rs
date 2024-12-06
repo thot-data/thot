@@ -1,163 +1,354 @@
-//! Commands related to containers.
-use crate::error::Result;
-use std::fs;
-use std::path::PathBuf;
-use syre_core::project::container::AnalysisMap;
-use syre_core::project::{Container, ContainerProperties};
-use syre_core::types::ResourceId;
-use syre_desktop_lib::types::AddAssetInfo;
-use syre_local::common::unique_file_name;
-use syre_local::types::AssetFileAction;
-use syre_local_database::client::Client as DbClient;
-use syre_local_database::command::container::{
-    AnalysisAssociationBulkUpdate, BulkUpdateAnalysisAssociationsArgs, BulkUpdatePropertiesArgs,
-    PropertiesUpdate, UpdateAnalysisAssociationsArgs, UpdatePropertiesArgs,
+use std::{
+    fs,
+    path::{Path, PathBuf},
 };
-use syre_local_database::command::ContainerCommand;
-use syre_local_database::Result as DbResult;
-use tauri::State;
+use syre_core::{
+    project::{AnalysisAssociation, ContainerProperties},
+    types::ResourceId,
+};
+use syre_desktop_lib::{
+    self as lib,
+    command::container::{bulk, error},
+};
+use syre_local as local;
+use syre_local_database as db;
 
-/// Retrieves a [`Container`](Container), or `None` if it is not loaded.
+/// Rename a container folder.
+///
+/// # Arguments
+/// 1. `project`
+/// 2. `container`: Current container path.
+/// Path should be absolute from graph root.
+/// 3. `name`: New name.
 #[tauri::command]
-pub fn get_container(db: State<DbClient>, rid: ResourceId) -> Option<Container> {
-    let container = db
-        .send(ContainerCommand::Get(rid).into())
-        .expect("could not retrieve `Container`");
-
-    serde_json::from_value(container)
-        .expect("could not convert `GetContainer` result to `Container`")
-}
-
-/// Updates an existing [`Container`](LocalContainer)'s properties and persists changes to disk.
-#[tauri::command]
-pub fn update_container_properties(
-    db: State<DbClient>,
-    rid: ResourceId,
-    properties: String, // TODO Issue with deserializing enum with Option. perform manually.
-                        // See: https://github.com/tauri-apps/tauri/issues/5993
-                        // properties: ContainerProperties,
-) -> DbResult {
-    let properties: ContainerProperties = serde_json::from_str(&properties).unwrap();
-    let res = db
-        .send(ContainerCommand::UpdateProperties(UpdatePropertiesArgs { rid, properties }).into())
-        .unwrap();
-
-    serde_json::from_value(res).unwrap()
-}
-
-/// Updates an existing [`Container`](LocalContainer)'s script associations and persists changes to disk.
-#[tauri::command]
-pub fn update_container_analysis_associations(
-    db: State<DbClient>,
-    rid: ResourceId,
-    associations: AnalysisMap,
-) -> Result {
-    let res = db
-        .send(
-            ContainerCommand::UpdateAnalysisAssociations(UpdateAnalysisAssociationsArgs {
-                rid,
-                associations,
-            })
-            .into(),
-        )
-        .unwrap();
-
-    let res: DbResult = serde_json::from_value(res).unwrap();
-    Ok(res?)
-}
-
-/// Gets the current location of a [`Container`](LocalContainer).
-#[tauri::command]
-pub fn get_container_path(db: State<DbClient>, rid: ResourceId) -> Option<PathBuf> {
-    let path = db.send(ContainerCommand::Path(rid).into()).unwrap();
-
-    serde_json::from_value::<Option<PathBuf>>(path).unwrap()
-}
-
-/// Adds [`Asset`](syre_core::project::Asset)s to a [`Container`].
-#[tauri::command]
-pub fn add_assets_from_info(
-    db: State<DbClient>,
-    container: ResourceId,
-    assets: Vec<AddAssetInfo>,
-) -> Result {
-    let container_path = db.send(ContainerCommand::Path(container).into()).unwrap();
-    let Some(container_path) = serde_json::from_value::<Option<PathBuf>>(container_path).unwrap()
+pub fn container_rename(
+    db: tauri::State<db::Client>,
+    project: ResourceId,
+    container: PathBuf,
+    name: String, // TODO: Should be an `OsString` but need to specify custom deserializer
+                  // `syre_local_database::serde_os_string`.
+) -> Result<(), error::Rename> {
+    assert!(db::common::is_root_path(&container));
+    let Some((project_path, project_data)) = db.project().get_by_id(project.clone()).unwrap()
     else {
-        panic!("could not get container path");
+        return Err(error::Rename::ProjectNotFound);
     };
 
-    for AddAssetInfo {
-        path,
-        action,
-        bucket,
-    } in assets
-    {
-        let mut asset_path = container_path.clone();
-        if let Some(bucket) = bucket {
-            todo!();
-            // asset_path.push(bucket);
-            // fs::create_dir_all(asset_path)?; // will trigger folder to be created as container by database.
-        }
-        asset_path.push(path.file_name().unwrap());
+    let db::state::DataResource::Ok(properties) = project_data.properties() else {
+        panic!("invalid state");
+    };
+    assert_eq!(properties.rid(), &project);
 
-        match action {
-            AssetFileAction::Copy => {
-                fs::copy(path, asset_path)?;
-            }
-            AssetFileAction::Move => todo!(),
-            AssetFileAction::Reference => todo!(),
-        }
+    let data_root = project_path.join(&properties.data_root);
+    let path = db::common::container_system_path(data_root, container);
+    let mut path_new = path.clone();
+    path_new.set_file_name(name);
+    if path_new.exists() {
+        return Err(error::Rename::NameCollision);
+    }
+
+    if let Err(err) = fs::rename(path, path_new) {
+        return Err(error::Rename::Rename(err.kind()));
     }
 
     Ok(())
 }
 
+/// Update a container's properties.
 #[tauri::command]
-pub fn add_asset_from_contents(
-    db: State<DbClient>,
-    container: ResourceId,
-    name: String,
-    contents: Vec<u8>,
-) -> Result {
-    // create file
-    let path = db
-        .send(ContainerCommand::Path(container.clone()).into())
-        .expect("could not get `Container` path");
+pub fn container_properties_update(
+    db: tauri::State<db::Client>,
+    project: ResourceId,
+    container: PathBuf,
+    properties: ContainerProperties,
+) -> Result<(), error::Update> {
+    let Some((project_path, project_data)) = db.project().get_by_id(project.clone()).unwrap()
+    else {
+        return Err(error::Update::ProjectNotFound);
+    };
 
-    let path: Option<PathBuf> =
-        serde_json::from_value(path).expect("could not convert result of `GetPath` to `PathBuf`");
+    let db::state::DataResource::Ok(project_properties) = project_data.properties() else {
+        panic!("invalid state");
+    };
+    assert_eq!(project_properties.rid(), &project);
 
-    let mut path = path.expect("could not get `Container` path");
-    path.push(name);
-    let path = unique_file_name(path).expect("could not create a unique file name");
-    fs::write(&path, contents).expect("could not write to file");
+    let data_root = project_path.join(&project_properties.data_root);
+    let path = db::common::container_system_path(data_root, container);
+    let mut container = local::loader::container::Loader::load_from_only_properties(&path).unwrap();
+    container.properties = properties;
+    if let Err(err) = container.save(&path) {
+        return Err(error::Update::Save(err.kind()));
+    }
+
     Ok(())
 }
 
+/// Update a container's analysis associations.
 #[tauri::command]
-pub fn bulk_update_container_properties(
-    db: State<DbClient>,
-    rids: Vec<ResourceId>,
-    update: PropertiesUpdate,
-) -> DbResult {
-    let update = ContainerCommand::BulkUpdateProperties(BulkUpdatePropertiesArgs { rids, update });
-    let res = db.send(update.into()).unwrap();
-    serde_json::from_value(res).unwrap()
+pub fn container_analysis_associations_update(
+    db: tauri::State<db::Client>,
+    project: ResourceId,
+    container: PathBuf,
+    associations: Vec<AnalysisAssociation>,
+) -> Result<(), error::Update> {
+    let Some((project_path, project_data)) = db.project().get_by_id(project.clone()).unwrap()
+    else {
+        return Err(error::Update::ProjectNotFound);
+    };
+
+    let db::state::DataResource::Ok(project_properties) = project_data.properties() else {
+        panic!("invalid state");
+    };
+    assert_eq!(project_properties.rid(), &project);
+
+    let data_root = project_path.join(&project_properties.data_root);
+    let path = db::common::container_system_path(data_root, container);
+    let mut container = local::loader::container::Loader::load_from_only_properties(&path).unwrap();
+    container.analyses = associations;
+    if let Err(err) = container.save(&path) {
+        return Err(error::Update::Save(err.kind()));
+    }
+
+    Ok(())
 }
 
+/// Rename multiple container folders.
+///
+/// # Arguments
+/// 1. `project`
+/// 2. `containers`: Current container path.
+/// Path should be absolute from graph root.
+/// 3. `name`: New name.
 #[tauri::command]
-pub fn bulk_update_container_script_associations(
-    db: State<DbClient>,
-    containers: Vec<ResourceId>,
-    update: AnalysisAssociationBulkUpdate,
-) -> DbResult {
-    let update =
-        ContainerCommand::BulkUpdateAnalysisAssociations(BulkUpdateAnalysisAssociationsArgs {
-            containers,
-            update,
+pub fn container_rename_bulk(
+    db: tauri::State<db::Client>,
+    project: ResourceId,
+    containers: Vec<PathBuf>,
+    name: String, // TODO: Should be an `OsString` but need to specify custom deserializer
+                  // `syre_local_database::serde_os_string`.
+) -> Result<Vec<Result<(), lib::command::error::IoErrorKind>>, bulk::error::Rename> {
+    let Some((project_path, project_data)) = db.project().get_by_id(project.clone()).unwrap()
+    else {
+        return Err(bulk::error::Rename::ProjectNotFound);
+    };
+
+    let db::state::DataResource::Ok(properties) = project_data.properties() else {
+        panic!("invalid state");
+    };
+    assert_eq!(properties.rid(), &project);
+
+    let data_root = project_path.join(&properties.data_root);
+    let (rename_paths, rename_errors) = containers
+        .into_iter()
+        .map(|container| {
+            let path = db::common::container_system_path(&data_root, &container);
+            let mut path_new = path.clone();
+            path_new.set_file_name(&name);
+            if path_new.exists() {
+                Err(container)
+            } else {
+                Ok((path, path_new))
+            }
+        })
+        .partition::<Vec<_>, _>(|rename| rename.is_ok());
+
+    if rename_errors.len() > 0 {
+        let paths = rename_errors
+            .into_iter()
+            .map(|err| {
+                let Err(path) = err else {
+                    unreachable!("invalid result");
+                };
+                path
+            })
+            .collect();
+
+        return Err(bulk::error::Rename::NameCollision(paths));
+    }
+
+    let rename_results = rename_paths
+        .into_iter()
+        .map(|result| {
+            let Ok((from, to)) = result else {
+                unreachable!("invalid result");
+            };
+
+            fs::rename(from, to).map_err(|err| lib::command::error::IoErrorKind(err.kind()))
+        })
+        .collect();
+
+    Ok(rename_results)
+}
+
+/// Update multiple containers' properties.
+#[tauri::command]
+pub fn container_properties_update_bulk(
+    db: tauri::State<db::Client>,
+    project: ResourceId,
+    containers: Vec<PathBuf>,
+    // update: bulk::PropertiesUpdate,
+    update: String, // TODO: Issue with serializing enum with Option. perform manually.
+                    // See: https://github.com/tauri-apps/tauri/issues/5993
+) -> Result<Vec<Result<(), bulk::error::Update>>, lib::command::error::ProjectNotFound> {
+    let update = serde_json::from_str::<bulk::PropertiesUpdate>(&update).unwrap();
+    let Some((project_path, project_data)) = db.project().get_by_id(project.clone()).unwrap()
+    else {
+        return Err(lib::command::error::ProjectNotFound);
+    };
+
+    let db::state::DataResource::Ok(project_properties) = project_data.properties() else {
+        panic!("invalid state");
+    };
+    assert_eq!(project_properties.rid(), &project);
+
+    let data_root = project_path.join(&project_properties.data_root);
+    Ok(containers
+        .iter()
+        .map(|container| {
+            let path = db::common::container_system_path(&data_root, container);
+            container_properties_update_bulk_perform(&path, &update)
+        })
+        .collect())
+}
+
+fn container_properties_update_bulk_perform(
+    path: impl AsRef<Path>,
+    update: &bulk::PropertiesUpdate,
+) -> Result<(), bulk::error::Update> {
+    let mut container =
+        match local::loader::container::Loader::load_from_only_properties(path.as_ref()) {
+            Ok(container) => container,
+            Err(err) => return Err(bulk::error::Update::Load(err)),
+        };
+
+    if let Some(kind) = &update.kind {
+        container.properties.kind = kind.clone();
+    }
+
+    if let Some(description) = &update.description {
+        container.properties.description = description.clone();
+    }
+
+    container
+        .properties
+        .tags
+        .retain(|tag| !update.tags.remove.contains(tag));
+
+    let new = update
+        .tags
+        .insert
+        .iter()
+        .filter(|tag| !container.properties.tags.contains(tag))
+        .cloned()
+        .collect::<Vec<_>>();
+    container.properties.tags.extend(new);
+
+    container
+        .properties
+        .metadata
+        .retain(|key, _| !update.metadata.remove.contains(key));
+
+    update
+        .metadata
+        .update
+        .iter()
+        .for_each(|(update_key, update_value)| {
+            if let Some(value) = container.properties.metadata.get_mut(update_key) {
+                *value = update_value.clone();
+            }
         });
 
-    let res = db.send(update.into()).unwrap();
-    serde_json::from_value(res).unwrap()
+    let new = update
+        .metadata
+        .add
+        .iter()
+        .filter(|(key, _)| !container.properties.metadata.contains_key(key))
+        .cloned()
+        .collect::<Vec<_>>();
+    container.properties.metadata.extend(new);
+
+    if let Err(err) = container.save(&path) {
+        return Err(bulk::error::Update::Save(err.kind()));
+    }
+
+    Ok(())
+}
+
+/// Update multiple containers' analysis associations.
+#[tauri::command]
+pub fn container_analysis_associations_update_bulk(
+    db: tauri::State<db::Client>,
+    project: ResourceId,
+    containers: Vec<PathBuf>,
+    update: bulk::AnalysisAssociationAction,
+) -> Result<Vec<Result<(), bulk::error::Update>>, lib::command::error::ProjectNotFound> {
+    let Some((project_path, project_data)) = db.project().get_by_id(project.clone()).unwrap()
+    else {
+        return Err(lib::command::error::ProjectNotFound);
+    };
+
+    let db::state::DataResource::Ok(project_properties) = project_data.properties() else {
+        panic!("invalid state");
+    };
+    assert_eq!(project_properties.rid(), &project);
+
+    let data_root = project_path.join(&project_properties.data_root);
+    Ok(containers
+        .iter()
+        .map(|container| {
+            let path = db::common::container_system_path(&data_root, container);
+            container_analysis_associations_update_bulk_perform(&path, &update)
+        })
+        .collect())
+}
+
+fn container_analysis_associations_update_bulk_perform(
+    path: impl AsRef<Path>,
+    update: &bulk::AnalysisAssociationAction,
+) -> Result<(), bulk::error::Update> {
+    let mut container =
+        match local::loader::container::Loader::load_from_only_properties(path.as_ref()) {
+            Ok(container) => container,
+            Err(err) => return Err(bulk::error::Update::Load(err)),
+        };
+
+    container
+        .analyses
+        .retain(|associaiton| !update.remove.contains(associaiton.analysis()));
+
+    update.update.iter().for_each(|update| {
+        let Some(association) = container
+            .analyses
+            .iter_mut()
+            .find(|association| association.analysis() == update.analysis())
+        else {
+            return;
+        };
+
+        if let Some(autorun) = update.autorun {
+            association.autorun = autorun;
+        }
+        if let Some(priority) = update.priority {
+            association.priority = priority;
+        }
+    });
+
+    let new = update
+        .add
+        .iter()
+        .filter(|association| {
+            !container
+                .analyses
+                .iter()
+                .any(|assoc| assoc.analysis() == association.analysis())
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    container.analyses.extend(new);
+
+    if let Err(err) = container.save(&path) {
+        return Err(bulk::error::Update::Save(err.kind()));
+    }
+
+    Ok(())
 }

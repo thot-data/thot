@@ -1,8 +1,7 @@
 //! Standard properties associated with other resources.
 use super::Metadata;
-use crate::types::Creator;
+use crate::types::{Creator, Value};
 use chrono::prelude::*;
-use serde_json::Value as JsValue;
 use std::collections::HashMap;
 
 #[cfg(feature = "serde")]
@@ -14,7 +13,6 @@ use serde::{Deserialize, Serialize};
 
 /// Standard resource properties.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass)]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AssetProperties {
     created: DateTime<Utc>,
@@ -76,8 +74,8 @@ impl Builder {
         self
     }
 
-    pub fn set_name(&mut self, value: String) -> &mut Self {
-        self.name = Some(value);
+    pub fn set_name(&mut self, value: impl Into<String>) -> &mut Self {
+        self.name = Some(value.into());
         self
     }
 
@@ -86,8 +84,8 @@ impl Builder {
         self
     }
 
-    pub fn set_kind(&mut self, value: String) -> &mut Self {
-        self.kind = Some(value);
+    pub fn set_kind(&mut self, value: impl Into<String>) -> &mut Self {
+        self.kind = Some(value.into());
         self
     }
 
@@ -96,8 +94,8 @@ impl Builder {
         self
     }
 
-    pub fn set_description(&mut self, value: String) -> &mut Self {
-        self.description = Some(value);
+    pub fn set_description(&mut self, value: impl Into<String>) -> &mut Self {
+        self.description = Some(value.into());
         self
     }
 
@@ -106,8 +104,8 @@ impl Builder {
         self
     }
 
-    pub fn set_tags(&mut self, value: Vec<String>) -> &mut Self {
-        self.tags = value;
+    pub fn set_tags(&mut self, value: Vec<impl Into<String>>) -> &mut Self {
+        self.tags = value.into_iter().map(|val| val.into()).collect();
         self
     }
 
@@ -141,11 +139,7 @@ impl Builder {
         self
     }
 
-    pub fn set_metadatum(
-        &mut self,
-        key: impl Into<String>,
-        value: impl Into<JsValue>,
-    ) -> &mut Self {
+    pub fn set_metadatum(&mut self, key: impl Into<String>, value: impl Into<Value>) -> &mut Self {
         self.metadata.insert(key.into(), value.into());
         self
     }

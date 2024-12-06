@@ -4,7 +4,7 @@ use crate::Result;
 use std::env;
 use syre_local::project::container;
 
-pub fn init(args: InitArgs, verbose: bool) -> Result {
+pub fn init(args: InitArgs) -> Result {
     let path = match args.path {
         None => env::current_dir()?,
         Some(path) => path,
@@ -19,20 +19,14 @@ pub fn init(args: InitArgs, verbose: bool) -> Result {
     }
 
     let rid = builder.build(&path)?;
-    if verbose {
-        println!("Initialized {path:?} as a Container with {rid:?}");
-    }
-
+    tracing::info!("Initialized {path:?} as a Container with {rid:?}");
     Ok(())
 }
 
-pub fn new(args: NewArgs, verbose: bool) -> Result {
+pub fn new(args: NewArgs) -> Result {
     let path = abs_path(args.path)?;
     let builder = container::InitOptions::new();
     builder.build(&path)?;
-    if verbose {
-        println!("Initialized `{path:?}` as a Container");
-    }
-
+    tracing::info!("Initialized `{path:?}` as a Container");
     Ok(())
 }

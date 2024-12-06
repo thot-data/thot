@@ -15,7 +15,7 @@ fn initialize_existing_folder_as_project() {
     let graph = TreeLoader::load(root_dir.path()).unwrap();
     assert_eq!(graph.nodes().len(), 7);
     for (_, container) in graph.iter_nodes() {
-        if graph.children(&container.rid).unwrap().len() == 0 {
+        if graph.children(container.rid()).unwrap().len() == 0 {
             assert_eq!(container.assets.len(), 2);
         } else {
             assert_eq!(container.assets.len(), 0);

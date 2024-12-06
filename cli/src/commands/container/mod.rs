@@ -3,10 +3,10 @@ use clap::{Args, Subcommand};
 use std::path::PathBuf;
 mod commands;
 
-pub fn main(args: ContainerArgs, verbose: bool) -> Result {
+pub fn main(args: ContainerArgs) -> Result {
     match args.command {
-        Command::Init(init_args) => commands::init(init_args, verbose),
-        Command::New(new_args) => commands::new(new_args, verbose),
+        Command::Init(init_args) => commands::init(init_args),
+        Command::New(new_args) => commands::new(new_args),
     }
 }
 

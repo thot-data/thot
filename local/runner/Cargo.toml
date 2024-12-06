@@ -15,9 +15,10 @@ categories = [ "science", "data-structures" ]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde_json = "1.0"
-tracing = "0.1.37"
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
 
-syre-core = { path = "../../core" }
-syre-local = { path = "../../local" }
-syre-local-database = { path = "../database", features = ["client"] }
+syre-core = { workspace = true }
+syre-local = { workspace = true, features = ["fs"] }
+syre-local-database = { workspace = true }

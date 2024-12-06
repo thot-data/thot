@@ -1,12 +1,12 @@
 use super::*;
-use dev_utils::fs::TempDir;
 use fake::faker::filesystem::raw::{FileName, FilePath};
 use fake::locales::EN;
 use fake::Fake;
+use std::{ffi::OsStr, fs, io, result::Result as StdResult};
 
 #[test]
 fn unique_file_name_should_work() {
-    let mut _dir = TempDir::new().unwrap();
+    let mut _dir = tempfile::tempdir().unwrap();
     let base_path = _dir.path().to_path_buf();
 
     // already unique
@@ -18,41 +18,40 @@ fn unique_file_name_should_work() {
     assert_eq!(p, q, "file name should not change");
 
     // basic
-    let p = _dir.mkfile_with_name("test.txt").unwrap();
-    let q = unique_file_name(p.clone()).unwrap();
-    _dir.mkfile_with_name("test (1).txt").unwrap();
-    let s = unique_file_name(p.clone()).unwrap();
+    let p = create_named_file_in("test.txt", _dir.path()).unwrap();
+    let q = unique_file_name(p.path()).unwrap();
+    create_named_file_in("test (1).txt", _dir.path()).unwrap();
+    let s = unique_file_name(p.path()).unwrap();
 
-    let r = postfix_file_name(p.clone(), "1");
-    let t = postfix_file_name(p.clone(), "2");
+    let r = postfix_file_name(p.path().to_path_buf(), "1");
+    let t = postfix_file_name(p.path().to_path_buf(), "2");
 
-    assert_ne!(p, q, "file name should change");
+    assert_ne!(p.path(), q, "file name should change");
     assert_eq!(r, q, "unexpected file name");
 
-    assert_ne!(p, s, "file name should change");
+    assert_ne!(p.path(), s, "file name should change");
     assert_eq!(t, s, "unexpected file name");
 
     // no extension
-    let p = _dir.mkfile_with_name("test").unwrap();
-    _dir.mkfile_with_name("test (1)").unwrap();
-    let q = unique_file_name(p.clone()).unwrap();
-    let r = p.parent().unwrap().join("test (2)");
+    let p = create_named_file_in("test", _dir.path()).unwrap();
+    create_named_file_in("test (1)", _dir.path()).unwrap();
+    let q = unique_file_name(p.path().to_path_buf()).unwrap();
+    let r = p.path().parent().unwrap().join("test (2)");
 
-    assert_ne!(p, q, "file name should change");
+    assert_ne!(p.path(), q, "file name should change");
     assert_eq!(r, q, "unexpected file name");
 
     // multiple extensions
-    let p = _dir.mkfile_with_extension("gz.txt").unwrap();
+    let p = create_file_with_extension_in("gz.txt", _dir.path()).unwrap();
+    let q = unique_file_name(p.path().clone()).unwrap();
+    let r = postfix_file_name(p.path().to_path_buf(), "1");
 
-    let q = unique_file_name(p.clone()).unwrap();
-    let r = postfix_file_name(p.clone(), "1");
-
-    assert_ne!(p, q, "file name should change");
+    assert_ne!(p.path(), q, "file name should change");
     assert_eq!(r, q, "unexpected file name");
 
     // beginning with `.`
-    let p = _dir.mkfile().unwrap();
-    let p0 = p.file_name().unwrap().to_str().unwrap();
+    let p = tempfile::NamedTempFile::new_in(_dir.path()).unwrap();
+    let p0 = p.path().file_name().unwrap().to_str().unwrap();
 
     let p0 = PathBuf::from(format!(".{p0}"));
     fs::rename(p, &p0).unwrap();
@@ -65,19 +64,19 @@ fn unique_file_name_should_work() {
     assert_eq!(r, q, "unexpected file name");
 
     // changing digit count
-    let o = _dir.mkfile_with_name("digits.txt").unwrap();
-    let p = _dir.mkfile_with_name("digits (9).txt").unwrap();
-    let q = unique_file_name(o.clone()).unwrap();
-    let r = p.parent().unwrap().join("digits (10).txt");
+    let o = create_named_file_in("digits.txt", _dir.path()).unwrap();
+    let p = create_named_file_in("digits (9).txt", _dir.path()).unwrap();
+    let q = unique_file_name(o.path().to_path_buf()).unwrap();
+    let r = p.path().parent().unwrap().join("digits (10).txt");
 
-    assert_ne!(o, q, "file name should change");
+    assert_ne!(o.path(), q, "file name should change");
     assert_eq!(r, q, "unexpected file name");
 }
 
 #[cfg(target_os = "windows")]
 #[test]
 fn ensure_windows_unc_should_work() {
-    let dir = TempDir::new().unwrap();
+    let dir = tempfile::TempDir::new().unwrap();
     let base_path = dir.path().to_path_buf();
     let canon_path = fs::canonicalize(&base_path).unwrap();
 
@@ -206,4 +205,28 @@ fn postfix_file_name(path: PathBuf, postfix: impl std::fmt::Display) -> PathBuf 
     let mut p = path.clone();
     p.set_file_name(name);
     p
+}
+
+fn create_named_file_in(
+    name: impl AsRef<OsStr>,
+    parent: impl AsRef<Path>,
+) -> StdResult<tempfile::NamedTempFile, io::Error> {
+    let file = tempfile::NamedTempFile::new_in(parent)?;
+    let mut dest = file.path().to_path_buf();
+    dest.set_file_name(name);
+
+    fs::rename(file.path(), dest)?;
+    Ok(file)
+}
+
+fn create_file_with_extension_in(
+    ext: impl AsRef<OsStr>,
+    parent: impl AsRef<Path>,
+) -> StdResult<tempfile::NamedTempFile, io::Error> {
+    let file = tempfile::NamedTempFile::new_in(parent)?;
+    let mut dest = file.path().to_path_buf();
+    dest.set_extension(ext);
+
+    fs::rename(file.path(), &dest)?;
+    Ok(file)
 }

@@ -1,6 +1,5 @@
 //! Common error types.
 use crate::types::ResourceId;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::result::Result as StdResult;
 use thiserror::Error;
@@ -92,13 +91,9 @@ pub enum AssetError {
     PathNotSet,
 }
 
-// ********************
-// *** Script Error ***
-// ********************
-
 #[derive(Error, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum ScriptError {
+pub enum AnalysisError {
     #[error("unknown language `{0:?}`")]
     UnknownLanguage(Option<String>),
 }
@@ -118,37 +113,6 @@ impl ResourcePathError {
     pub fn could_not_parse_meta_level(msg: impl Into<String>) -> Self {
         Self::CouldNotParseMetalevel(msg.into())
     }
-}
-
-// ********************
-// *** Runner Error ***
-// ********************
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Error, Debug)]
-pub enum Runner {
-    #[error("{0:?}")]
-    LoadScripts(HashMap<ResourceId, String>),
-
-    /// The `Container` could not be found in the graph.
-    #[error("Container {0} not found")]
-    ContainerNotFound(ResourceId),
-
-    /// An error occured when running the script
-    /// on the specified `Container`.
-    #[error("Script `{script}` running over Container `{container}` errored: {description}")]
-    ScriptError {
-        script: ResourceId,
-        container: ResourceId,
-        description: String,
-    },
-
-    #[error("error running `{cmd}` from script `{script}` on container `{container}`")]
-    CommandError {
-        script: ResourceId,
-        container: ResourceId,
-        cmd: String,
-    },
 }
 
 // ******************
@@ -175,10 +139,7 @@ pub enum Error {
     ResourcePath(ResourcePathError),
 
     #[error("{0}")]
-    Runner(Runner),
-
-    #[error("{0}")]
-    Script(ScriptError),
+    Analysis(AnalysisError),
 
     #[cfg(feature = "serde")]
     #[error("{message} at line {line} column {column}")]
@@ -219,21 +180,15 @@ impl From<Resource> for Error {
     }
 }
 
-impl From<Runner> for Error {
-    fn from(err: Runner) -> Self {
-        Self::Runner(err)
-    }
-}
-
 impl From<Graph> for Error {
     fn from(err: Graph) -> Self {
         Self::Graph(err)
     }
 }
 
-impl From<ScriptError> for Error {
-    fn from(err: ScriptError) -> Self {
-        Self::Script(err)
+impl From<AnalysisError> for Error {
+    fn from(err: AnalysisError) -> Self {
+        Self::Analysis(err)
     }
 }
 

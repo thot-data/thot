@@ -16,7 +16,7 @@ use has_id::HasIdSerde;
 #[derive(PartialEq, HasId, Clone, Debug)]
 pub struct ExcelTemplate {
     #[id]
-    pub rid: ResourceId,
+    rid: ResourceId,
     pub name: Option<String>,
     pub description: Option<String>,
     pub template: TemplateParameters,
@@ -24,10 +24,14 @@ pub struct ExcelTemplate {
     pub output: OutputParameters,
 
     /// Python executable.
-    pub python_exe: String,
+    pub python_exe: PathBuf,
 }
 
 impl ExcelTemplate {
+    pub fn rid(&self) -> &ResourceId {
+        &self.rid
+    }
+
     /// Returns a list of supported extensions.
     pub fn supported_extensions() -> Vec<&'static str> {
         vec!["xlsx"]

@@ -1,0 +1,24 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Syre
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - name: Syre
+    website: 'https://syre.ai'
+    email: info@syre.ai
+repository-code: 'https://github.com/syre-data/syre'
+url: 'https://syre.ai'
+abstract: >-
+  Syre is a toolset for managing and analyzing scientific
+  data.
+keywords:
+  - data
+  - analysis
+  - data management
+  - data analysis
+license: Apache-2.0

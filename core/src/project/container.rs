@@ -1,58 +1,63 @@
 //! Container.
-use super::container_properties::{Builder as PropertiesBuilder, ContainerProperties};
-use super::Metadata;
-use super::{AnalysisAssociation, Asset, RunParameters};
-use crate::db::Resource;
-use crate::types::Creator;
-use crate::types::{ResourceId, ResourceMap};
-use chrono::prelude::*;
+use super::{
+    container_properties::{Builder as PropertiesBuilder, ContainerProperties},
+    AnalysisAssociation, Asset, Metadata,
+};
+use crate::{
+    db::Resource,
+    types::{ResourceId, Value},
+};
 use has_id::HasId;
-use serde_json::Value as JsValue;
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-// *************
-// *** types ***
-// *************
-
-pub type AssetMap = ResourceMap<Asset>;
-pub type AnalysisMap = ResourceMap<RunParameters>;
-
-// *****************
-// *** Container ***
-// *****************
-
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass)]
 #[derive(PartialEq, Eq, Clone, Debug, HasId)]
 pub struct Container {
     #[id]
-    pub rid: ResourceId,
+    rid: ResourceId,
     pub properties: ContainerProperties,
-    pub assets: AssetMap,
-    pub analyses: AnalysisMap,
+    pub assets: Vec<Asset>,
+    pub analyses: Vec<AnalysisAssociation>,
 }
 
 impl Container {
-    pub fn new(name: impl Into<String>) -> Container {
-        Container {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
             rid: ResourceId::new(),
             properties: ContainerProperties::new(name),
-            assets: AssetMap::default(),
-            analyses: AnalysisMap::default(),
+            assets: vec![],
+            analyses: vec![],
         }
     }
 
-    /// Inserts an [`Asset`] into the [`Container`].
-    pub fn insert_asset(&mut self, asset: Asset) -> Option<Asset> {
-        self.assets.insert(asset.rid.clone(), asset)
+    pub fn with_id(name: impl Into<String>, rid: ResourceId) -> Self {
+        Self {
+            rid,
+            properties: ContainerProperties::new(name),
+            assets: vec![],
+            analyses: vec![],
+        }
     }
 
-    /// Inserts an [`Asset`] into the [`Container`].
-    pub fn remove_asset(&mut self, rid: &ResourceId) -> Option<Asset> {
-        self.assets.remove(rid)
+    pub fn from_parts(
+        rid: ResourceId,
+        properties: ContainerProperties,
+        assets: Vec<Asset>,
+        analyses: Vec<AnalysisAssociation>,
+    ) -> Self {
+        Self {
+            rid,
+            properties,
+            assets,
+            analyses,
+        }
+    }
+
+    pub fn rid(&self) -> &ResourceId {
+        &self.rid
     }
 }
 
@@ -71,32 +76,25 @@ impl Resource for Container {}
 #[derive(Default)]
 pub struct Builder {
     properties: PropertiesBuilder,
-    assets: AssetMap,
-    analyses: AnalysisMap,
+    assets: Vec<Asset>,
+    analyses: Vec<AnalysisAssociation>,
 }
 
 impl Builder {
-    pub fn set_created(&mut self, value: DateTime<Utc>) -> &mut Self {
-        self.properties.set_created(value);
-        self
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            properties: PropertiesBuilder::new(name),
+            assets: vec![],
+            analyses: vec![],
+        }
     }
 
-    pub fn clear_created(&mut self) -> &mut Self {
-        self.properties.clear_created();
-        self
-    }
-
-    pub fn set_creator(&mut self, value: Creator) -> &mut Self {
-        self.properties.set_creator(value);
-        self
-    }
-
-    pub fn set_name(&mut self, value: String) -> &mut Self {
+    pub fn set_name(&mut self, value: impl Into<String>) -> &mut Self {
         self.properties.set_name(value);
         self
     }
 
-    pub fn set_kind(&mut self, value: String) -> &mut Self {
+    pub fn set_kind(&mut self, value: impl Into<String>) -> &mut Self {
         self.properties.set_kind(value);
         self
     }
@@ -106,7 +104,7 @@ impl Builder {
         self
     }
 
-    pub fn set_description(&mut self, value: String) -> &mut Self {
+    pub fn set_description(&mut self, value: impl Into<String>) -> &mut Self {
         self.properties.set_description(value);
         self
     }
@@ -116,7 +114,7 @@ impl Builder {
         self
     }
 
-    pub fn set_tags(&mut self, value: Vec<String>) -> &mut Self {
+    pub fn set_tags(&mut self, value: Vec<impl Into<String>>) -> &mut Self {
         self.properties.set_tags(value);
         self
     }
@@ -146,12 +144,8 @@ impl Builder {
         self
     }
 
-    pub fn set_metadatum(
-        &mut self,
-        key: impl Into<String>,
-        value: impl Into<JsValue>,
-    ) -> &mut Self {
-        self.properties.set_metadatum(key.into(), value.into());
+    pub fn set_metadatum(&mut self, key: impl Into<String>, value: impl Into<Value>) -> &mut Self {
+        self.properties.set_metadatum(key, value);
         self
     }
 
@@ -160,24 +154,38 @@ impl Builder {
         self
     }
 
-    pub fn add_asset(&mut self, asset: Asset) -> &mut Self {
-        self.assets.insert(asset.rid.clone(), asset);
+    /// Inserts the `Asset`.
+    /// If an `Asset` with the same resource id already exists,
+    /// it is replaced.
+    pub fn insert_asset(&mut self, asset: Asset) -> &mut Self {
+        self.assets.retain(|a| a.rid() != asset.rid());
+        self.assets.push(asset);
         self
     }
 
     pub fn remove_asset(&mut self, rid: &ResourceId) -> &mut Self {
-        self.assets.remove(rid);
+        self.assets.retain(|asset| asset.rid() != rid);
         self
     }
 
-    pub fn add_script(&mut self, script: AnalysisAssociation) -> &mut Self {
-        self.analyses.insert(script.analysis.clone(), script.into());
+    /// Inserts an analysis association.
+    /// If an association with the same analysis already exists,
+    /// it is replaced.
+    pub fn insert_analysis(&mut self, association: AnalysisAssociation) -> &mut Self {
+        self.analyses
+            .retain(|a| a.analysis() != association.analysis());
+        self.analyses.push(association);
         self
     }
 
-    pub fn remove_script(&mut self, rid: &ResourceId) -> &mut Self {
-        self.analyses.remove(rid);
+    pub fn remove_analysis(&mut self, rid: &ResourceId) -> &mut Self {
+        self.analyses
+            .retain(|association| association.analysis() != rid);
         self
+    }
+
+    pub fn build(self) -> Container {
+        self.into()
     }
 }
 

@@ -4,3 +4,6 @@
 [submodule "excel_template_runner"]
 	path = excel_template_runner
 	url = https://github.com/syre-data/excel_template_runner
+[submodule "in_trash"]
+	path = in_trash
+	url = https://github.com/syre-data/in_trash

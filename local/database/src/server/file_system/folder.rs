@@ -1,120 +1,261 @@
-//! Handle [`syre::Folder`](FolderEvent) events.
-use super::event::app::Folder as FolderEvent;
-use super::ParentChild;
-use crate::event::{Graph as GraphUpdate, Update};
-use crate::server::Database;
-use crate::Result;
-use std::fs;
-use std::path::{Component, PathBuf};
-use syre_local::graph::ContainerTreeTransformer;
-use syre_local::loader::tree::Loader as ContainerTreeLoader;
-use syre_local::project::{asset, container, project};
-use uuid::Uuid;
+use crate::{
+    common,
+    event::{self as update, Update},
+    server, state, Database,
+};
+use std::assert_matches::assert_matches;
+use syre_fs_watcher::{event, EventKind};
+use syre_local::{self as local, TryReducible};
 
 impl Database {
-    pub fn handle_app_event_folder(
-        &mut self,
-        event: &FolderEvent,
-        event_id: &Uuid,
-    ) -> Result<Vec<Update>> {
-        match event {
-            FolderEvent::Created(path) => {
-                // ignore analysis folder
-                let path_project = project::project_root_path(&path).unwrap();
-                let path_project = self
-                    .store
-                    .get_path_project_canonical(&path_project)
-                    .unwrap()
-                    .unwrap();
+    pub(super) fn handle_fs_event_folder(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {
+        let EventKind::Folder(kind) = event.kind() else {
+            panic!("invalid event kind");
+        };
 
-                let path_project = self.store.get_project(path_project).unwrap();
-                let analysis_path = fs::canonicalize(
-                    path_project
-                        .base_path()
-                        .join(path_project.analysis_root.clone().unwrap()),
-                )
-                .unwrap();
+        match kind {
+            event::ResourceEvent::Created => self.handle_fs_event_folder_created(event),
+            event::ResourceEvent::Modified(_) => self.handle_fs_event_folder_modified(event),
+            event::ResourceEvent::Moved => todo!(),
+            _ => todo!(),
+        }
+    }
+}
 
-                if path.strip_prefix(analysis_path).is_ok() {
-                    return Ok(vec![]);
-                }
+impl Database {
+    fn handle_fs_event_folder_created(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {
+        assert_matches!(
+            event.kind(),
+            EventKind::Folder(event::ResourceEvent::Created)
+        );
 
-                // ignore if bucket
-                let path_container = asset::container_from_path_ancestor(&path)?;
-                let path_container = self.store.get_path_container(&path_container).unwrap();
-                let path_container = self.store.get_container(path_container).unwrap();
-                let bucket_path = path
-                    .strip_prefix(path_container.base_path())
-                    .unwrap()
-                    .to_path_buf();
+        let [path] = &event.paths()[..] else {
+            panic!("invalid paths");
+        };
 
-                let Component::Normal(bucket_path_root) = bucket_path.components().next().unwrap()
-                else {
-                    panic!("invalid path type")
-                };
+        if self.config.handle_fs_resource_changes() {
+            // TODO: May want to return errors if project state is not valid.
+            let project = self.state.find_resource_project_by_path(path).unwrap();
+            let state::FolderResource::Present(project_data) = project.fs_resource().as_ref()
+            else {
+                return vec![];
+            };
 
-                if path_container
-                    .buckets()
-                    .iter()
-                    .any(|bucket| bucket.starts_with(&bucket_path_root))
-                {
-                    return Ok(vec![]);
-                }
+            let state::DataResource::Ok(project_properties) = project_data.properties() else {
+                return vec![];
+            };
 
-                // init subgraph
-                // NOTE When transferring large amounts of data
-                // some folder creation events are missed by `notify`.
-                // We account for this here by taking the highest possible folder as the root
-                // of the subgraph to be initialized.
-                let mut root_path = path_container.base_path().to_path_buf();
-                root_path.push(bucket_path.components().next().unwrap());
-
-                let ParentChild {
-                    parent,
-                    child: container,
-                } = self.init_subgraph(root_path)?;
-
-                let project = self
-                    .store
-                    .get_container_project(&container)
-                    .unwrap()
-                    .clone();
-
-                let graph = self.store.get_graph_of_container(&container).unwrap();
-                let mut graph = ContainerTreeTransformer::local_to_core(graph);
-                let graph = graph.remove(&container).unwrap(); // get container's subgraph
-                Ok(vec![Update::project(
-                    project,
-                    GraphUpdate::Created { parent, graph }.into(),
-                    event_id.clone(),
-                )])
+            let data_root = project.path().join(&project_properties.data_root);
+            if path.starts_with(&data_root) {
+                self.handle_folder_created_container(event)
+            } else {
+                vec![]
             }
+        } else {
+            vec![]
         }
     }
 
-    /// Initialize a path as a Container tree and insert it into the graph.
-    ///
-    /// # Returns
-    /// `ResourceId` of the graph's root `Container`.
-    #[tracing::instrument(skip(self))]
-    fn init_subgraph(&mut self, path: PathBuf) -> Result<ParentChild> {
-        let parent = self
-            .store
-            .get_path_container_canonical(path.parent().unwrap())
-            .unwrap()
-            .cloned()
+    fn handle_folder_created_container(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {
+        assert_matches!(
+            event.kind(),
+            EventKind::Folder(event::ResourceEvent::Created)
+        );
+
+        let [path] = &event.paths()[..] else {
+            unreachable!("invalid paths");
+        };
+
+        // TODO: May want to return errors if project state is not valid.
+        let project = self.state.find_resource_project_by_path(path).unwrap();
+        let state::FolderResource::Present(project_data) = project.fs_resource().as_ref() else {
+            unreachable!("invalid state");
+        };
+
+        let state::DataResource::Ok(project_properties) = project_data.properties() else {
+            unreachable!("invalid state");
+        };
+
+        let mut builder = local::project::container::builder::InitOptions::init();
+        builder.recurse(true);
+        builder.with_new_ids(true);
+        builder.with_assets();
+        if let Err(err) = builder.build(&path) {
+            tracing::error!(?err);
+            todo!();
+        }
+
+        let local::loader::container::State {
+            properties,
+            settings,
+            assets,
+        } = local::loader::container::Loader::load_resources(path);
+
+        let state::FolderResource::Present(project_data) = project.fs_resource().as_ref() else {
+            unreachable!("inalid state");
+        };
+
+        let state::DataResource::Ok(project_properties) = project_data.properties() else {
+            unreachable!("invalid state");
+        };
+
+        let data_root_path = project.path().join(&project_properties.data_root);
+        let parent_path =
+            common::container_graph_path(&data_root_path, path.parent().unwrap()).unwrap();
+        let subgraph = server::state::project::graph::State::load(path).unwrap();
+        let subgraph_state = subgraph.as_graph();
+
+        let project_path = project.path().clone();
+        let project_id = project_properties.rid().clone();
+        self.state
+            .try_reduce(server::state::Action::Project {
+                path: project_path.clone(),
+                action: server::state::project::action::Graph::Insert {
+                    parent: parent_path.clone(),
+                    graph: subgraph,
+                }
+                .into(),
+            })
             .unwrap();
 
-        // init graph
-        let mut builder = container::InitOptions::init();
-        builder.recurse(true);
-        builder.with_assets();
-        let child = builder.build(&path)?;
+        vec![Update::project_with_id(
+            project_id,
+            project_path,
+            update::Graph::Inserted {
+                parent: parent_path,
+                graph: subgraph_state,
+            }
+            .into(),
+            event.id().clone(),
+        )]
 
-        // insert into graph
-        let graph = ContainerTreeLoader::load(path).unwrap();
-        self.store.insert_subgraph(&parent, graph)?;
+        // let container_graph_path =
+        //     common::container_graph_path(project.path().join(&project_properties.data_root), path)
+        //         .unwrap();
 
-        Ok(ParentChild { parent, child })
+        // let mut updates = vec![];
+        // let project_path = project.path().clone();
+        // let project_id = project_properties.rid().clone();
+        // if !matches!(properties, Err(IoSerde::Io(io::ErrorKind::NotFound))) {
+        //     self.state
+        //         .try_reduce(server::state::Action::Project {
+        //             path: project_path.clone(),
+        //             action: server::state::project::Action::Container {
+        //                 path: container_graph_path.clone(),
+        //                 action: server::state::project::action::Container::SetProperties(
+        //                     properties.clone(),
+        //                 ),
+        //             },
+        //         })
+        //         .unwrap();
+
+        //     updates.push(Update::project_with_id(
+        //         project_id.clone(),
+        //         project_path.clone(),
+        //         update::Project::Container {
+        //             path: container_graph_path.clone(),
+        //             update: update::Container::Properties(update::DataResource::Created(
+        //                 properties,
+        //             )),
+        //         },
+        //         event.id().clone(),
+        //     ));
+        // }
+
+        // if !matches!(settings, Err(IoSerde::Io(io::ErrorKind::NotFound))) {
+        //     self.state
+        //         .try_reduce(server::state::Action::Project {
+        //             path: project_path.clone(),
+        //             action: server::state::project::Action::Container {
+        //                 path: container_graph_path.clone(),
+        //                 action: server::state::project::action::Container::SetSettings(
+        //                     settings.clone(),
+        //                 ),
+        //             },
+        //         })
+        //         .unwrap();
+
+        //     updates.push(Update::project_with_id(
+        //         project_id.clone(),
+        //         project_path.clone(),
+        //         update::Project::Container {
+        //             path: container_graph_path.clone(),
+        //             update: update::Container::Settings(update::DataResource::Created(settings)),
+        //         },
+        //         event.id().clone(),
+        //     ));
+        // }
+
+        // match assets {
+        //     Ok(assets) => {
+        //         let assets = super::container::assets::from_assets(path, assets);
+        //         self.state
+        //             .try_reduce(server::state::Action::Project {
+        //                 path: project_path.clone(),
+        //                 action: server::state::project::Action::Container {
+        //                     path: container_graph_path.clone(),
+        //                     action: server::state::project::action::Container::SetAssets(
+        //                         state::DataResource::Ok(assets.clone()),
+        //                     ),
+        //                 },
+        //             })
+        //             .unwrap();
+
+        //         updates.push(Update::project_with_id(
+        //             project_id.clone(),
+        //             project_path.clone(),
+        //             update::Project::Container {
+        //                 path: container_graph_path.clone(),
+        //                 update: update::Container::Assets(update::DataResource::Created(
+        //                     state::DataResource::Ok(assets),
+        //                 )),
+        //             },
+        //             event.id().clone(),
+        //         ));
+        //     }
+        //     Err(IoSerde::Io(io::ErrorKind::NotFound)) => {}
+        //     Err(err) => {
+        //         self.state
+        //             .try_reduce(server::state::Action::Project {
+        //                 path: project_path.clone(),
+        //                 action: server::state::project::Action::Container {
+        //                     path: container_graph_path.clone(),
+        //                     action: server::state::project::action::Container::SetAssets(
+        //                         state::DataResource::Err(err.clone()),
+        //                     ),
+        //                 },
+        //             })
+        //             .unwrap();
+
+        //         updates.push(Update::project_with_id(
+        //             project_id.clone(),
+        //             path,
+        //             update::Project::Container {
+        //                 path: container_graph_path.clone(),
+        //                 update: update::Container::Assets(update::DataResource::Created(
+        //                     state::DataResource::Err(err),
+        //                 )),
+        //             },
+        //             event.id().clone(),
+        //         ));
+        //     }
+        // }
+
+        // updates
+    }
+
+    fn handle_fs_event_folder_modified(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {
+        let EventKind::Folder(event::ResourceEvent::Modified(kind)) = event.kind() else {
+            panic!("invalid event kind");
+        };
+
+        let [path] = &event.paths()[..] else {
+            panic!("invalid paths");
+        };
+
+        match kind {
+            event::ModifiedKind::Data => todo!(),
+            event::ModifiedKind::Other => vec![],
+        }
     }
 }

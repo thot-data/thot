@@ -6,22 +6,14 @@ use std::collections::HashSet;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize};
 
-// *************
-// *** Trait ***
-// *************
-
 pub trait SearchFilter<T> {
     /// Returns `true` if the object matches the filter,
     /// otherwise `false`.
     fn matches(&self, obj: &T) -> bool;
 }
 
-// ***********************
-// *** Standard Filter ***
-// ***********************
-
 #[cfg(feature = "serde")]
-fn deserialize_possible_empty_string<'de, D>(
+pub fn deserialize_possible_empty_string<'de, D>(
     deserializer: D,
 ) -> Result<Option<Option<String>>, D::Error>
 where
@@ -35,7 +27,6 @@ where
 }
 
 /// Search filter for all properties.
-#[cfg_attr(feature = "pyo3", pyo3::pyclass)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Default, Debug, Clone)]
 pub struct StandardSearchFilter {
@@ -69,7 +60,7 @@ impl StandardSearchFilter {
 impl SearchFilter<Container> for StandardSearchFilter {
     fn matches(&self, container: &Container) -> bool {
         if let Some(s_rid) = self.rid.as_ref() {
-            if s_rid != &container.rid {
+            if s_rid != container.rid() {
                 return false;
             }
         }
@@ -130,7 +121,7 @@ impl SearchFilter<Container> for StandardSearchFilter {
 impl SearchFilter<Asset> for StandardSearchFilter {
     fn matches(&self, asset: &Asset) -> bool {
         if let Some(s_rid) = self.rid.as_ref() {
-            if s_rid != &asset.rid {
+            if s_rid != asset.rid() {
                 return false;
             }
         }

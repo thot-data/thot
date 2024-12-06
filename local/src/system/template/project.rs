@@ -3,8 +3,12 @@ use crate::file_resource::UserResource;
 use crate::system::common::config_dir_path;
 use crate::Result;
 use has_id::{HasId, HasIdSerde};
-use std::ops::{Deref, DerefMut};
-use std::path::{Path, PathBuf};
+use std::{
+    io,
+    ops::{Deref, DerefMut},
+    path::{Path, PathBuf},
+    result::Result as StdResult,
+};
 use syre_core::graph::ResourceTree;
 use syre_core::project::Project as CoreProject;
 use syre_core::system::template::Project as ProjectTemplate;
@@ -50,11 +54,10 @@ impl DerefMut for Project {
 
 impl UserResource<ProjectTemplate> for Project {
     /// Returns the base path to the settings file.
-    fn base_path() -> PathBuf {
-        let mut path = config_dir_path().expect("could not get config path");
+    fn base_path() -> StdResult<PathBuf, io::Error> {
+        let mut path = config_dir_path()?;
         path.push("templates");
-
-        path
+        Ok(path)
     }
 
     /// Returns the relative path for the settings.

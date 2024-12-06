@@ -3,7 +3,7 @@ use std::error;
 use std::fmt;
 use std::str::FromStr;
 use uuid::Uuid;
-use validator::validate_email;
+use validator::ValidateEmail;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -45,7 +45,7 @@ impl UserId {
         }
 
         // validate as email
-        if validate_email(&id) {
+        if id.validate_email() {
             return Ok(UserId::Email(id));
         }
 

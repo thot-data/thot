@@ -1,13 +1,22 @@
 //! A tree graph
 use super::ResourceNode;
-use crate::error::{Graph as GraphError, Resource as ResourceError};
-use crate::types::{ResourceId, ResourceMap};
-use crate::Result;
+use crate::{
+    error::{Graph as GraphError, Resource as ResourceError},
+    project::Container,
+    types::{ResourceId, ResourceMap},
+    Result,
+};
 use has_id::HasId;
 use indexmap::IndexSet;
-use std::collections::hash_map::{Iter, IterMut};
-use std::collections::HashSet;
-use std::fmt;
+use std::{
+    collections::{
+        hash_map::{Iter, IterMut},
+        HashSet,
+    },
+    fmt,
+    path::{Component, Path, PathBuf},
+    result::Result as StdResult,
+};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -65,7 +74,11 @@ where
         }
     }
 
-    pub fn from_components(nodes: NodeMap<D>, edges: EdgeMap) -> Result<Self> {
+    /// Create a tree from nodes and edges.
+    ///
+    /// # Errors
+    /// + If the nodes and edges do not create a valid tree.
+    pub fn from_parts(nodes: NodeMap<D>, edges: EdgeMap) -> Result<Self> {
         let mut parents = ResourceMap::new();
         let mut root = nodes
             .keys()
@@ -197,9 +210,9 @@ where
     ///
     /// # Errors
     /// + If the child does not exist.
-    pub fn parent(&self, child: &ResourceId) -> Result<Option<&ResourceId>> {
+    pub fn parent(&self, child: &ResourceId) -> StdResult<Option<&ResourceId>, ResourceError> {
         let Some(parent) = self.parents.get(&child) else {
-            return Err(ResourceError::does_not_exist("`Node` not found").into());
+            return Err(ResourceError::does_not_exist("`Node` not found"));
         };
 
         Ok(parent.as_ref())
@@ -229,7 +242,7 @@ where
         )
     }
 
-    /// Returns the path of ancesetors to the tree root.
+    /// Returns the path of ancestors to the tree root.
     /// Begins with self.
     ///
     /// # Returns
@@ -448,6 +461,72 @@ where
         write!(f, "{:?}\n{:?}", self.nodes(), self.edges())
     }
 }
+
+impl ResourceTree<Container> {
+    /// Get a node by its path.
+    /// The path is dictated by the container's name.
+    pub fn get_path(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> StdResult<Option<&ResourceNode<Container>>, InvalidPath> {
+        let mut components = path.as_ref().components();
+        let Some(component) = components.next() else {
+            return Err(InvalidPath);
+        };
+
+        if !matches!(component, Component::RootDir) {
+            return Err(InvalidPath);
+        }
+
+        let mut node_id = &self.root;
+        while let Some(component) = components.next() {
+            let Component::Normal(name) = component else {
+                return Err(InvalidPath);
+            };
+
+            let Some(child) = self.children(node_id).unwrap().iter().find(|child| {
+                let node = self.get(child).unwrap();
+                node.properties.name == name.to_str().unwrap()
+            }) else {
+                return Ok(None);
+            };
+
+            node_id = child;
+        }
+
+        Ok(Some(self.get(node_id).unwrap()))
+    }
+
+    /// Get the path of a node.
+    pub fn path(&self, node: &ResourceId) -> Option<PathBuf> {
+        let ancestors = self.ancestors(node);
+        if ancestors.is_empty() {
+            return None;
+        }
+        if let [ancestor] = &ancestors[..] {
+            let root = self.get(ancestor).unwrap();
+            assert_eq!(root.rid(), &self.root);
+            return Some(PathBuf::from(Component::RootDir.as_os_str()));
+        }
+
+        let path = ancestors
+            .iter()
+            .take(ancestors.len() - 1)
+            .map(|node| {
+                let node = self.get(node).unwrap();
+                let container = node.data();
+                Component::Normal(std::ffi::OsStr::new(&container.properties.name))
+            })
+            .chain(std::iter::once(Component::RootDir))
+            .rev()
+            .collect();
+
+        Some(path)
+    }
+}
+
+#[derive(Debug)]
+pub struct InvalidPath;
 
 #[cfg(test)]
 #[path = "./tree_test.rs"]

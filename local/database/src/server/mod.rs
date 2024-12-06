@@ -1,11 +1,8 @@
-//! Database for storing resources.
-//! Because multiple local executales may need access to the same resouce,
-//! the database acts as the single source of truth.
+//! Database that watches file system for changes, publishing them for clients.
 pub(self) mod database;
-mod event;
+mod state;
 pub(self) mod store;
 mod types;
 
-// Re-exports
-pub use database::Database;
-pub(self) use event::Event;
+pub use database::{config, Builder, Config, Database};
+use state::State;

@@ -14,7 +14,7 @@ pub enum Error {
     Core(CoreError),
     Io(io::Error),
     Local(LocalError),
-    LoadContainer(syre_local::loader::error::container::Error),
+    LoadContainer(syre_local::loader::container::State),
     LoadTree(syre_local::loader::error::tree::Error),
     IoSerde(syre_local::error::IoSerde),
 }

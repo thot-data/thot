@@ -14,8 +14,8 @@ tracing-appender = "0.2.2"
 tracing-subscriber = { version = "0.3.16", features = ["time", "json"] }
 zmq = { workspace = true }
 
-syre-core = { path = "../../../core", features=["clap"] }
-syre-local = { path = "../../../local" }
-syre-local-database = { path = "..", features = ["client"] }
+syre-core = { workspace = true, features=["clap"] }
+syre-local = { workspace = true }
+syre-local-database = { workspace = true, features = ["client"] }
 notify-debouncer-full = "0.3.1"
 notify = "6.1.1"

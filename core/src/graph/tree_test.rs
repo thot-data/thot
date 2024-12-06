@@ -36,7 +36,7 @@ fn from_components_should_work() {
 
     // test
     let tree =
-        ResourceTree::from_components(nodes, edges).expect("could not create tree from components");
+        ResourceTree::from_parts(nodes, edges).expect("could not create tree from components");
 
     assert_eq!(&root, tree.root(), "incorrect root found");
     assert!(

@@ -1,25 +1,18 @@
 [package]
 name = "syre-desktop-lib"
-version = "0.10.0"
-description = "Shared types and functionality for the front- and back-end of Syre desktop."
-authors = ["Brian Carlsen <carlsen.bri@gmail.com>"]
-
-homepage = "https://syre.ai"
-repository = "https://github.com/syre-data/syre"
-keywords = ["syre", "syre-data"]
-categories = []
+version = "0.11.0"
 edition = "2021"
-rust-version = "1.57"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-calamine.workspace = true
-csv.workspace = true
-indexmap = { workspace = true, features = ["serde"] }
-thiserror = { workspace = true }
+derive_more.workspace = true
+io_error_serde.workspace = true
 serde = { workspace = true, features = ["derive"] }
+syre-core.workspace = true
+syre-local.workspace = true
+syre-local-database.workspace = true
+syre-local-runner.workspace = true
+trash = { workspace = true, optional = true }
+uuid = { workspace = true, features = ["v7"] }
 
-syre-core = { path = "../../core", features = ["serde"] }
-syre-local = { path = "../../local", default-features = false }
-syre-local-database = { path = "../../local/database" }
+[features]
+server = ["dep:trash"]

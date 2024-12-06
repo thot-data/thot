@@ -55,12 +55,15 @@ If you haven't already, go back to the root path `cd ../../`.
 
 ## FAQ
 
-### General errors
-
-`Error:error running bundle_dmg.sh`
-> Make sure no `Syre` process is running and that Syre is not mounted as a volume.
-
 ### Apple
 
-`Error failed to bundle project: failed to upload app to Apple's notarization servers.`
-> Check in the apple developer account that no terms of service are pending for approval.
+#### Error running bundle_dmg.sh
+Make sure no `syre*` process is running and that Syre is not mounted as a volume.
+
+#### Error failed to bundle project: failed to upload app to Apple's notarization servers.
+Check the [apple developer](https://developer.apple.com/) account that no terms of service are pending approval.
+
+### Windows
+
+#### `zmq` build errors
+`cargo build` the `src-tauri` crate first.

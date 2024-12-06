@@ -1,0 +1,25 @@
+[package]
+name = "syre-fs-watcher-simulator"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+tempfile = { workspace = true }
+rand.workspace = true
+rand_chacha = "0.3.1"
+derive_more = { workspace = true, features = ["full"] }
+crossbeam = { workspace = true, features = ["crossbeam-channel"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+walkdir.workspace = true
+
+syre-local = { workspace = true }
+syre-fs-watcher = { workspace = true }
+has_id = { workspace = true, features = ["derive"] }
+syre-core.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+test-log = { version = "0.2.16", features = ["trace"] }

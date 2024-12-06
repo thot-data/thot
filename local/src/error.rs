@@ -1,6 +1,4 @@
 //! Common error types.
-use crate::loader::error::container::Error as LoadContainer;
-pub use io_error_kind::IoErrorKind;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
@@ -116,23 +114,27 @@ pub enum Users {
 // *** IoSerde ***
 // ***************
 
-#[derive(Serialize, Deserialize, Error, Debug)]
+#[derive(Serialize, Deserialize, Error, PartialEq, Clone, Debug)]
 pub enum IoSerde {
     #[error("{0:?}")]
-    Io(#[serde(with = "IoErrorKind")] io::ErrorKind),
+    Io(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
 
     #[error("{0}")]
     Serde(String),
 }
 
-#[cfg(feature = "fs")]
+impl From<io::ErrorKind> for IoSerde {
+    fn from(value: io::ErrorKind) -> Self {
+        Self::Io(value)
+    }
+}
+
 impl From<io::Error> for IoSerde {
     fn from(value: io::Error) -> Self {
         Self::Io(value.kind())
     }
 }
 
-#[cfg(feature = "fs")]
 impl From<serde_json::Error> for IoSerde {
     fn from(value: serde_json::Error) -> Self {
         if let Some(kind) = value.io_error_kind() {
@@ -147,11 +149,12 @@ impl From<serde_json::Error> for IoSerde {
 // *** Local Error ***
 // *******************
 
-#[derive(Serialize, Deserialize, Error, Debug)]
+#[derive(Serialize, Deserialize, Error, Debug, derive_more::From)]
 pub enum Error {
     #[error("{0}")]
     Core(CoreError),
 
+    #[from(ignore)]
     #[error("{0}")]
     InvalidPath(PathBuf),
 
@@ -162,7 +165,7 @@ pub enum Error {
     Users(Users),
 
     #[error("{0}")]
-    Io(#[serde(with = "IoErrorKind")] io::ErrorKind),
+    Io(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
 
     #[error("{0}")]
     IoSerde(IoSerde),
@@ -181,71 +184,32 @@ pub enum Error {
     #[error("{0}")]
     SettingsFileError(SettingsFileError),
 
+    /// Could not load the resource correctly from disk.
     #[cfg(feature = "fs")]
-    #[error("{0}")]
-    LoadContainer(LoadContainer),
+    #[error("Load")]
+    Load,
+
+    #[cfg(feature = "fs")]
+    #[error("Load")]
+    ContainerBuild(crate::project::container::error::Build),
 }
 
-impl From<Users> for Error {
-    fn from(value: Users) -> Self {
-        Self::Users(value)
-    }
-}
-
-impl From<CoreError> for Error {
-    fn from(err: CoreError) -> Self {
-        Error::Core(err)
-    }
-}
-
-#[cfg(feature = "fs")]
-impl From<AssetError> for Error {
-    fn from(err: AssetError) -> Self {
-        Error::AssetError(err)
-    }
-}
-
-#[cfg(feature = "fs")]
-impl From<ContainerError> for Error {
-    fn from(err: ContainerError) -> Self {
-        Error::ContainerError(err)
-    }
-}
-
-#[cfg(feature = "fs")]
-impl From<Project> for Error {
-    fn from(err: Project) -> Self {
-        Error::Project(err)
-    }
-}
-
-// TODO: Probably shouldn't cast to CoreError.
-// Check contexts where used. Maybe overridden by SerdeIo.
 impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Error::Io(err.kind())
+    fn from(value: io::Error) -> Self {
+        Self::Io(value.kind())
     }
 }
 
-// TODO: Probably shouldn't cast to CoreError.
-// Check contexts where used. Maybe overridden by SerdeIo.
 impl From<serde_json::Error> for Error {
     fn from(err: serde_json::Error) -> Self {
-        Error::Core(err.into())
+        Error::IoSerde(err.into())
     }
 }
 
 #[cfg(feature = "fs")]
-impl From<IoSerde> for Error {
-    fn from(value: IoSerde) -> Self {
-        Self::IoSerde(value)
-    }
-}
-
-#[cfg(feature = "fs")]
-impl From<LoadContainer> for Error {
-    fn from(value: LoadContainer) -> Self {
-        Self::LoadContainer(value)
+impl From<crate::project::resources::project::LoadError> for Error {
+    fn from(_value: crate::project::resources::project::LoadError) -> Self {
+        Self::Load
     }
 }
 
@@ -258,75 +222,5 @@ pub type Result<T = ()> = StdResult<T, Error>;
 impl From<Error> for Result {
     fn from(err: Error) -> Self {
         Err(err)
-    }
-}
-
-pub mod io_error_kind {
-    use serde::{Deserialize, Serialize};
-    use std::io;
-
-    /// Copy of [`io::ErrorKind`] for `serde` de/serialization.
-    #[non_exhaustive]
-    #[derive(Serialize, Deserialize)]
-    #[serde(remote = "io::ErrorKind")]
-    pub enum IoErrorKind {
-        NotFound,
-        PermissionDenied,
-        ConnectionRefused,
-        ConnectionReset,
-        HostUnreachable,
-        NetworkUnreachable,
-        ConnectionAborted,
-        NotConnected,
-        AddrInUse,
-        AddrNotAvailable,
-        NetworkDown,
-        BrokenPipe,
-        AlreadyExists,
-        WouldBlock,
-        NotADirectory,
-        IsADirectory,
-        DirectoryNotEmpty,
-        ReadOnlyFilesystem,
-        FilesystemLoop,
-        StaleNetworkFileHandle,
-        InvalidInput,
-        InvalidData,
-        TimedOut,
-        WriteZero,
-        StorageFull,
-        NotSeekable,
-        FilesystemQuotaExceeded,
-        FileTooLarge,
-        ResourceBusy,
-        ExecutableFileBusy,
-        Deadlock,
-        CrossesDevices,
-        TooManyLinks,
-        InvalidFilename,
-        ArgumentListTooLong,
-        Interrupted,
-        Unsupported,
-        UnexpectedEof,
-        OutOfMemory,
-        Other,
-    }
-
-    impl serde_with::SerializeAs<io::ErrorKind> for IoErrorKind {
-        fn serialize_as<S>(value: &io::ErrorKind, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-        {
-            IoErrorKind::serialize(value, serializer)
-        }
-    }
-
-    impl<'de> serde_with::DeserializeAs<'de, io::ErrorKind> for IoErrorKind {
-        fn deserialize_as<D>(deserializer: D) -> Result<io::ErrorKind, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            IoErrorKind::deserialize(deserializer)
-        }
     }
 }

@@ -1,11 +1,9 @@
 use clap::{Parser, Subcommand};
 use notify::Watcher;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use std::{fs, io};
-use syre_core::graph::ResourceTree;
-use syre_core::project::{Container, Project};
-use syre_local_database::{constants, Client, GraphCommand, ProjectCommand, Result as DbResult};
+use syre_local_database::constants;
 
 const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(100);
 
@@ -30,22 +28,6 @@ fn main() {
             } else {
                 watch_file_system_debounce(&path);
             }
-        }
-
-        Command::LoadPath { path } => {
-            let db = Client::new();
-            let path = fs::canonicalize(path).unwrap();
-            let project = db.send(ProjectCommand::Load(path).into()).unwrap();
-            let project = serde_json::from_value::<DbResult<Project>>(project).unwrap();
-
-            let project = project.unwrap();
-
-            let graph = db
-                .send(GraphCommand::Load(project.rid.clone()).into())
-                .unwrap();
-
-            let graph = serde_json::from_value::<DbResult<ResourceTree<Container>>>(graph).unwrap();
-            graph.unwrap();
         }
     }
 }
@@ -223,10 +205,4 @@ enum Command {
         #[clap(long)]
         no_debounce: bool,
     },
-
-    /// Load the project and its graph at the given path.
-    ///
-    /// # Notes
-    /// + `canonicalize`s the path.
-    LoadPath { path: PathBuf },
 }

@@ -1,137 +1,79 @@
-//! Handle [`syre::File`](FileEvent) events.
-use super::event::app::File as FileEvent;
-use crate::event::{Asset as AssetUpdate, Graph as GraphUpdate, Update};
-use crate::server::Database;
-use crate::Result;
-use std::path::PathBuf;
-use syre_core::types::ResourceId;
-use syre_local::graph::ContainerTreeTransformer;
-use syre_local::loader::tree::Loader as ContainerTreeLoader;
-use syre_local::project::container;
-use syre_local::project::resources::Asset;
-use uuid::Uuid;
+use crate::{event::Update, Database};
+use std::assert_matches::assert_matches;
+use syre_fs_watcher::{event, EventKind};
 
 impl Database {
-    pub fn handle_app_event_file(
-        &mut self,
-        event: &FileEvent,
-        event_id: &Uuid,
-    ) -> Result<Vec<Update>> {
-        match event {
-            FileEvent::Created(path) => {
-                let container_path =
-                    syre_local::project::asset::container_from_path_ancestor(&path)?;
+    pub(super) fn handle_fs_event_file(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {
+        let EventKind::File(kind) = event.kind() else {
+            panic!("invalid event kind");
+        };
 
-                let path_container = self
-                    .store
-                    .get_path_container_canonical(&container_path)
-                    .unwrap()
-                    .cloned()
-                    .unwrap();
-
-                let path_container = self.store.get_container(&path_container).unwrap();
-                if self
-                    .store
-                    .get_path_asset_id_canonical(&path)
-                    .unwrap()
-                    .is_some()
-                {
-                    return Ok(vec![]);
-                }
-
-                // NOTE When transferring large amounts of data
-                // some folder creation events are missed by `notify`.
-                // We account for this here by checking if the file is placed in a bucket.
-                // If not then we ensure it is placed in a Container, otherwise we initialize the highest possible
-                // folder as a subgraph.
-                let asset_path = path
-                    .strip_prefix(path_container.base_path())
-                    .unwrap()
-                    .to_path_buf();
-
-                let mut as_asset = true;
-                if asset_path.components().count() > 1 {
-                    as_asset = path_container
-                        .buckets()
-                        .iter()
-                        .any(|bucket| asset_path.strip_prefix(bucket).is_ok())
-                }
-
-                if as_asset {
-                    return self.handle_file_as_asset(
-                        asset_path,
-                        path_container.rid.clone(),
-                        event_id,
-                    );
-                } else {
-                    let root_path = path_container
-                        .base_path()
-                        .join(asset_path.components().next().unwrap());
-
-                    return self.init_subgraph_file(root_path, event_id);
-                }
-            }
+        match kind {
+            event::ResourceEvent::Created => self.handle_fs_event_file_created(event),
+            event::ResourceEvent::Modified(_) => self.handle_fs_event_file_modified(event),
+            event::ResourceEvent::Removed => self.handle_fs_event_file_removed(event),
+            event::ResourceEvent::Renamed => self.handle_fs_event_file_renamed(event),
+            event::ResourceEvent::Moved => todo!(),
+            event::ResourceEvent::MovedProject => todo!(),
         }
     }
+}
 
-    #[tracing::instrument(skip(self))]
-    fn handle_file_as_asset(
-        &mut self,
-        asset_path: PathBuf,
-        container: ResourceId,
-        event_id: &Uuid,
-    ) -> Result<Vec<Update>> {
-        let asset = Asset::new(asset_path)?;
-        let aid = asset.rid.clone();
-        self.store.add_asset(asset, container.clone())?;
+impl Database {
+    fn handle_fs_event_file_created(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {
+        assert_matches!(event.kind(), EventKind::File(event::ResourceEvent::Created));
 
-        let project = self
-            .store
-            .get_container_project(&container)
-            .unwrap()
-            .clone();
+        let [path] = &event.paths()[..] else {
+            panic!("invalid paths");
+        };
+        tracing::info!("file created {path:?}");
 
-        let container = self.store.get_container(&container).unwrap();
-        let asset = container.assets.get(&aid).unwrap().clone();
-
-        Ok(vec![Update::project(
-            project,
-            AssetUpdate::Created {
-                container: container.rid.clone(),
-                asset,
-            }
-            .into(),
-            event_id.clone(),
-        )])
+        // TODO: May want to perform additional checks on if file is a resource worth watching.
+        vec![]
     }
 
-    #[tracing::instrument(skip(self))]
-    fn init_subgraph_file(&mut self, path: PathBuf, event_id: &Uuid) -> Result<Vec<Update>> {
-        let parent = self
-            .store
-            .get_path_container_canonical(path.parent().unwrap())
-            .unwrap()
-            .cloned()
-            .unwrap();
+    fn handle_fs_event_file_renamed(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {
+        assert_matches!(event.kind(), EventKind::File(event::ResourceEvent::Renamed));
 
-        // init graph
-        let mut builder = container::InitOptions::init();
-        builder.recurse(true);
-        builder.with_assets();
-        builder.build(&path)?;
+        let [from, to] = &event.paths()[..] else {
+            panic!("invalid paths");
+        };
+        tracing::info!("file renamed from {from:?} to {to:?}");
 
-        // insert into graph
-        let graph = ContainerTreeLoader::load(path).unwrap();
-        let root = graph.root().clone();
-        self.store.insert_subgraph(&parent, graph)?;
+        // TODO: May want to perform additional checks on if file is a resource worth watching.
+        vec![]
+    }
 
-        let project = self.store.get_container_project(&root).unwrap().clone();
-        let graph = self.store.get_graph_of_container(&root).unwrap();
-        let graph = ContainerTreeTransformer::local_to_core(graph);
-        Ok(vec![Update::project(
-            project,
-            GraphUpdate::Created { parent, graph }.into(),
-            event_id.clone(),
-        )])
+    fn handle_fs_event_file_removed(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {
+        assert_matches!(event.kind(), EventKind::File(event::ResourceEvent::Removed));
+
+        let [path] = &event.paths()[..] else {
+            panic!("invalid paths");
+        };
+        tracing::info!("file removed {path:?}");
+
+        // TODO: May want to perform additional checks on if file is a resource worth watching.
+        vec![]
+    }
+
+    fn handle_fs_event_file_modified(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {
+        let EventKind::File(event::ResourceEvent::Modified(kind)) = event.kind() else {
+            panic!("invalid event kind");
+        };
+
+        let [path] = &event.paths()[..] else {
+            panic!("invalid paths");
+        };
+
+        match kind {
+            event::ModifiedKind::Data => {
+                tracing::info!("file modified data {path:?}");
+                vec![]
+            }
+            event::ModifiedKind::Other => {
+                tracing::info!("file modified other {path:?}");
+                vec![]
+            }
+        }
     }
 }

@@ -1,5 +1,5 @@
+//! Project resources.
 pub mod analysis_association;
-/// Project resources.
 pub mod asset;
 pub mod asset_properties;
 pub mod container;
@@ -10,8 +10,7 @@ pub mod project;
 pub mod resources;
 pub mod script;
 
-// Reexports
-pub use analysis_association::{AnalysisAssociation, RunParameters};
+pub use analysis_association::AnalysisAssociation;
 pub use asset::Asset;
 pub use asset_properties::AssetProperties;
 pub use container::Container;

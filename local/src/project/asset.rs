@@ -2,7 +2,7 @@
 use super::container::path_is_container;
 use super::resources::asset::{Asset as LocalAsset, Assets};
 use crate::error::AssetError;
-use crate::types::AssetFileAction;
+use crate::types::FsResourceAction;
 use crate::{common, Error, Result};
 use std::path::{Path, PathBuf};
 use std::{fs, io};
@@ -21,7 +21,7 @@ pub struct AssetBuilder {
 
     /// The [`AssetFileAction`] used to perform an operation that dictates all future actions,
     /// or `None` if no such action has been taken.
-    action: Option<AssetFileAction>,
+    action: Option<FsResourceAction>,
 
     /// Path to the moved file, or `None` if the file was not moved.
     moved_asset_path: Option<PathBuf>,
@@ -95,7 +95,7 @@ impl AssetBuilder {
     ///
     /// # Note
     /// If the state of the file system changes, the **result of this function may change**.
-    pub fn tentative_final_path(&self, action: AssetFileAction) -> Result<PathBuf> {
+    pub fn tentative_final_path(&self, action: FsResourceAction) -> Result<PathBuf> {
         // calculate paths
         let mut rel_path = self.bucket.clone().unwrap_or(PathBuf::new());
         let Some(file_name) = self.path.file_name() else {
@@ -117,9 +117,9 @@ impl AssetBuilder {
 
         let abs_path = common::unique_file_name(abs_path)?;
         match action {
-            AssetFileAction::Reference => Ok(self.path.clone()),
-            AssetFileAction::Move => Ok(abs_path),
-            AssetFileAction::Copy => Ok(abs_path),
+            FsResourceAction::Reference => Ok(self.path.clone()),
+            FsResourceAction::Move => Ok(abs_path),
+            FsResourceAction::Copy => Ok(abs_path),
         }
     }
 
@@ -133,20 +133,20 @@ impl AssetBuilder {
 
         // move file if needed
         match action {
-            AssetFileAction::Move => {
+            FsResourceAction::Move => {
                 if self.path != to_path {
                     fs::rename(&self.path, &to_path).expect("could not rename `Asset` file");
                     self.moved_asset_path = Some(to_path.clone());
                 }
             }
-            AssetFileAction::Copy => {
+            FsResourceAction::Copy => {
                 if self.path != to_path {
                     fs::copy(&self.path, &to_path).expect("could not copy `Asset` file");
                     self.action = Some(action);
                     self.moved_asset_path = Some(to_path.clone());
                 }
             }
-            AssetFileAction::Reference => {}
+            FsResourceAction::Reference => {}
         }
 
         Ok(())
@@ -160,7 +160,7 @@ impl AssetBuilder {
 
         let container = self.container_path()?;
         let path = match action {
-            AssetFileAction::Move | AssetFileAction::Copy => {
+            FsResourceAction::Move | FsResourceAction::Copy => {
                 let path = match self.moved_asset_path.as_ref() {
                     Some(path) => path.clone(),
                     None => self.path.clone(),
@@ -171,7 +171,7 @@ impl AssetBuilder {
                     .to_path_buf()
             }
 
-            AssetFileAction::Reference => self.path.clone(),
+            FsResourceAction::Reference => self.path.clone(),
         };
 
         Ok(path)
@@ -196,12 +196,12 @@ impl AssetBuilder {
     pub fn init(self) -> Result<ResourceId> {
         // create asset
         let asset = LocalAsset::new(self.path.clone())?;
-        let rid = asset.rid.clone();
+        let rid = asset.rid().clone();
 
         // insert asset
         let container = self.container_path()?;
         let mut assets = Assets::load_from(container)?;
-        assets.insert(asset);
+        assets.push(asset);
         assets.save()?;
         Ok(rid)
     }
@@ -217,9 +217,9 @@ impl AssetBuilder {
     /// # See also
     /// + [`init`](Self::init)
     /// + [`add`](Self::add)
-    pub fn create(mut self, action: AssetFileAction) -> Result<CoreAsset> {
+    pub fn create(mut self, action: FsResourceAction) -> Result<CoreAsset> {
         // validate bucket + action
-        if self.bucket.is_some() && action == AssetFileAction::Reference {
+        if self.bucket.is_some() && action == FsResourceAction::Reference {
             return Err(AssetError::IncompatibleAction(
                 "`Assets` can not have a `Reference` path and a `bucket`".to_string(),
             )
@@ -246,9 +246,9 @@ impl AssetBuilder {
     /// # See also
     /// + [`init`](Self::init)
     /// + [`create`](Self::create)
-    pub fn add(mut self, action: AssetFileAction) -> Result<CoreAsset> {
+    pub fn add(mut self, action: FsResourceAction) -> Result<CoreAsset> {
         // validate bucket + action
-        if self.bucket.is_some() && action == AssetFileAction::Reference {
+        if self.bucket.is_some() && action == FsResourceAction::Reference {
             return Err(AssetError::IncompatibleAction(
                 "`Assets` can not have a `Reference` path and a `bucket`".to_string(),
             )
@@ -265,7 +265,7 @@ impl AssetBuilder {
         // insert asset
         let container = self.container_path()?;
         let mut assets = Assets::load_from(container)?;
-        assets.insert(asset.clone());
+        assets.push(asset.clone());
         assets.save()?;
 
         Ok(asset)
@@ -317,11 +317,11 @@ pub fn init(path: &Path, container: Option<&Path>) -> Result<ResourceId> {
 
     // create asset
     let asset = LocalAsset::new(path)?;
-    let rid = asset.rid.clone();
+    let rid = asset.rid().clone();
 
     // insert asset
     let mut assets = Assets::load_from(container)?;
-    assets.insert(asset);
+    assets.push(asset);
     assets.save()?;
     Ok(rid)
 }
@@ -372,7 +372,7 @@ pub fn container_from_path_ancestor(path: &Path) -> Result<PathBuf> {
 pub fn unique_asset_file_path(
     path: &Path,
     container_path: &Path,
-    action: &AssetFileAction,
+    action: &FsResourceAction,
     bucket: Option<&Path>,
 ) -> PathBuf {
     let c_path = || {
@@ -392,9 +392,9 @@ pub fn unique_asset_file_path(
     };
 
     match action {
-        AssetFileAction::Reference => path.to_path_buf(),
-        AssetFileAction::Move => c_path(),
-        AssetFileAction::Copy => c_path(),
+        FsResourceAction::Reference => path.to_path_buf(),
+        FsResourceAction::Move => c_path(),
+        FsResourceAction::Copy => c_path(),
     }
 }
 

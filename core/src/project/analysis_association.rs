@@ -1,6 +1,8 @@
 use crate::types::ResourceId;
 use std::cmp::{Eq, Ordering, PartialEq};
 
+pub type Priority = i32;
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -11,12 +13,14 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct AnalysisAssociation {
-    pub analysis: ResourceId,
+    analysis: ResourceId,
     pub autorun: bool,
-    pub priority: i32,
+    pub priority: Priority,
 }
 
 impl AnalysisAssociation {
+    /// Creates a new analysis association with
+    /// `autorun` `true` and `priority` `0`.
     pub fn new(analysis: ResourceId) -> Self {
         AnalysisAssociation {
             analysis,
@@ -25,54 +29,20 @@ impl AnalysisAssociation {
         }
     }
 
-    pub fn new_with_params(analysis: ResourceId, params: RunParameters) -> Self {
+    pub fn with_params(analysis: ResourceId, autorun: bool, priority: Priority) -> Self {
         AnalysisAssociation {
             analysis,
-            autorun: params.autorun,
-            priority: params.priority,
-        }
-    }
-}
-
-impl Into<RunParameters> for AnalysisAssociation {
-    fn into(self) -> RunParameters {
-        RunParameters {
-            autorun: self.autorun,
-            priority: self.priority,
-        }
-    }
-}
-
-// **********************
-// *** Run Parameters ***
-// **********************
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub struct RunParameters {
-    pub autorun: bool,
-    pub priority: i32,
-}
-
-impl RunParameters {
-    pub fn new() -> Self {
-        RunParameters {
-            autorun: true,
-            priority: 0,
+            autorun,
+            priority,
         }
     }
 
-    /// Converts self into an analysis association for the given analysis.
-    pub fn to_association(self, script: ResourceId) -> AnalysisAssociation {
-        let mut assoc = AnalysisAssociation::new(script);
-        assoc.autorun = self.autorun;
-        assoc.priority = self.priority;
-
-        assoc
+    pub fn analysis(&self) -> &ResourceId {
+        &self.analysis
     }
 }
 
-impl PartialOrd for RunParameters {
+impl PartialOrd for AnalysisAssociation {
     /// Ordering is based on the `priority` field.
     /// If the `priority` fields are equal and `autorun` state is equal,
     /// results in the two objects being equal.

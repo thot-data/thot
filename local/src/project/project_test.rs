@@ -1,6 +1,5 @@
 use super::*;
 use crate::common::{app_dir_of, project_file_of, project_settings_file_of};
-use dev_utils::fs::TempDir;
 use fake::faker::filesystem::raw::DirPath;
 use fake::locales::EN;
 use fake::Fake;
@@ -12,7 +11,7 @@ use syre_core::project::Project as CoreProject;
 
 #[test]
 fn new_should_work() {
-    let _dir = TempDir::new().expect("setup should work");
+    let _dir = tempfile::tempdir().unwrap();
     let root = _dir.path().join("root");
     let root = root.as_path();
 
@@ -42,13 +41,13 @@ fn new_should_work() {
 #[test]
 #[should_panic(expected = "IsADirectory")]
 fn new_should_error_if_directory_already_exists() {
-    let _dir = TempDir::new().expect("setup should work");
+    let _dir = tempfile::tempdir().unwrap();
     new(_dir.path()).unwrap();
 }
 
 #[test]
 fn init_should_work() {
-    let _dir = TempDir::new().expect("setup should work");
+    let _dir = tempfile::tempdir().unwrap();
     let root = _dir.path();
 
     // initialize project
@@ -78,7 +77,7 @@ fn init_should_work() {
 #[test]
 fn init_if_app_directory_exists_should_do_nothing() {
     // setup
-    let _dir = TempDir::new().expect("setup should work");
+    let _dir = tempfile::tempdir().unwrap();
     let root = _dir.path();
     let rid = init(root).expect("init should work");
 
@@ -90,7 +89,7 @@ fn init_if_app_directory_exists_should_do_nothing() {
 #[test]
 #[should_panic(expected = "NotFound")]
 fn init_should_error_if_not_given_an_existing_directory() {
-    let _dir = TempDir::new().expect("setup should work");
+    let _dir = tempfile::tempdir().unwrap();
     let false_root = _dir.path().join("absent");
 
     init(false_root.as_path()).unwrap();
@@ -102,7 +101,7 @@ fn init_should_error_if_not_given_an_existing_directory() {
 
 #[test]
 fn path_is_resource_should_work() {
-    let _dir = TempDir::new().expect("setup should work");
+    let _dir = tempfile::tempdir().unwrap();
     let root = _dir.path();
 
     assert_eq!(
@@ -122,7 +121,7 @@ fn path_is_resource_should_work() {
 #[test]
 fn project_root_path_should_work_for_root() {
     // setup
-    let _dir = TempDir::new().unwrap();
+    let _dir = tempfile::tempdir().unwrap();
     let root = _dir.path();
     let rid = init(root).unwrap();
 
@@ -136,14 +135,10 @@ fn project_root_path_should_work_for_root() {
 #[test]
 fn project_root_path_should_work_for_descendents() {
     // setup
-    let mut _dir = TempDir::new().expect("setup should work");
+    let mut _dir = tempfile::tempdir().unwrap();
     init(_dir.path()).expect("init should work");
-    let cp1 = _dir.mkdir().expect("making child directory should work");
-    let c1 = _dir
-        .children
-        .get_mut(&cp1)
-        .expect("child directory should be found");
-    let cp2 = c1.mkdir().expect("making grandchild directory should work");
+    let cp1 = tempfile::tempdir_in(_dir.path()).unwrap();
+    let cp2 = tempfile::tempdir_in(cp1.path()).unwrap();
 
     // test
     let f1 = project_root_path(&cp1).expect("project root path should work");
@@ -169,7 +164,7 @@ fn project_root_path_if_exits_resource_path_should_work() {
 #[test]
 #[should_panic(expected = "PathNotInProject")]
 fn project_root_path_if_path_is_not_in_a_project_should_error() {
-    let _dir = TempDir::new().expect("setup should work");
+    let _dir = tempfile::tempdir().unwrap();
     project_root_path(_dir.path()).unwrap();
 }
 
@@ -182,7 +177,7 @@ fn project_root_path_if_no_root_is_found_should_error() {
 #[test]
 fn project_resource_root_path_for_root_should_work() {
     // setup
-    let _dir = TempDir::new().unwrap();
+    let _dir = tempfile::tempdir().unwrap();
     let root = _dir.path();
     let rid = init(root).unwrap();
 

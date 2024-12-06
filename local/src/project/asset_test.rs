@@ -1,9 +1,10 @@
 use super::*;
 use crate::project::container;
-use dev_utils::fs::TempDir;
-use fake::faker::filesystem::raw::{FileName, FilePath};
-use fake::locales::EN;
-use fake::Fake;
+use fake::{
+    faker::filesystem::raw::{FileName, FilePath},
+    locales::EN,
+    Fake,
+};
 
 // ********************
 // *** AssetBuilder ***
@@ -12,8 +13,8 @@ use fake::Fake;
 #[test]
 fn asset_builder_container_path_should_work() {
     // setup
-    let _dir = TempDir::new().expect("could not initialize new `TempDir`");
-    let builder = container::InitOptions::init();
+    let _dir = tempfile::tempdir().unwrap();
+    let builder = container::builder::InitOptions::init();
     builder
         .build(_dir.path())
         .expect("could not init dir as `Container`");
@@ -65,8 +66,8 @@ fn asset_builder_container_path_with_invalid_container_set_should_error() {
 #[test]
 fn asset_builder_tentative_final_path_with_file_in_correct_location_should_work() {
     // setup
-    let _dir = TempDir::new().expect("could not initialize new `TempDir`");
-    let builder = container::InitOptions::init();
+    let _dir = tempfile::tempdir().unwrap();
+    let builder = container::builder::InitOptions::init();
     builder
         .build(_dir.path())
         .expect("could not init dir as `Container`");
@@ -81,7 +82,7 @@ fn asset_builder_tentative_final_path_with_file_in_correct_location_should_work(
     let asset = AssetBuilder::new(path.clone());
 
     let final_path = asset
-        .tentative_final_path(AssetFileAction::Copy)
+        .tentative_final_path(FsResourceAction::Copy)
         .expect("could not calculate final path with container unset");
 
     assert_eq!(
@@ -93,8 +94,8 @@ fn asset_builder_tentative_final_path_with_file_in_correct_location_should_work(
 #[test]
 fn asset_builder_tentative_final_path_with_bucket_unset_should_work() {
     // setup
-    let _dir = TempDir::new().expect("could not initialize new `TempDir`");
-    let builder = container::InitOptions::init();
+    let _dir = tempfile::tempdir().unwrap();
+    let builder = container::builder::InitOptions::init();
     builder
         .build(_dir.path())
         .expect("could not init dir as `Container`");
@@ -109,7 +110,7 @@ fn asset_builder_tentative_final_path_with_bucket_unset_should_work() {
     // test
     // container unset, bucket unset, reference
     let final_path = asset
-        .tentative_final_path(AssetFileAction::Reference)
+        .tentative_final_path(FsResourceAction::Reference)
         .expect(
             "could not calculate final path with container unset for `AssetFileAction::Reference`",
         );
@@ -124,7 +125,7 @@ fn asset_builder_tentative_final_path_with_bucket_unset_should_work() {
     expected.push(file_name.clone());
 
     let final_path = asset
-        .tentative_final_path(AssetFileAction::Copy)
+        .tentative_final_path(FsResourceAction::Copy)
         .expect("could not calculate final path with container unset for `AssetFileAction::Copy`");
 
     assert_eq!(
@@ -137,7 +138,7 @@ fn asset_builder_tentative_final_path_with_bucket_unset_should_work() {
     expected.push(file_name.clone());
 
     let final_path = asset
-        .tentative_final_path(AssetFileAction::Move)
+        .tentative_final_path(FsResourceAction::Move)
         .expect("could not calculate final path with container unset for `AssetFileAction::Move`");
 
     assert_eq!(
@@ -149,8 +150,8 @@ fn asset_builder_tentative_final_path_with_bucket_unset_should_work() {
 #[test]
 fn asset_builder_tentative_final_path_with_bucket_set_should_work() {
     // setup
-    let _dir = TempDir::new().expect("could not initialize new `TempDir`");
-    let builder = container::InitOptions::init();
+    let _dir = tempfile::tempdir().unwrap();
+    let builder = container::builder::InitOptions::init();
     builder
         .build(_dir.path())
         .expect("could not init dir as `Container`");
@@ -168,7 +169,7 @@ fn asset_builder_tentative_final_path_with_bucket_set_should_work() {
     // test
     // container unset, bucket unset, reference
     let final_path = asset
-        .tentative_final_path(AssetFileAction::Reference)
+        .tentative_final_path(FsResourceAction::Reference)
         .expect(
             "could not calculate final path with container unset for `AssetFileAction::Reference`",
         );
@@ -184,7 +185,7 @@ fn asset_builder_tentative_final_path_with_bucket_set_should_work() {
     expected.push(file_name.clone());
 
     let final_path = asset
-        .tentative_final_path(AssetFileAction::Copy)
+        .tentative_final_path(FsResourceAction::Copy)
         .expect("could not calculate final path with container unset for `AssetFileAction::Copy`");
 
     assert_eq!(
@@ -198,7 +199,7 @@ fn asset_builder_tentative_final_path_with_bucket_set_should_work() {
     expected.push(file_name.clone());
 
     let final_path = asset
-        .tentative_final_path(AssetFileAction::Move)
+        .tentative_final_path(FsResourceAction::Move)
         .expect("could not calculate final path with container unset for `AssetFileAction::Move`");
 
     assert_eq!(
@@ -240,14 +241,14 @@ fn asset_builder_create_reference_should_work() {
 #[test]
 fn container_from_path_ancestor_should_work() {
     // setup
-    let mut _dir = TempDir::new().expect("setup should work");
-    let builder = container::InitOptions::init();
+    let mut _dir = tempfile::tempdir().unwrap();
+    let builder = container::builder::InitOptions::init();
     let _cid = builder
         .build(_dir.path())
         .expect("init container should work");
 
-    let c_dir = _dir.mkdir().expect("creating child directory should work");
-    let a_path = c_dir.join(FileName(EN).fake::<String>());
+    let c_dir = tempfile::tempdir_in(_dir.path()).unwrap();
+    let a_path = c_dir.path().join(FileName(EN).fake::<String>());
 
     // test
     let path =
@@ -259,9 +260,9 @@ fn container_from_path_ancestor_should_work() {
 #[should_panic(expected = "ContainerNotFound")]
 fn container_from_path_ancestor_should_error_if_no_container_found() {
     // setup
-    let mut _dir = TempDir::new().expect("setup should work");
-    let c_dir = _dir.mkdir().expect("creating child directory should work");
-    let a_path = c_dir.join(FileName(EN).fake::<String>());
+    let mut _dir = tempfile::tempdir().unwrap();
+    let c_dir = tempfile::tempdir_in(_dir.path()).unwrap();
+    let a_path = c_dir.path().join(FileName(EN).fake::<String>());
 
     // test
     let _path = container_from_path_ancestor(&a_path).unwrap();

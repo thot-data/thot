@@ -93,10 +93,14 @@ class Container:
         if self._db is None or not dev_mode():
             return self._assets
         
-        self._db._socket.send_json({"Container": {"GetWithMetadata": self._rid}})
+        self._db._socket.send_json({"Container": {"GetByIdForAnalysis": {"project": self._db._project, "container": self._rid}}})
         container = self._db._socket.recv_json()
         if container is None:
-            raise RuntimeError("Could not retrieve Container")
+            raise RuntimeError("Could not get Container")
+
+        if "Err" in container:
+            raise RuntimeError(f"Error getting container: {container['Err']}")
+        container = container["Ok"]
         
         container = dict_to_container(container, db = self._db)
         self._assets = container._assets
@@ -279,7 +283,7 @@ def dict_to_container(d: Properties, db: OptDatabase = None) -> Container:
     Returns:
         Container: Container that the JSON represented.
     """
-    container =  Container(
+    container = Container(
         d["rid"],
         name = d["properties"]["name"],
         type = d["properties"]["kind"],
@@ -291,7 +295,7 @@ def dict_to_container(d: Properties, db: OptDatabase = None) -> Container:
     
     container._assets = list(map(
         lambda asset: dict_to_asset(asset, db = db, parent = container),
-        d["assets"].values()
+        d["assets"]
     ))
     
     return container

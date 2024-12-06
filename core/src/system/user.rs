@@ -9,33 +9,38 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "serde")]
 use has_id::HasIdSerde;
 
-#[cfg(feature = "yew")]
-use yew::prelude::*;
-
-// ************
-// *** User ***
-// ************
-
-/// Represents a User.
-#[cfg_attr(feature = "yew", derive(Properties))]
+/// A user.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize, HasIdSerde))]
 #[derive(HasId, Clone, Debug, PartialEq)]
 pub struct User {
     #[id]
-    pub rid: ResourceId,
+    rid: ResourceId,
     pub created: DateTime<Utc>,
     pub email: String,
     pub name: Option<String>,
 }
 
 impl User {
-    pub fn new(email: String, name: Option<String>) -> User {
+    pub fn new(email: impl Into<String>) -> Self {
         Self {
             rid: ResourceId::new(),
             created: Utc::now(),
-            name,
-            email,
+            name: None,
+            email: email.into(),
         }
+    }
+
+    pub fn with_name(email: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            rid: ResourceId::new(),
+            created: Utc::now(),
+            name: Some(name.into()),
+            email: email.into(),
+        }
+    }
+
+    pub fn rid(&self) -> &ResourceId {
+        &self.rid
     }
 }
 

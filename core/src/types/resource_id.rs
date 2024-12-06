@@ -10,8 +10,7 @@ use serde::{Deserialize, Serialize};
 
 /// Holds a unique id for a resource.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass)]
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ResourceId(Uuid);
 
 impl ResourceId {

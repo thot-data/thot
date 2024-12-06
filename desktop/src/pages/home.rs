@@ -1,145 +1,162 @@
-//! Home component
-use crate::app::{AppStateAction, AppStateReducer, AppWidget};
-use crate::commands::settings::{load_user_app_state, load_user_settings};
-use crate::hooks::{use_user, use_user_projects};
-use crate::navigation::MainNavigation;
-use crate::routes::Route;
-use syre_ui::types::Message;
-use syre_ui::widgets::suspense::Loading;
-use wasm_bindgen_futures::spawn_local;
-use yew::prelude::*;
-use yew_router::prelude::*;
+use crate::{
+    components::{self, Logo},
+    pages::{Dashboard, Settings},
+    types,
+};
+use leptos::*;
+use leptos_icons::Icon;
+use leptos_router::*;
+use syre_core::system::User;
+use syre_desktop_lib as lib;
 
-// **********************
-// *** Home Component ***
-// **********************
-
-/// Home page for authenticated users.
-#[function_component(HomeComponent)]
-pub fn home_component() -> HtmlResult {
-    let app_state = use_context::<AppStateReducer>().unwrap();
-    let navigator = use_navigator().unwrap();
-    let user = use_user();
-
-    let Some(user) = user.as_ref() else {
-        navigator.push(&Route::SignIn);
-        return Ok(html! {});
-    };
-
-    let projects = use_user_projects(&user.rid);
-    let create_project = use_callback((), {
-        let app_state = app_state.dispatcher();
-        move |_: MouseEvent, _| {
-            app_state.dispatch(AppStateAction::SetActiveWidget(Some(
-                AppWidget::CreateProject,
-            )));
-        }
-    });
-
-    let initialize_project = use_callback((), {
-        let app_state = app_state.dispatcher();
-        move |_: MouseEvent, _| {
-            app_state.dispatch(AppStateAction::SetActiveWidget(Some(
-                AppWidget::InitializeProject,
-            )));
-        }
-    });
-
-    let import_project = use_callback((), {
-        let app_state = app_state.dispatcher();
-        move |_: MouseEvent, _| {
-            app_state.dispatch(AppStateAction::SetActiveWidget(Some(
-                AppWidget::ImportProject,
-            )));
-        }
-    });
-
-    Ok(html! {
-        <div>
-            if projects.len() == 0 {
-                <div class={"align-center"}>
-                    <h2>{ "Get started" }</h2>
-                    <div class={"mb-1rem"}>
-                        <button class={"btn-primary"} onclick={create_project}>{ "Create your first project" }</button>
-                    </div>
-                    <div class={"mb-1rem"}>
-                        <button class={"btn-secondary"} onclick={initialize_project}>{ "Initialize an existing folder" }</button>
-                    </div>
-                    <div>
-                        <button class={"btn-secondary"} onclick={import_project}>{ "Import a project" }</button>
-                    </div>
-                </div>
-            } else {
-                <Redirect<Route> to={Route::Dashboard} />
-            }
-        </div>
-    })
+#[derive(Clone, Copy, derive_more::Deref, derive_more::From)]
+struct ShowSettings(RwSignal<bool>);
+impl ShowSettings {
+    pub fn new() -> Self {
+        Self(create_rw_signal(false))
+    }
 }
 
-// *****************
-// *** Home Page ***
-// *****************
+#[component]
+pub fn Home(user: User) -> impl IntoView {
+    provide_context(user);
+    let user_settings = create_resource(|| (), move |_| fetch_user_settings());
 
-// Wrapper for [`HomeComponent`] to handle suspense.
-#[function_component(Home)]
-pub fn home() -> Html {
-    let app_state = use_context::<AppStateReducer>().unwrap();
-    let navigator = use_navigator().unwrap();
-    let user = use_user();
-    let Some(user) = user.as_ref() else {
-        navigator.push(&Route::SignIn);
-        app_state.dispatch(AppStateAction::AddMessage(Message::error(
-            "Could not get user.",
-        )));
-        return html! {};
+    view! {
+        <Suspense fallback=move || {
+            view! { <Loading /> }
+        }>
+
+            {move || {
+                user_settings
+                    .map(|user_settings| match user_settings {
+                        None => view! { <NoSettings /> },
+                        Some(user_settings) => {
+                            view! { <HomeView user_settings=user_settings.clone() /> }
+                        }
+                    })
+            }}
+        </Suspense>
+    }
+}
+
+#[component]
+fn Loading() -> impl IntoView {
+    view! { <div class="text-center pt-4">"Loading home"</div> }
+}
+
+#[component]
+fn NoSettings() -> impl IntoView {
+    let messages = expect_context::<types::Messages>();
+    let navigate = leptos_router::use_navigate();
+
+    let msg = types::message::Builder::error("Could not get user settings.");
+    let msg = msg.build();
+    messages.update(|messages| messages.push(msg));
+    navigate("/login", Default::default());
+
+    view! {
+        <div class="text-center pt-4">
+            <p>"Could not get user settings."</p>
+            <p>"Redirecting to login."</p>
+        </div>
+    }
+}
+
+#[component]
+fn HomeView(user_settings: lib::settings::User) -> impl IntoView {
+    let messages = expect_context::<types::Messages>();
+    provide_context(types::settings::User::new(user_settings.clone()));
+    let show_settings = ShowSettings::new();
+    provide_context(show_settings);
+
+    match (user_settings.desktop, user_settings.runner) {
+        (Ok(_), Ok(_)) => {}
+        (Err(err), Ok(_)) => {
+            let mut msg = types::message::Builder::error("Could not load desktop settings.");
+            msg.body(format!("{err:?}"));
+            messages.update(|messages| messages.push(msg.build()));
+        }
+        (Ok(_), Err(err)) => {
+            let mut msg = types::message::Builder::error("Could not load runner settings.");
+            msg.body(format!("{err:?}"));
+            messages.update(|messages| messages.push(msg.build()));
+        }
+        (Err(err_desktop), Err(err_runner)) => {
+            let mut msg = types::message::Builder::error("Could not load settings.");
+            msg.body(view! {
+                <ul>
+                    <li>"Desktop: " {format!("{err_desktop:?}")}</li>
+                    <li>"Runner: " {format!("{err_runner:?}")}</li>
+                </ul>
+            });
+            messages.update(|messages| messages.push(msg.build()));
+        }
+    }
+
+    view! {
+        <div class="relative">
+            <MainNav />
+            <main>
+                <div>
+                    <Dashboard />
+                </div>
+                <div
+                    class=(["-right-full", "left-full"], move || !show_settings())
+                    class=(["right-0", "left-0"], move || show_settings())
+                    class="absolute top-0 bottom-0 transition-absolute-position"
+                >
+                    <Settings onclose=move |_| show_settings.set(false) />
+                </div>
+            </main>
+        </div>
+    }
+}
+
+#[component]
+fn MainNav() -> impl IntoView {
+    let show_settings = expect_context::<ShowSettings>();
+    let open_settings = move |e: ev::MouseEvent| {
+        if e.button() != types::MouseButton::Primary {
+            return;
+        }
+
+        show_settings.set(true);
     };
 
-    {
-        let app_state = app_state.clone();
-        let navigator = navigator.clone();
-        let rid = user.rid.clone();
+    view! {
+        <nav class="px-2 border-b dark:bg-secondary-900 flex justify-between">
+            <ol>
+                <li>
+                    <A href="/" class="inline-block align-middle">
+                        <Logo class="h-4" />
+                    </A>
+                </li>
+            </ol>
 
-        use_effect_with((), move |_| {
-            let navigator = navigator.clone();
-            let app_state = app_state.clone();
-            let rid = rid.clone();
-
-            spawn_local(async move {
-                let user_app_state = match load_user_app_state(rid.clone()).await {
-                    Ok(app_state) => app_state,
-                    Err(err) => {
-                        navigator.push(&Route::SignIn);
-                        let mut msg = Message::error("Could not get user app state.");
-                        msg.set_details(format!("{err:?}"));
-                        app_state.dispatch(AppStateAction::AddMessage(msg));
-                        return;
-                    }
-                };
-
-                let user_settings = match load_user_settings(rid).await {
-                    Ok(settings) => settings,
-                    Err(err) => {
-                        let mut msg = Message::error("Could not get user settings.");
-                        msg.set_details(format!("{err:?}"));
-                        app_state.dispatch(AppStateAction::AddMessage(msg));
-                        return;
-                    }
-                };
-
-                app_state.dispatch(AppStateAction::SetUserAppState(Some(user_app_state)));
-                app_state.dispatch(AppStateAction::SetUserSettings(Some(user_settings)));
-            });
-        });
+            <ol class="inline-flex gap-2 items-center">
+                <li>
+                    <button
+                        on:mousedown=open_settings
+                        type="button"
+                        class="align-middle p-1 hover:bg-secondary-100 dark:hover:bg-secondary-800 rounded border border-transparent hover:border-secondary-200 dark:hover:border-white"
+                    >
+                        <Icon icon=components::icon::Settings />
+                    </button>
+                </li>
+                <li>
+                    <A
+                        href="/logout"
+                        class="inline-block align-middle p-1 hover:bg-secondary-100 dark:hover:bg-secondary-800 rounded border border-transparent hover:border-secondary-200 dark:hover:border-white"
+                    >
+                        <Icon icon=icondata::IoLogOutOutline class="[&_*]:dark:!stroke-white h-4" />
+                    </A>
+                </li>
+            </ol>
+        </nav>
     }
+}
 
-    let fallback = html! { <Loading text={"Loading projects"} /> };
-
-    html! {
-        <>
-            <MainNavigation />
-            <Suspense {fallback}>
-                <HomeComponent />
-            </Suspense>
-        </>
-    }
+async fn fetch_user_settings() -> Option<lib::settings::User> {
+    tauri_sys::core::invoke("user_settings", ()).await
 }

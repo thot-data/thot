@@ -1,7 +1,8 @@
 //! Metadata.
+use crate::types::data::Value;
 use std::collections::HashMap;
 
-pub type Metadata = HashMap<String, serde_json::Value>;
+pub type Metadata = HashMap<String, Value>;
 
 pub trait InheritMetadata {
     /// Returns owned and inherited [`Metadata`].

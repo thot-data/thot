@@ -6,8 +6,10 @@
 # general
 /tags
 /target
+target-tauri
 rusty-tags.vi
 .DS_Store
+rustc-ice*
 
 # github
 .github/act/secrets
@@ -83,6 +85,5 @@ rusty-tags.vi
 # Pyenv
 .python-version
 
-# --- desktop ---
-/desktop/dist
+# R
 .Rproj.user

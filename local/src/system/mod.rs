@@ -11,7 +11,7 @@ pub mod template;
 pub mod collections;
 
 #[cfg(feature = "fs")]
-pub mod settings;
+pub mod config;
 
 #[cfg(feature = "fs")]
 pub mod project_manifest;

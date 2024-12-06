@@ -1,94 +1,38 @@
 {
+  "productName": "syre",
+  "version": "0.11.0",
+  "identifier": "ai.syre.desktop",
   "build": {
     "beforeDevCommand": "trunk serve",
+    "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "trunk build",
-    "devPath": "http://localhost:1420",
-    "distDir": "../dist",
-    "withGlobalTauri": true
+    "frontendDist": "../dist"
   },
-  "package": {
-    "productName": "Syre",
-    "version": "0.10.2"
-  },
-  "tauri": {
-    "allowlist": {
-      "dialog": {
-        "open": true
-      },
-      "fs": {
-          "scope": ["$RESOURCE/*"]
-      },
-      "shell" : {
-        "sidecar": true,
-        "scope": [
-          { "name": "../../target/release/syre-local-database", "sidecar": true }
-        ]
-      }
-    },
-    "bundle": {
-      "active": true,
-      "category": "Productivity",
-      "copyright": "",
-      "deb": {
-        "depends": []
-      },
-      "externalBin": [
-        "../../target/release/syre-local-database"
-      ],
-      "icon": [
-        "assets/icons/32x32.png",
-        "assets/icons/128x128.png",
-        "assets/icons/128x128@2x.png",
-        "assets/icons/icon.icns",
-        "assets/icons/icon.ico"
-      ],
-      "identifier": "ai.syre.desktop",
-      "longDescription": "Visual data management and analysis tools using Syre's framework.",
-      "macOS": {
-        "entitlements": null,
-        "exceptionDomain": "",
-        "frameworks": [],
-        "providerShortName": null,
-        "signingIdentity": null
-      },
-      "shortDescription": "Desktop app for Syre.",
-      "targets": "all",
-      "windows": {
-        "certificateThumbprint": null,
-        "digestAlgorithm": "sha256",
-        "timestampUrl": ""
-      },
-      "resources": [
-          "assets/**"
-      ]
-    },
-    "security": {
-      "csp": null
-    },
-    "updater": {
-      "active": true,
-      "endpoints": [
-        "https://releases.syre.ai/{{target}}/{{current_version}}?arch={{arch}}"
-      ],
-      "dialog": true,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJBMzY0QjRGQzA2RDY3M0QKUldROVoyM0FUMHMyS3NUV1IwNjRhc1hmTURpejRaUkVTSlpUUGJtU2xKOGlTaGZ1Y2dwVHlQMUUK"
-    },
+  "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
-        "fullscreen": false,
-        "width": 900,
-        "minWidth": 900,
-        "height": 640,
-        "minHeight": 640,
-        "resizable": true,
         "title": "Syre",
-        "visible": true,
-        "fileDropEnabled": false
+        "width": 800,
+        "height": 600
       }
     ],
-    "systemTray": {
-      "iconPath": "assets/icons/icon.png",
-      "iconAsTemplate": true
+    "security": {
+      "csp": null
     }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+	"externalBin": [
+		"../../target/release/syre-local-database"
+	]
   }
 }

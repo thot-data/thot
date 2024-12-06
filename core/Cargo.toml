@@ -16,40 +16,40 @@ categories = [ "science", "data-structures" ]
 
 [dependencies]
 aquamarine = { workspace = true }
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, optional = true }
 derivative = "2.2"
+derive_more = { workspace = true, features = ["from"] }
 directories = "5.0"
 indexmap = { workspace = true, features = ["serde"] }
+io_error_serde.workspace = true
+rayon = { workspace = true, optional = true }
 regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true }
-serde_with = { workspace = true, optional = true }
+surrealdb = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4"] }
-validator = "0.16"
-yew = { workspace = true, optional = true }
+validator = "0.19"
 
 has_id = { path = "../has_id", features = ["derive"] }
 
 [dev-dependencies]
 rand = "0.8"
-fake = "2.4"
-mockall = { version = "0.11", features = ["nightly"] }
-mockall_double = "0.3"
-ntest = "0.9"
-dev_utils = { path = "../dev_utils" }
+fake.workspace = true
 lazy_static = "1.4"
+tempfile = { workspace = true }
+test-log = { version = "0.2", features = ["trace"] }
 
 [features]
 default = ["project", "runner", "system", "db"]
 db = ["project"]
 project = []
-runner = ["project"]
+runner = ["project", "dep:serde", "dep:rayon", "indexmap/rayon"]
 system = []
 
-serde = ["dep:serde", "serde/rc", "has_id/serde", "dep:serde_with"]
+serde = ["dep:serde", "serde/rc", "has_id/serde"]
 clap = ["dep:clap"]
 js = ["uuid/js"]
-yew = ["dep:yew", "chrono/wasmbind", "chrono/clock"]
+surreal_db = ["dep:surrealdb"]
