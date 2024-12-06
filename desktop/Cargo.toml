@@ -34,13 +34,13 @@ time = { version = "0.3", features = ["wasm-bindgen"] }
 getrandom = { version = "0.2", features = ["js"] }
 # tauri-sys = { git = "https://github.com/JonasKruckenberg/tauri-sys", branch = "v2", features = ["core", "event", "menu", "window"] }
 tauri-sys = { git = "https://github.com/bicarlsen/tauri-sys", branch = "v2", features = ["core", "event", "menu", "window"] }
-leptos = { version = "0.6", features = ["nightly", "csr"] }
-leptos_router = { version = "0.6", features = ["nightly", "csr"] }
-leptos_meta = { version = "0.6", features = ["nightly", "csr"] }
+leptos = { version = "0.7", features = ["nightly", "csr"] }
+leptos_router = { version = "0.7", features = ["nightly"] }
+leptos_meta = { version = "0.7" }
 chrono = { workspace = true, features = ["serde"] }
 leptos_icons = "0.3.1"
-icondata = "0.4.0"
-leptos-use = { git = "https://github.com/Synphonyte/leptos-use.git", branch = "leptos-0.6", features = ["storage"]}
+icondata = "0.5"
+leptos-use = { git = "https://github.com/Synphonyte/leptos-use.git", features = ["storage"]}
 derive_more.workspace = true
 
 [dependencies.web-sys]  
