@@ -88,7 +88,7 @@ pub mod workspace {
 
 pub mod workspace_graph {
     use leptos::prelude::*;
-    use std::rc::Rc;
+    use std::sync::Arc;
     use syre_core::types::ResourceId;
     use syre_local_database as db;
 
@@ -165,7 +165,7 @@ pub mod workspace_graph {
         ) -> Option<RwSignal<bool>> {
             self.container_visibility.with_untracked(|containers| {
                 containers.iter().find_map(|(node, visibility)| {
-                    Rc::ptr_eq(node, container).then_some(visibility.clone())
+                    Arc::ptr_eq(node, container).then_some(visibility.clone())
                 })
             })
         }
@@ -618,18 +618,17 @@ pub mod graph {
     use crate::common;
     use leptos::prelude::*;
     use std::{
-        cell::RefCell,
         ffi::OsString,
         iter,
         num::NonZeroUsize,
         ops::Deref,
         path::{Component, Path, PathBuf},
-        rc::Rc,
+        sync::{Arc, Mutex},
     };
     use syre_core::types::ResourceId;
     use syre_local_database as db;
 
-    pub type Node = Rc<Data>;
+    pub type Node = Arc<Data>;
 
     #[derive(Debug, Clone)]
     pub struct Data {
@@ -721,7 +720,7 @@ pub mod graph {
         nodes: RwSignal<Vec<Node>>, // NOTE: `nodes` is redundant with `children`, could be removed.
         root: Node,
         children: RwSignal<Children>,
-        parents: Rc<RefCell<Vec<(Node, RwSignal<Node>)>>>,
+        parents: Arc<Mutex<Vec<(Node, RwSignal<Node>)>>>,
     }
 
     impl State {
@@ -760,7 +759,7 @@ pub mod graph {
                 .into_iter()
                 .enumerate()
                 .map(|(index, container)| {
-                    Rc::new(Data::new(
+                    Arc::new(Data::new(
                         container,
                         graph_data[index].0,
                         graph_data[index].1,
@@ -796,7 +795,7 @@ pub mod graph {
                 nodes: RwSignal::new(nodes),
                 root,
                 children: RwSignal::new(children),
-                parents: Rc::new(RefCell::new(parents)),
+                parents: Arc::new(Mutex::new(parents)),
             }
         }
 
@@ -843,7 +842,7 @@ pub mod graph {
         pub fn children(&self, parent: &Node) -> Option<RwSignal<Vec<Node>>> {
             self.children.with_untracked(|children| {
                 children.iter().find_map(|(p, children)| {
-                    if Rc::ptr_eq(p, parent) {
+                    if Arc::ptr_eq(p, parent) {
                         Some(children.clone())
                     } else {
                         None
@@ -861,8 +860,8 @@ pub mod graph {
         /// 2. The child node is the graph root.
         /// It is left for the caller to distinguish between tese cases if needed.
         pub fn parent(&self, child: &Node) -> Option<RwSignal<Node>> {
-            self.parents.borrow().iter().find_map(|(c, parent)| {
-                if Rc::ptr_eq(c, child) {
+            self.parents.lock().unwrap().iter().find_map(|(c, parent)| {
+                if Arc::ptr_eq(c, child) {
                     Some(parent.clone())
                 } else {
                     None
@@ -874,7 +873,7 @@ pub mod graph {
         /// List of ancestors, in order, starting with the given node until the root.
         /// If the given node is not in the graph, an empty `Vec` is returned.
         pub fn ancestors(&self, root: &Node) -> Vec<Node> {
-            if Rc::ptr_eq(&self.root, root) {
+            if Arc::ptr_eq(&self.root, root) {
                 return vec![root.clone()];
             }
 
@@ -1140,11 +1139,13 @@ pub mod graph {
             // NB: Order of adding parents then children then nodes is
             // important for recursion in graph view.
             self.parents
-                .borrow_mut()
-                .extend(Rc::into_inner(parents).unwrap().into_inner());
+                .lock()
+                .unwrap()
+                .extend(Arc::into_inner(parents).unwrap().into_inner().unwrap());
 
             self.parents
-                .borrow_mut()
+                .lock()
+                .unwrap()
                 .push((root.clone(), RwSignal::new(parent.clone())));
 
             self.children
@@ -1242,7 +1243,7 @@ pub mod graph {
             }
 
             // NB: Parents do not update signal when child is removed.
-            self.parents.borrow_mut().retain(|(child, _)| {
+            self.parents.lock().unwrap().retain(|(child, _)| {
                 !descendants
                     .iter()
                     .any(|descendant| Node::ptr_eq(child, descendant))

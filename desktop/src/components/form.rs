@@ -23,11 +23,6 @@ pub fn InputNumber(
 
     #[prop(into, optional)] oninput: Option<Callback<String>>,
     #[prop(into, optional)] onblur: Option<Callback<FocusEvent>>,
-    #[prop(optional)] min: Option<f64>,
-    #[prop(optional)] max: Option<f64>,
-    #[prop(into, optional)] placeholder: MaybeProp<String>,
-    #[prop(default = false)] required: bool,
-    #[prop(into, optional)] class: Signal<String>,
 ) -> impl IntoView {
     const DECIMAL_MARKER: &'static str = ".";
 
@@ -70,13 +65,13 @@ pub fn InputNumber(
             }
         }
         if let Some(oninput) = oninput {
-            oninput(value);
+            oninput.run(value);
         }
     };
 
     let handle_onblur = move |e: FocusEvent| {
         if let Some(onblur) = onblur {
-            onblur(e);
+            onblur.run(e);
         }
     };
 
@@ -92,9 +87,6 @@ pub fn InputNumber(
             prop:value=value
             on:input=handle_oninput
             on:blur=handle_onblur
-            placeholder=placeholder
-            class=class
-            required=required
         />
     }
 }
@@ -107,12 +99,10 @@ pub mod debounced {
         #[prop(into)] value: Signal<String>,
         #[prop(into)] oninput: Callback<String>,
         #[prop(into)] debounce: Signal<f64>,
-        #[prop(into, optional)] placeholder: MaybeProp<String>,
-        #[prop(into, optional)] minlength: MaybeProp<usize>,
-        #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
         let (input_value, set_input_value) = signal(value::State::clean(value()));
-        let input_value = leptos_use::signal_debounced(input_value, debounce);
+        let input_value: Signal<value::State<String>> =
+            leptos_use::signal_debounced(input_value, debounce);
 
         let _ = Effect::watch(
             value.clone(),
@@ -125,7 +115,7 @@ pub mod debounced {
         Effect::new(move |_| {
             input_value.with(|value| {
                 if value.is_dirty() {
-                    oninput(value.value().clone());
+                    oninput.run(value.value().clone());
                 }
             })
         });
@@ -140,12 +130,9 @@ pub mod debounced {
                 on:blur=move |e| {
                     let v = event_target_value(&e);
                     if value.with(|value| *value != v) {
-                        oninput(v);
+                        oninput.run(v);
                     }
                 }
-                placeholder=placeholder
-                minlength=minlength
-                class=class
             />
         }
     }
@@ -158,7 +145,8 @@ pub mod debounced {
         #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
         let (input_value, set_input_value) = signal(value::State::clean(value()));
-        let input_value = leptos_use::signal_debounced(input_value, debounce);
+        let input_value: Signal<value::State<bool>> =
+            leptos_use::signal_debounced(input_value, debounce);
 
         let _ = Effect::watch(
             value.clone(),
@@ -174,7 +162,7 @@ pub mod debounced {
                 if input_value.is_dirty()
                     && value.with_untracked(|value| input_value.value() != value)
                 {
-                    oninput(*input_value.value());
+                    oninput.run(*input_value.value());
                 }
             },
             false,
@@ -191,7 +179,7 @@ pub mod debounced {
                 on:blur=move |e| {
                     let v = event_target_checked(&e);
                     if value.with(|value| *value != v) {
-                        oninput(v);
+                        oninput.run(v);
                     }
                 }
                 class=class
@@ -208,7 +196,8 @@ pub mod debounced {
         #[prop(into, optional)] class: MaybeProp<String>,
     ) -> impl IntoView {
         let (input_value, set_input_value) = signal(value::State::clean(value.get_untracked()));
-        let input_value = leptos_use::signal_debounced(input_value, debounce);
+        let input_value: Signal<value::State<String>> =
+            leptos_use::signal_debounced(input_value, debounce);
 
         let _ = Effect::watch(
             value.clone(),
@@ -221,7 +210,7 @@ pub mod debounced {
         Effect::new(move |_| {
             input_value.with(|value| {
                 if value.is_dirty() {
-                    oninput(value.value().clone());
+                    oninput.run(value.value().clone());
                 }
             })
         });
@@ -236,7 +225,7 @@ pub mod debounced {
                 on:blur=move |e| {
                     let v = event_target_value(&e);
                     if value.with(|value| *value != v) {
-                        oninput(v);
+                        oninput.run(v);
                     }
                 }
                 placeholder=placeholder

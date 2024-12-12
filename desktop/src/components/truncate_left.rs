@@ -1,4 +1,4 @@
-use leptos::prelude::*;
+use leptos::{prelude::*, text_prop::TextProp};
 
 // #[component]
 // pub fn TruncateLeft(children: Children, #[prop(optional, into)] class: TextProp) -> impl IntoView {

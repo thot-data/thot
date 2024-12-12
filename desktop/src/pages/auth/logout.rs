@@ -1,18 +1,20 @@
-use leptos::prelude::*;
-use leptos_router::hooks::use_navigate;
-use serde::Serialize;
+use leptos::{either::either, prelude::*};
+use leptos_router::components::Redirect;
 use syre_local::error::IoSerde;
 
 #[component]
 pub fn Logout() -> impl IntoView {
-    let status = Resource::new(|| (), |_| async move { logout().await });
-
-    move || {
-        status.with(|status| match status {
-            None => view! { <Pending /> },
-            Some(Ok(_)) => view! { <Redirecting /> },
-            Some(Err(err)) => view! { <LogoutErr err=err.clone() /> },
-        })
+    let status = LocalResource::new(logout);
+    view! {
+        <Suspense fallback=Pending>
+            {move || Suspend::new(async move {
+                either!(
+                    status.await,
+                    Ok(_) => view! { <RedirectHome /> },
+                    Err(err) => view! { <LogoutErr err=err.clone() /> },
+                )
+            })}
+        </Suspense>
     }
 }
 
@@ -22,11 +24,11 @@ fn Pending() -> impl IntoView {
 }
 
 #[component]
-fn Redirecting() -> impl IntoView {
-    let navigate = use_navigate();
-    navigate("/", Default::default());
-
-    view! { <div>"Redirecting to home page"</div> }
+fn RedirectHome() -> impl IntoView {
+    view! {
+        <div>"Redirecting to home page"</div>
+        <Redirect path="/" />
+    }
 }
 
 #[component]

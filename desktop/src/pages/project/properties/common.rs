@@ -13,28 +13,26 @@ pub mod kind {
         let input_value = Signal::derive(move || {
             value.with(|value| value.as_ref().cloned().unwrap_or(String::new()))
         });
-        let oninput_text = {
-            move |value: String| {
-                let value = value.trim();
-                let value = if value.is_empty() {
-                    None
-                } else {
-                    Some(value.to_string())
-                };
+        let oninput_text = Callback::new(move |value: String| {
+            let value = value.trim();
+            let value = if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            };
 
-                set_processed_value(value);
-            }
-        };
+            set_processed_value(value);
+        });
 
         let _ = Effect::watch(
             processed_value,
             move |processed_value, _, _| {
-                oninput(processed_value.clone());
+                oninput.run(processed_value.clone());
             },
             false,
         );
 
-        view! { <InputText value=input_value oninput=oninput_text debounce class /> }
+        view! { <InputText value=input_value oninput=oninput_text debounce attr:class=class /> }
     }
 }
 
@@ -53,28 +51,33 @@ pub mod description {
 
         let input_value = move || value.with(|value| value.clone().unwrap_or(String::new()));
 
-        let oninput_text = {
-            move |value: String| {
-                let value = value.trim();
-                let value = if value.is_empty() {
-                    None
-                } else {
-                    Some(value.to_string())
-                };
+        let oninput_text = Callback::new(move |value: String| {
+            let value = value.trim();
+            let value = if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            };
 
-                set_processed_value(value);
-            }
-        };
+            set_processed_value(value);
+        });
 
         let _ = Effect::watch(
             processed_value,
             move |processed_value, _, _| {
-                oninput(processed_value.clone());
+                oninput.run(processed_value.clone());
             },
             false,
         );
 
-        view! { <TextArea value=Signal::derive(input_value) oninput=oninput_text debounce class /> }
+        view! {
+            <TextArea
+                value=Signal::derive(input_value)
+                oninput=oninput_text
+                debounce
+                attr:class=class
+            />
+        }
     }
 }
 
@@ -92,40 +95,38 @@ pub mod tags {
         let (processed_value, set_processed_value) = signal(value.get_untracked());
         let input_value = Signal::derive(move || value.with(|value| value.join(", ")));
 
-        let oninput_text = {
-            move |value: String| {
-                let tags = value
-                    .split(",")
-                    .filter_map(|tag| {
-                        let tag = tag.trim();
-                        if tag.is_empty() {
-                            None
-                        } else {
-                            Some(tag.to_string())
-                        }
-                    })
-                    .collect::<Vec<_>>();
-
-                let mut tags_unique = Vec::with_capacity(tags.len());
-                for tag in tags {
-                    if !tags_unique.contains(&tag) {
-                        tags_unique.push(tag);
+        let oninput_text = Callback::new(move |value: String| {
+            let tags = value
+                .split(",")
+                .filter_map(|tag| {
+                    let tag = tag.trim();
+                    if tag.is_empty() {
+                        None
+                    } else {
+                        Some(tag.to_string())
                     }
-                }
+                })
+                .collect::<Vec<_>>();
 
-                set_processed_value(tags_unique)
+            let mut tags_unique = Vec::with_capacity(tags.len());
+            for tag in tags {
+                if !tags_unique.contains(&tag) {
+                    tags_unique.push(tag);
+                }
             }
-        };
+
+            set_processed_value(tags_unique)
+        });
 
         let _ = Effect::watch(
             processed_value,
             move |processed_value, _, _| {
-                oninput(processed_value.clone());
+                oninput.run(processed_value.clone());
             },
             false,
         );
 
-        view! { <InputText value=input_value oninput=oninput_text debounce class /> }
+        view! { <InputText value=input_value oninput=oninput_text debounce attr:class=class /> }
     }
 }
 
@@ -137,6 +138,7 @@ pub mod metadata {
         form::{debounced, InputNumber},
     };
     use leptos::{
+        either::either,
         ev::{FocusEvent, SubmitEvent},
         html,
         prelude::*,
@@ -157,7 +159,7 @@ pub mod metadata {
     ) -> impl IntoView {
         let input_debounce = expect_context::<InputDebounce>();
         let (key, set_key) = signal("".to_string());
-        let key = leptos_use::signal_debounced(key, *input_debounce);
+        let key: Signal<String> = leptos_use::signal_debounced(key, *input_debounce);
         let (value, set_value) = signal(Value::Number(serde_json::Number::from(0)));
 
         if let Some(reset) = reset {
@@ -208,7 +210,7 @@ pub mod metadata {
 
                 set_key.update(|key| key.clear());
                 set_value(Value::Number(serde_json::Number::from(0)));
-                onadd((key, value));
+                onadd.run((key, value));
             }
         };
 
@@ -242,24 +244,16 @@ pub mod metadata {
         #[prop(into, optional)] debounce: Signal<f64>,
         #[prop(into, optional)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let value_kind = create_memo(move |_| value.with(|value| value.kind()));
+        let value_kind = Memo::new(move |_| value.with(|value| value.kind()));
         let value_editor = move || {
-            value_kind.with(|kind| match kind {
-                ValueKind::Bool => {
-                    view! { <BoolEditor value oninput debounce /> }
-                }
-                ValueKind::String => {
-                    view! { <StringEditor value oninput debounce /> }
-                }
-                ValueKind::Number => {
-                    view! { <NumberEditor value oninput debounce /> }
-                }
-                ValueKind::Quantity => {
-                    view! { <QuantityEditor value oninput debounce /> }
-                }
-                ValueKind::Array => {
-                    view! { <ArrayEditor value oninput debounce /> }
-                }
+            value_kind.with(|kind| {
+                either!(kind,
+                    ValueKind::Bool => view! { <BoolEditor value oninput debounce /> },
+                    ValueKind::String => view! { <StringEditor value oninput debounce /> },
+                    ValueKind::Number => view! { <NumberEditor value oninput debounce /> },
+                    ValueKind::Quantity => view! { <QuantityEditor value oninput debounce /> },
+                    ValueKind::Array => view! { <ArrayEditor value oninput debounce /> },
+                )
             })
         };
 
@@ -295,7 +289,7 @@ pub mod metadata {
 
         let change = move |e| {
             let kind = string_to_kind(event_target_value(&e)).unwrap();
-            oninput(convert_value_kind(value.get(), &kind));
+            oninput.run(convert_value_kind(value.get(), &kind));
         };
 
         view! {
@@ -333,7 +327,8 @@ pub mod metadata {
 
             debounced::value::State::clean(*value)
         }));
-        let input_value = leptos_use::signal_debounced(input_value, debounce);
+        let input_value: Signal<debounced::value::State<bool>> =
+            leptos_use::signal_debounced(input_value, debounce);
 
         let _ = Effect::watch(
             value.clone(),
@@ -358,7 +353,7 @@ pub mod metadata {
                         input_value.value() != value
                     })
                 {
-                    oninput(Value::Bool(*input_value.value()));
+                    oninput.run(Value::Bool(*input_value.value()));
                 }
             },
             false,
@@ -372,7 +367,7 @@ pub mod metadata {
                 };
                 *value != v
             }) {
-                oninput(Value::Bool(v));
+                oninput.run(Value::Bool(v));
             }
         };
 
@@ -402,7 +397,8 @@ pub mod metadata {
 
             debounced::value::State::clean(value.clone())
         }));
-        let input_value = leptos_use::signal_debounced(input_value, debounce);
+        let input_value: Signal<debounced::value::State<String>> =
+            leptos_use::signal_debounced(input_value, debounce);
 
         let _ = Effect::watch(
             value.clone(),
@@ -419,7 +415,7 @@ pub mod metadata {
         Effect::new(move |_| {
             input_value.with(|input_value| {
                 if input_value.is_dirty() {
-                    oninput(Value::String(input_value.value().clone()));
+                    oninput.run(Value::String(input_value.value().clone()));
                 }
             })
         });
@@ -433,7 +429,7 @@ pub mod metadata {
 
                 v != *value
             }) {
-                oninput(Value::String(v));
+                oninput.run(Value::String(v));
             }
         };
 
@@ -464,7 +460,7 @@ pub mod metadata {
             };
             value.to_string()
         }));
-        let input_value = leptos_use::signal_debounced(input_value, debounce);
+        let input_value: Signal<String> = leptos_use::signal_debounced(input_value, debounce);
 
         let _ = Effect::watch(
             input_value,
@@ -474,7 +470,7 @@ pub mod metadata {
                     return;
                 };
 
-                oninput(Value::Number(value));
+                oninput.run(Value::Number(value));
             },
             false,
         );
@@ -486,7 +482,7 @@ pub mod metadata {
                 return;
             };
 
-            oninput(Value::Number(value));
+            oninput.run(Value::Number(value));
         });
 
         let class = move || {
@@ -503,8 +499,8 @@ pub mod metadata {
                 oninput=Callback::new(set_input_value)
                 onblur
                 set_is_valid
-                class=Signal::derive(class)
-                placeholder="Value"
+                attr:class=Signal::derive(class)
+                attr:placeholder="Value"
             />
         }
     }
@@ -515,8 +511,8 @@ pub mod metadata {
         oninput: Callback<Value>,
         debounce: Signal<f64>,
     ) -> impl IntoView {
-        let node_ref_magnitude = NodeRef::new::<html::Input>();
-        let node_ref_unit = NodeRef::new::<html::Input>();
+        let node_ref_magnitude = NodeRef::<html::Input>::new();
+        let node_ref_unit = NodeRef::<html::Input>::new();
         let (input_value_magnitude, set_input_value_magnitude) =
             signal(value.with_untracked(|value| {
                 let Value::Quantity { magnitude, .. } = value else {
@@ -546,13 +542,14 @@ pub mod metadata {
                 })
             })
         });
-        let input_value = leptos_use::signal_debounced(input_value, debounce);
+        let input_value: Signal<Option<Value>> =
+            leptos_use::signal_debounced(input_value, debounce);
 
         let _ = Effect::watch(
             input_value,
             move |input_value, _, _| {
                 if let Some(value) = input_value {
-                    oninput(value.clone());
+                    oninput.run(value.clone());
                 }
             },
             false,
@@ -587,7 +584,7 @@ pub mod metadata {
                     || input_value_unit.with_untracked(|input_value_unit| input_value_unit != unit)
             }) {
                 let unit = input_value_unit.with(|input_value| input_value.trim().to_string());
-                oninput(Value::Quantity {
+                oninput.run(Value::Quantity {
                     magnitude: input_value,
                     unit,
                 })
@@ -626,7 +623,7 @@ pub mod metadata {
 
                 input_value != unit || input_value_magnitude != *magnitude
             }) {
-                oninput(Value::Quantity {
+                oninput.run(Value::Quantity {
                     magnitude: input_value_magnitude,
                     unit: input_value.to_string(),
                 })
@@ -640,8 +637,8 @@ pub mod metadata {
                     value=Signal::derive(input_value_magnitude)
                     oninput=Callback::new(set_input_value_magnitude)
                     onblur=onblur_magnitude
-                    placeholder="Magnitude"
-                    class="input-compact"
+                    attr:placeholder="Magnitude"
+                    attr:class="input-compact"
                 />
 
                 <input
@@ -677,7 +674,7 @@ pub mod metadata {
                 .collect::<Vec<_>>()
                 .join("\n")
         }));
-        let input_value = leptos_use::signal_debounced(input_value, debounce);
+        let input_value: Signal<String> = leptos_use::signal_debounced(input_value, debounce);
 
         let _ = Effect::watch(
             value,
@@ -705,7 +702,7 @@ pub mod metadata {
                     Ok(val) => {
                         let val = Value::Array(val);
                         if value.with_untracked(|value| *value != val) {
-                            oninput(val);
+                            oninput.run(val);
                         }
                     }
                     Err(err) => set_error(Some(err)),
@@ -721,7 +718,7 @@ pub mod metadata {
                 Ok(val) => {
                     let val = Value::Array(val);
                     if value.with_untracked(|value| *value != val) {
-                        oninput(val);
+                        oninput.run(val);
                     }
                 }
                 Err(err) => set_error(Some(err)),
@@ -958,9 +955,9 @@ pub mod analysis_associations {
         #[prop(into)] onadd: Callback<core::project::AnalysisAssociation>,
         #[prop(optional, into)] class: MaybeProp<String>,
     ) -> impl IntoView {
-        let analysis_node = NodeRef::new::<html::Select>();
-        let priority_node = NodeRef::new::<html::Input>();
-        let autorun_node = NodeRef::new::<html::Input>();
+        let analysis_node = NodeRef::<html::Select>::new();
+        let priority_node = NodeRef::<html::Input>::new();
+        let autorun_node = NodeRef::<html::Input>::new();
 
         let add = move |_| {
             let analysis = analysis_node.get().unwrap();
@@ -976,7 +973,7 @@ pub mod analysis_associations {
             let association =
                 core::project::AnalysisAssociation::with_params(analysis, autorun, priority);
 
-            onadd(association);
+            onadd.run(association);
         };
 
         view! {
@@ -1113,18 +1110,16 @@ pub mod bulk {
                 }
             };
 
-            let oninput_text = {
-                move |value: String| {
-                    let value = value.trim();
-                    let value = if value.is_empty() {
-                        None
-                    } else {
-                        Some(value.to_string())
-                    };
+            let oninput_text = Callback::new(move |value: String| {
+                let value = value.trim();
+                let value = if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
+                };
 
-                    set_processed_value(value);
-                }
-            };
+                set_processed_value(value);
+            });
 
             let placeholder = {
                 let value = value.clone();
@@ -1139,7 +1134,7 @@ pub mod bulk {
             let _ = Effect::watch(
                 processed_value,
                 move |processed_value, _, _| {
-                    oninput(processed_value.clone());
+                    oninput.run(processed_value.clone());
                 },
                 false,
             );
@@ -1149,8 +1144,8 @@ pub mod bulk {
                     value=Signal::derive(input_value)
                     oninput=oninput_text
                     debounce
-                    placeholder=MaybeProp::derive(placeholder)
-                    class="input-compact"
+                    attr:placeholder=MaybeProp::derive(placeholder)
+                    attr:class="input-compact"
                 />
             }
         }
@@ -1185,18 +1180,16 @@ pub mod bulk {
                 }
             };
 
-            let oninput_text = {
-                move |value: String| {
-                    let value = value.trim();
-                    let value = if value.is_empty() {
-                        None
-                    } else {
-                        Some(value.to_string())
-                    };
+            let oninput_text = Callback::new(move |value: String| {
+                let value = value.trim();
+                let value = if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
+                };
 
-                    set_processed_value(value);
-                }
-            };
+                set_processed_value(value);
+            });
 
             let placeholder = {
                 let value = value.clone();
@@ -1211,7 +1204,7 @@ pub mod bulk {
             let _ = Effect::watch(
                 processed_value,
                 move |processed_value, _, _| {
-                    oninput(processed_value.clone());
+                    oninput.run(processed_value.clone());
                 },
                 false,
             );
@@ -1232,7 +1225,8 @@ pub mod bulk {
         use crate::{components, types};
         use leptos::{
             ev::{MouseEvent, SubmitEvent},
-            *,
+            html,
+            prelude::*,
         };
         use leptos_icons::Icon;
         use wasm_bindgen::JsCast;
@@ -1259,7 +1253,7 @@ pub mod bulk {
             let remove = move |tag: String| {
                 move |e: MouseEvent| {
                     if e.button() == types::MouseButton::Primary {
-                        onremove(tag.clone());
+                        onremove.run(tag.clone());
                     }
                 }
             };
@@ -1278,7 +1272,8 @@ pub mod bulk {
                                                     <button
                                                         type="button"
                                                         on:mousedown=remove(tag.clone())
-                                                        class="aspect-square h-full rounded-full hover:bg-secondary-200 dark:hover:bg-secondary-600"
+                                                        class="aspect-square h-full rounded-full hover:bg-secondary-200 \
+                                                        dark:hover:bg-secondary-600"
                                                     >
 
                                                         <Icon icon=components::icon::Add class="inline-block" />
@@ -1303,7 +1298,7 @@ pub mod bulk {
             reset: Option<ReadSignal<()>>,
             #[prop(optional, into)] class: MaybeProp<String>,
         ) -> impl IntoView {
-            let input_ref = NodeRef::new::<html::Input>();
+            let input_ref = NodeRef::<html::Input>::new();
 
             if let Some(reset) = reset {
                 let _ = Effect::watch(
@@ -1341,7 +1336,7 @@ pub mod bulk {
 
                 tags.sort();
                 tags.dedup();
-                onadd(tags);
+                onadd.run(tags);
             };
 
             view! {
@@ -1371,7 +1366,11 @@ pub mod bulk {
             metadata::{convert_value_kind, kind_to_str, string_to_kind, value_to_kind_str},
         };
         use crate::components::{self, form::InputNumber};
-        use leptos::prelude::*;
+        use leptos::{
+            either::{either, Either},
+            html,
+            prelude::*,
+        };
         use leptos_icons::Icon;
         use syre_core::types::data;
 
@@ -1468,12 +1467,12 @@ pub mod bulk {
                             value=datum.value()
                             oninput={
                                 let key = datum.key().clone();
-                                Callback::new(move |value| onmodify((key.clone(), value)))
+                                Callback::new(move |value| onmodify.run((key.clone(), value)))
                             }
 
                             onremove=Callback::new({
                                 let key = datum.key().clone();
-                                move |_| onremove(key.clone())
+                                move |_| onremove.run(key.clone())
                             })
                         />
 
@@ -1497,7 +1496,7 @@ pub mod bulk {
 
                         <button
                             type="button"
-                            on:mousedown=move |_| onremove(())
+                            on:mousedown=move |_| onremove.run(())
                             class="aspect-square h-full rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-700"
                         >
 
@@ -1514,7 +1513,7 @@ pub mod bulk {
             value: Signal<Value>,
             #[prop(into)] oninput: Callback<data::Value>,
         ) -> impl IntoView {
-            let value_kind = create_memo(move |_| {
+            let value_kind = Memo::new(move |_| {
                 value.with(|value| match value {
                     Value::MixedKind => None,
                     Value::EqualKind(value) => Some(value.clone()),
@@ -1525,24 +1524,14 @@ pub mod bulk {
             let value_editor = {
                 let oninput = oninput.clone();
                 move || {
-                    value_kind.with(|kind| match kind {
-                        None => view! {}.into_view(),
-                        Some(data::ValueKind::Bool) => {
-                            view! { <BoolEditor value oninput /> }.into_view()
-                        }
-                        Some(data::ValueKind::String) => {
-                            view! { <StringEditor value oninput /> }.into_view()
-                        }
-                        Some(data::ValueKind::Number) => {
-                            view! { <NumberEditor value oninput /> }.into_view()
-                        }
-                        Some(data::ValueKind::Quantity) => {
-                            view! { <QuantityEditor value oninput /> }.into_view()
-                        }
-                        Some(data::ValueKind::Array) => {
-                            view! { <ArrayEditor value oninput /> }.into_view()
-                        }
-                    })
+                    value_kind.with(|kind| either!( kind,
+                        None => view! {},
+                        Some(data::ValueKind::Bool) => view! { <BoolEditor value oninput /> },
+                        Some(data::ValueKind::String) => view! { <StringEditor value oninput /> },
+                        Some(data::ValueKind::Number) => view! { <NumberEditor value oninput /> },
+                        Some(data::ValueKind::Quantity) => view! { <QuantityEditor value oninput /> },
+                        Some(data::ValueKind::Array) => view! { <ArrayEditor value oninput /> },
+                    ))
                 }
             };
 
@@ -1581,9 +1570,9 @@ pub mod bulk {
                 let kind = string_to_kind(event_target_value(&e)).unwrap();
                 value.with_untracked(|value| {
                     if let Value::Equal(value) = value {
-                        onchange(convert_value_kind(value.clone(), &kind));
+                        onchange.run(convert_value_kind(value.clone(), &kind));
                     } else {
-                        onchange(convert_value_kind(data::Value::Null, &kind));
+                        onchange.run(convert_value_kind(data::Value::Null, &kind));
                     }
                 })
             };
@@ -1610,14 +1599,15 @@ pub mod bulk {
                         value
                             .with(|value| {
                                 if value.is_mixed_kind() {
-                                    view! {
-                                        <option value="" disabled=true selected>
-                                            "(mixed)"
-                                        </option>
-                                    }
-                                        .into_view()
+                                    Either::Left(
+                                        view! {
+                                            <option value="" disabled=true selected>
+                                                "(mixed)"
+                                            </option>
+                                        },
+                                    )
                                 } else {
-                                    view! {}.into_view()
+                                    Either::Right(view! {})
                                 }
                             })
                     }}
@@ -1644,7 +1634,7 @@ pub mod bulk {
             view! {
                 <input
                     type="checkbox"
-                    on:input=move |e| oninput(data::Value::Bool(event_target_checked(&e)))
+                    on:input=move |e| oninput.run(data::Value::Bool(event_target_checked(&e)))
                     checked=checked
                 />
             }
@@ -1672,7 +1662,7 @@ pub mod bulk {
                 <input
                     type="text"
                     prop:value=input_value
-                    on:input=move |e| oninput(data::Value::String(event_target_value(&e)))
+                    on:input=move |e| oninput.run(data::Value::String(event_target_value(&e)))
                     placeholder=placeholder
                     class="input-compact"
                 />
@@ -1702,15 +1692,15 @@ pub mod bulk {
                     return;
                 };
 
-                oninput(data::Value::Number(value));
+                oninput.run(data::Value::Number(value));
             };
 
             view! {
                 <InputNumber
                     value=Signal::derive(input_value)
                     oninput=Callback::new(oninput_text)
-                    placeholder=MaybeProp::derive(placeholder)
-                    class="input-compact"
+                    attr:placeholder=MaybeProp::derive(placeholder)
+                    attr:class="input-compact"
                 />
             }
         }
@@ -1735,9 +1725,9 @@ pub mod bulk {
                 })
             });
 
-            let oninput_magnitude = move |magnitude: String| {
+            let oninput_magnitude = Callback::new(move |magnitude: String| {
                 set_magnitude(magnitude);
-            };
+            });
 
             let oninput_unit = move |e| {
                 set_unit(event_target_value(&e));
@@ -1754,7 +1744,7 @@ pub mod bulk {
                         return;
                     }
 
-                    oninput(data::Value::Quantity {
+                    oninput.run(data::Value::Quantity {
                         magnitude,
                         unit: unit(),
                     });
@@ -1767,8 +1757,8 @@ pub mod bulk {
                     <InputNumber
                         value=magnitude
                         oninput=oninput_magnitude
-                        placeholder="Magnitude"
-                        class="input-compact max-w-[50%]"
+                        attr:placeholder="Magnitude"
+                        attr:class="input-compact max-w-[50%]"
                     />
                     <input
                         prop:value=unit
@@ -1796,7 +1786,8 @@ pub mod bulk {
                     Value::MixedKind | Value::Equal(_) => unreachable!(),
                 }
             }));
-            let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
+            let input_value: Signal<String> =
+                leptos_use::signal_debounced(input_value, *input_debounce);
 
             let placeholder = move || {
                 value.with(|value| match value {
@@ -1824,7 +1815,7 @@ pub mod bulk {
                         .collect::<serde_json::Result<Vec<_>>>();
 
                     match val {
-                        Ok(val) => oninput(data::Value::Array(val)),
+                        Ok(val) => oninput.run(data::Value::Array(val)),
                         Err(err) => set_error(Some(err)),
                     }
                 },

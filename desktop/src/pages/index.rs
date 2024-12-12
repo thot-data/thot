@@ -1,5 +1,5 @@
 use super::{Home, Landing};
-use crate::{commands, types::Messages};
+use crate::commands;
 use futures::StreamExt;
 use leptos::{prelude::*, task::spawn_local};
 use syre_core as core;
@@ -7,23 +7,23 @@ use syre_desktop_lib as lib;
 
 #[component]
 pub fn Index() -> impl IntoView {
-    let active_user = Resource::new(|| (), |_| async move { commands::user::fetch_user().await });
+    let active_user = LocalResource::new(commands::user::fetch_user);
 
     view! {
         <Suspense fallback=Initializing>
             <ErrorBoundary fallback=|errors| {
                 view! { <ActiveUserErrors errors /> }
             }>
-                {move || {
-                    active_user().map(|user| user.map(|user| view! { <IndexView user /> }))
-                }}
+                {move || Suspend::new(async move {
+                    active_user.await.map(|user| view! { <IndexView user /> })
+                })}
             </ErrorBoundary>
         </Suspense>
     }
 }
 
 #[component]
-fn ActiveUserErrors(errors: RwSignal<Errors>) -> impl IntoView {
+fn ActiveUserErrors(errors: ArcRwSignal<Errors>) -> impl IntoView {
     view! {
         <div class="text-center">
             <div class="text-lg p-4">"An error occurred."</div>

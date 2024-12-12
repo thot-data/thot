@@ -9,9 +9,9 @@ use crate::{
     types,
 };
 use futures::StreamExt;
-use leptos::{ev::MouseEvent, prelude::*, task::spawn_local};
+use leptos::{either::Either, ev::MouseEvent, prelude::*, task::spawn_local};
 use leptos_icons::Icon;
-use std::rc::Rc;
+use std::sync::Arc;
 use syre_core::types::ResourceId;
 use syre_desktop_lib as lib;
 use syre_local_database as db;
@@ -19,18 +19,18 @@ use tauri_sys::{core::Channel, menu};
 
 /// Context menu for containers that are `Ok`.
 #[derive(derive_more::Deref, Clone)]
-struct ContextMenuContainerOk(Rc<menu::Menu>);
+struct ContextMenuContainerOk(Arc<menu::Menu>);
 impl ContextMenuContainerOk {
-    pub fn new(menu: Rc<menu::Menu>) -> Self {
+    pub fn new(menu: Arc<menu::Menu>) -> Self {
         Self(menu)
     }
 }
 
 /// Context menu for assets.
 #[derive(derive_more::Deref, Clone)]
-struct ContextMenuAsset(Rc<menu::Menu>);
+struct ContextMenuAsset(Arc<menu::Menu>);
 impl ContextMenuAsset {
-    pub fn new(menu: Rc<menu::Menu>) -> Self {
+    pub fn new(menu: Arc<menu::Menu>) -> Self {
         Self(menu)
     }
 }
@@ -59,7 +59,7 @@ pub fn LayersNav() -> impl IntoView {
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
-        move |_| {
+        move || {
             let project = project.clone();
             let graph = graph.clone();
             let messages = messages.clone();
@@ -84,7 +84,7 @@ pub fn LayersNav() -> impl IntoView {
                     )
                 });
 
-                Rc::new(menu)
+                Arc::new(menu)
             }
         }
     });
@@ -93,7 +93,7 @@ pub fn LayersNav() -> impl IntoView {
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
-        move |_| {
+        move || {
             let project = project.clone();
             let graph = graph.clone();
             let messages = messages.clone();
@@ -118,7 +118,7 @@ pub fn LayersNav() -> impl IntoView {
                     )
                 });
 
-                Rc::new(menu)
+                Arc::new(menu)
             }
         }
     });
@@ -127,15 +127,11 @@ pub fn LayersNav() -> impl IntoView {
         <Suspense fallback=move || {
             view! { <LayersNavLoading /> }
         }>
-            {move || {
-                let Some(context_menu_container_ok) = context_menu_container_ok.get() else {
-                    return None;
-                };
-                let Some(context_menu_asset) = context_menu_asset.get() else {
-                    return None;
-                };
-                Some(view! { <LayersNavView context_menu_container_ok context_menu_asset /> })
-            }}
+            {move || Suspend::new(async move {
+                let context_menu_container_ok = context_menu_container_ok.await;
+                let context_menu_asset = context_menu_asset.await;
+                view! { <LayersNavView context_menu_container_ok context_menu_asset /> }
+            })}
 
         </Suspense>
     }
@@ -148,8 +144,8 @@ fn LayersNavLoading() -> impl IntoView {
 
 #[component]
 pub fn LayersNavView(
-    context_menu_container_ok: Rc<menu::Menu>,
-    context_menu_asset: Rc<menu::Menu>,
+    context_menu_container_ok: Arc<menu::Menu>,
+    context_menu_asset: Arc<menu::Menu>,
 ) -> impl IntoView {
     let graph = expect_context::<state::Graph>();
     provide_context(ContextMenuContainerOk::new(context_menu_container_ok));
@@ -173,9 +169,15 @@ fn ContainerLayer(root: state::graph::Node, #[prop(optional)] depth: usize) -> i
                 let root = root.clone();
                 move || {
                     if root.properties().with(|properties| properties.is_ok()) {
-                        view! { <ContainerLayerTitleOk container=root.clone() depth expanded /> }
+                        Either::Left(
+                            view! {
+                                <ContainerLayerTitleOk container=root.clone() depth expanded />
+                            },
+                        )
                     } else {
-                        view! { <ContainerLayerTitleErr container=root.clone() depth /> }
+                        Either::Right(
+                            view! { <ContainerLayerTitleErr container=root.clone() depth /> },
+                        )
                     }
                 }
             } <div class:hidden=move || !expanded()>
@@ -201,6 +203,7 @@ fn ContainerLayer(root: state::graph::Node, #[prop(optional)] depth: usize) -> i
             </div>
         </div>
     }
+    .into_any()
 }
 
 #[component]
@@ -218,8 +221,9 @@ fn ContainerLayerTitleOk(
         expect_context::<RwSignal<Option<ContextMenuActiveContainer>>>();
     let viewbox = expect_context::<ViewboxState>();
 
-    let (click_event, set_click_event) = signal::<Option<MouseEvent>>(None);
-    let click_event = leptos_use::signal_debounced(click_event, CLICK_DEBOUNCE);
+    let (click_event, set_click_event) = signal_local::<Option<MouseEvent>>(None);
+    let click_event: Signal<Option<MouseEvent>, _> =
+        leptos_use::signal_debounced_local(click_event, CLICK_DEBOUNCE);
 
     let properties = {
         let container = container.clone();
@@ -373,10 +377,8 @@ fn ContainerLayerTitleOk(
 
             let x0 = x + object_x - viewbox.width().with_untracked(|width| width / 2) as isize;
             let y0 = y - viewbox.height().with_untracked(|height| height / 2) as isize;
-            leptos::batch(|| {
-                viewbox.x().set(x0);
-                viewbox.y().set(y0);
-            });
+            viewbox.x().set(x0);
+            viewbox.y().set(y0);
         }
     };
 
@@ -443,18 +445,19 @@ fn ContainerLayerTitleOk(
                                         }
                                     })
                             });
-                            view! {
-                                <button
-                                    type="button"
-                                    on:mousedown=toggle_container_visibility
-                                    class="align-middle"
-                                >
-                                    <Icon icon=visibility_icon />
-                                </button>
-                            }
-                                .into_view()
+                            Either::Left(
+                                view! {
+                                    <button
+                                        type="button"
+                                        on:mousedown=toggle_container_visibility
+                                        class="align-middle"
+                                    >
+                                        <Icon icon=visibility_icon />
+                                    </button>
+                                },
+                            )
                         } else {
-                            view! {}.into_view()
+                            Either::Right(())
                         }
                     }}
                 </div>
@@ -482,9 +485,9 @@ fn AssetsLayer(container: state::graph::Node, depth: usize) -> impl IntoView {
     move || {
         container.assets().with(|assets| {
             if let db::state::DataResource::Ok(assets) = assets {
-                view! { <AssetsLayerOk assets=assets.read_only() depth=depth /> }
+                Either::Left(view! { <AssetsLayerOk assets=assets.read_only() depth=depth /> })
             } else {
-                view! { <AssetsLayerErr depth /> }
+                Either::Right(view! { <AssetsLayerErr depth /> })
             }
         })
     }

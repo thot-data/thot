@@ -1,6 +1,6 @@
 use super::state::{self, workspace_graph};
 use crate::types;
-use leptos::{html, prelude::*};
+use leptos::{either::EitherOf7, html, prelude::*};
 use std::fmt;
 use syre_desktop_lib as lib;
 
@@ -75,13 +75,12 @@ pub fn PropertiesBar() -> impl IntoView {
         let selected = workspace_graph_state.selection_resources().selected();
         move || {
             active_editor.with(|active_editor| match active_editor {
-                EditorKind::Project => view! { <Project /> }.into_view(),
-                EditorKind::Analyses => view! {
+                EditorKind::Project => EitherOf7::A(Project),
+                EditorKind::Analyses => EitherOf7::B(view! {
                     <div id=ANALYSES_ID class="h-full">
                         <Analyses />
                     </div>
-                }
-                .into_view(),
+                }),
                 EditorKind::Container => {
                     let container = selected.with(|selected| {
                         let [resource] = &selected[..] else {
@@ -93,7 +92,7 @@ pub fn PropertiesBar() -> impl IntoView {
                             .with_untracked(|rid| graph.find_by_id(rid).unwrap())
                     });
 
-                    view! { <Container container=container.state().clone() /> }.into_view()
+                    EitherOf7::C(view! { <Container container=container.state().clone() /> })
                 }
                 EditorKind::Asset => {
                     let asset = selected.with(|selected| {
@@ -106,7 +105,7 @@ pub fn PropertiesBar() -> impl IntoView {
                             .with(|rid| graph.find_asset_by_id(rid).unwrap())
                     });
 
-                    view! { <Asset asset /> }.into_view()
+                    EitherOf7::D(view! { <Asset asset /> })
                 }
                 EditorKind::ContainerBulk => {
                     let containers = Signal::derive(move || {
@@ -118,7 +117,7 @@ pub fn PropertiesBar() -> impl IntoView {
                         })
                     });
 
-                    view! { <ContainerBulk containers /> }.into_view()
+                    EitherOf7::E(view! { <ContainerBulk containers /> })
                 }
                 EditorKind::AssetBulk => {
                     let assets = Signal::derive(move || {
@@ -130,9 +129,9 @@ pub fn PropertiesBar() -> impl IntoView {
                         })
                     });
 
-                    view! { <AssetBulk assets /> }.into_view()
+                    EitherOf7::F(view! { <AssetBulk assets /> })
                 }
-                EditorKind::MixedBulk => view! { <MixedBulk resources=selected /> }.into_view(),
+                EditorKind::MixedBulk => EitherOf7::G(view! { <MixedBulk resources=selected /> }),
             })
         }
     };
@@ -195,9 +194,9 @@ fn active_editor_from_selection(
 /// # Returns
 /// y-coordinate of the base relative to the parent, clamped to be within the viewport.
 pub fn detail_popout_top(
-    popout: &HtmlElement<html::Div>,
-    base: &HtmlElement<html::Div>,
-    parent: &HtmlElement<html::Div>,
+    popout: &web_sys::HtmlElement,
+    base: &web_sys::HtmlElement,
+    parent: &web_sys::HtmlElement,
 ) -> i32 {
     const MARGIN: i32 = 5;
 

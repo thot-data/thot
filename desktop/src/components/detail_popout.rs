@@ -1,5 +1,5 @@
 use crate::{components, types};
-use leptos::{ev::MouseEvent, prelude::*};
+use leptos::{ev::MouseEvent, prelude::*, text_prop::TextProp};
 use leptos_icons::Icon;
 
 #[component]
@@ -11,7 +11,7 @@ pub fn DetailPopout(
     let close = move |e: MouseEvent| {
         if e.button() == types::MouseButton::Primary {
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
         }
     };
@@ -19,7 +19,7 @@ pub fn DetailPopout(
     view! {
         <div class="rounded border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 shadow shadow-primary-700 dark:shadow-none">
             <div class="flex p-1 border-b dark:border-secondary-500">
-                <span class="grow">{title}</span>
+                <span class="grow">{title.get()}</span>
                 <span>
                     <button
                         type="button"

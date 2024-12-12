@@ -7,8 +7,10 @@ use crate::{
 use description::Editor as Description;
 use kind::Editor as Kind;
 use leptos::{
+    either::{either, Either},
     ev::{Event, MouseEvent},
     html,
+    portal::Portal,
     prelude::*,
 };
 use leptos_icons::Icon;
@@ -293,7 +295,7 @@ pub fn Editor(resources: ReadSignal<Vec<workspace_graph::Resource>>) -> impl Int
             .unwrap();
     };
 
-    let on_widget_close = move |_| {
+    let on_widget_close = move || {
         set_widget.update(|widget| {
             widget.take();
         });
@@ -442,13 +444,12 @@ pub fn Editor(resources: ReadSignal<Vec<workspace_graph::Resource>>) -> impl Int
                     let mount = (*mount).clone();
                     view! {
                         <Portal mount>
-                            {move || match widget().unwrap() {
-                                Widget::AddTags => {
-                                    view! { <AddTags onclose=on_widget_close.clone() /> }
-                                }
-                                Widget::AddMetadatum => {
-                                    view! { <AddDatum onclose=on_widget_close.clone() /> }
-                                }
+                            {move || {
+                                either!(
+                                    widget().unwrap(),
+                                Widget::AddTags => view! { <AddTags onclose=on_widget_close.clone() /> },
+                                Widget::AddMetadatum => view! { <AddDatum onclose=on_widget_close.clone() /> },
+                                )
                             }}
                         </Portal>
                     }
@@ -464,7 +465,7 @@ mod kind {
         InputDebounce, State,
     };
     use crate::{pages::project::state, types::Messages};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_desktop_lib::command::asset::bulk::PropertiesUpdate;
 
     #[component]
@@ -500,7 +501,7 @@ mod description {
         ActiveResources, InputDebounce, State,
     };
     use crate::{pages::project::state, types::Messages};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_desktop_lib::command::asset::bulk::PropertiesUpdate;
 
     #[component]
@@ -541,7 +542,7 @@ mod tags {
         update_properties, ActiveResources, State,
     };
     use crate::{components::DetailPopout, pages::project::state, types::Messages};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_desktop_lib::command::{asset::bulk::PropertiesUpdate, bulk::TagsAction};
 
     #[component]
@@ -602,7 +603,7 @@ mod tags {
                 async move {
                     update_properties(project, resources, update, &graph, messages).await;
                     if let Some(onclose) = onclose {
-                        onclose(());
+                        onclose.run(());
                     }
                 }
             });
@@ -610,13 +611,13 @@ mod tags {
 
         let close = move |_| {
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
         };
 
         view! {
             <DetailPopout title="Add tags" onclose=Callback::new(close)>
-                <AddTagsEditor onadd=Callback::new(onadd) class="w-full px-1" />
+                <AddTagsEditor onadd class="w-full px-1" />
             </DetailPopout>
         }
     }
@@ -630,7 +631,7 @@ mod metadata {
         update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{components::DetailPopout, pages::project::state, types::Messages};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_core::types::data;
     use syre_desktop_lib::command::{asset::bulk::PropertiesUpdate, bulk::MetadataAction};
 
@@ -643,7 +644,8 @@ mod metadata {
         let state = expect_context::<Signal<State>>();
         let input_debounce = expect_context::<InputDebounce>();
         let (modifications, set_modifications) = signal(vec![]);
-        let modifications = leptos_use::signal_debounced(modifications, *input_debounce);
+        let modifications: Signal<Vec<(String, data::Value)>> =
+            leptos_use::signal_debounced(modifications, *input_debounce);
 
         let onremove = Callback::new({
             let project = project.clone();
@@ -732,7 +734,7 @@ mod metadata {
                     async move {
                         update_properties(project, resources, update, &graph, messages).await;
                         if let Some(onclose) = onclose {
-                            onclose(());
+                            onclose.run(());
                         }
                     }
                 });
@@ -750,19 +752,15 @@ mod metadata {
             })
         };
 
-        let close = move |_| {
+        let onclose = Callback::new(move |_| {
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
-        };
+        });
 
         view! {
-            <DetailPopout title="Add metadata" onclose=Callback::new(close)>
-                <AddDatumEditor
-                    keys=Signal::derive(keys)
-                    onadd=Callback::new(onadd)
-                    class="w-full px-1"
-                />
+            <DetailPopout title="Add metadata" onclose>
+                <AddDatumEditor keys=Signal::derive(keys) onadd class="w-full px-1" />
             </DetailPopout>
         }
     }
@@ -808,26 +806,28 @@ async fn update_properties(
                 let errors = view! {
                     <div>
                         {if !container_errors.is_empty() {
-                            view! {
-                                <div>
-                                    <h2>"Containers"</h2>
-                                    {errors_to_list_view(container_errors)}
-                                </div>
-                            }
-                                .into_view()
+                            Either::Left(
+                                view! {
+                                    <div>
+                                        <h2>"Containers"</h2>
+                                        {errors_to_list_view(container_errors)}
+                                    </div>
+                                },
+                            )
                         } else {
-                            view! {}.into_view()
+                            Either::Right(view! {})
                         }}
                         {if !asset_errors.is_empty() {
-                            view! {
-                                <div>
-                                    <h2>"Assets"</h2>
-                                    {errors_to_list_view(asset_errors)}
-                                </div>
-                            }
-                                .into_view()
+                            Either::Left(
+                                view! {
+                                    <div>
+                                        <h2>"Assets"</h2>
+                                        {errors_to_list_view(asset_errors)}
+                                    </div>
+                                },
+                            )
                         } else {
-                            view! {}.into_view()
+                            Either::Right(view! {})
                         }}
                     </div>
                 };

@@ -3,9 +3,9 @@ use crate::{
     pages::{Dashboard, Settings},
     types,
 };
-use leptos::{ev::MouseEvent, prelude::*};
+use leptos::{either::either, ev::MouseEvent, prelude::*};
 use leptos_icons::Icon;
-use leptos_router::*;
+use leptos_router::components::A;
 use syre_core::system::User;
 use syre_desktop_lib as lib;
 
@@ -20,22 +20,16 @@ impl ShowSettings {
 #[component]
 pub fn Home(user: User) -> impl IntoView {
     provide_context(user);
-    let user_settings = Resource::new(|| (), fetch_user_settings);
-
+    let user_settings = LocalResource::new(fetch_user_settings);
     view! {
-        <Suspense fallback=move || {
-            view! { <Loading /> }
-        }>
-
-            {move || {
-                user_settings
-                    .map(|user_settings| match user_settings {
-                        None => view! { <NoSettings /> },
-                        Some(user_settings) => {
-                            view! { <HomeView user_settings=user_settings.clone() /> }
-                        }
-                    })
-            }}
+        <Suspense fallback=Loading>
+            {move || Suspend::new(async move {
+                either!(
+                    user_settings.await,
+                    None => view! { <NoSettings /> },
+                    Some(user_settings) => view! { <HomeView user_settings=user_settings.clone() /> },
+                )
+            })}
         </Suspense>
     }
 }
@@ -106,7 +100,7 @@ fn HomeView(user_settings: lib::settings::User) -> impl IntoView {
                     class=(["right-0", "left-0"], move || show_settings())
                     class="absolute top-0 bottom-0 transition-absolute-position"
                 >
-                    <Settings onclose=move |_| show_settings.set(false) />
+                    <Settings onclose=move || show_settings.set(false) />
                 </div>
             </main>
         </div>
@@ -128,8 +122,8 @@ fn MainNav() -> impl IntoView {
         <nav class="px-2 border-b dark:bg-secondary-900 flex justify-between">
             <ol>
                 <li>
-                    <A href="/" class="inline-block align-middle">
-                        <Logo class="h-4" />
+                    <A href="/" attr:class="inline-block align-middle">
+                        <Logo attr:class="h-4" />
                     </A>
                 </li>
             </ol>
@@ -147,7 +141,7 @@ fn MainNav() -> impl IntoView {
                 <li>
                     <A
                         href="/logout"
-                        class="inline-block align-middle p-1 hover:bg-secondary-100 dark:hover:bg-secondary-800 rounded border border-transparent hover:border-secondary-200 dark:hover:border-white"
+                        attr:class="inline-block align-middle p-1 hover:bg-secondary-100 dark:hover:bg-secondary-800 rounded border border-transparent hover:border-secondary-200 dark:hover:border-white"
                     >
                         <Icon icon=icondata::IoLogOutOutline class="[&_*]:dark:!stroke-white h-4" />
                     </A>

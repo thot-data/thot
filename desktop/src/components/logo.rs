@@ -1,8 +1,8 @@
 use crate::app::PrefersDarkTheme;
-use leptos::prelude::*;
+use leptos::{prelude::*, text_prop::TextProp};
 
 #[component]
-pub fn Logo(#[prop(into, optional)] class: MaybeProp<TextProp>) -> impl IntoView {
+pub fn Logo() -> impl IntoView {
     let prefers_dark = expect_context::<PrefersDarkTheme>();
     let home_icon_src = move || {
         if prefers_dark() {
@@ -12,5 +12,5 @@ pub fn Logo(#[prop(into, optional)] class: MaybeProp<TextProp>) -> impl IntoView
         }
     };
 
-    view! { <img src=home_icon_src class=class.get() /> }
+    view! { <img src=home_icon_src /> }
 }

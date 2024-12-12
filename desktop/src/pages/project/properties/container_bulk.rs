@@ -4,8 +4,11 @@ use analysis_associations::{AddAssociation, Editor as AnalysisAssociations};
 use description::Editor as Description;
 use kind::Editor as Kind;
 use leptos::{
+    either::either,
     ev::{Event, MouseEvent},
-    prelude::*, html
+    html,
+    portal::Portal,
+    prelude::*,
 };
 use leptos_icons::Icon;
 use metadata::{AddDatum, Editor as Metadata};
@@ -358,14 +361,18 @@ pub fn Editor(containers: Signal<Vec<ResourceId>>) -> impl IntoView {
             .unwrap();
     };
 
-    let on_widget_close = move |_| {
+    let on_widget_close = move || {
         set_widget.update(|widget| {
             widget.take();
         });
     };
 
     view! {
-        <div node_ref=wrapper_node on:scroll=scroll class="overflow-y-auto pr-2 h-full scrollbar-thin">
+        <div
+            node_ref=wrapper_node
+            on:scroll=scroll
+            class="overflow-y-auto pr-2 h-full scrollbar-thin"
+        >
             <div class="text-center pt-1 pb-2">
                 <h3 class="font-primary">"Bulk containers"</h3>
                 <span class="text-sm text-secondary-500 dark:text-secondary-400">
@@ -539,16 +546,13 @@ pub fn Editor(containers: Signal<Vec<ResourceId>>) -> impl IntoView {
                     let mount = (*mount).clone();
                     view! {
                         <Portal mount>
-                            {move || match widget().unwrap() {
-                                Widget::AddTags => {
-                                    view! { <AddTags onclose=on_widget_close.clone() /> }
-                                }
-                                Widget::AddMetadatum => {
-                                    view! { <AddDatum onclose=on_widget_close.clone() /> }
-                                }
-                                Widget::AddAnalysisAssociation => {
-                                    view! { <AddAssociation onclose=on_widget_close.clone() /> }
-                                }
+                            {move || {
+                                either!(
+                                    widget().unwrap(),
+                                    Widget::AddTags => view! { <AddTags onclose=on_widget_close.clone() /> },
+                                    Widget::AddMetadatum => view! { <AddDatum onclose=on_widget_close.clone() /> },
+                                    Widget::AddAnalysisAssociation => view! { <AddAssociation onclose=on_widget_close.clone() /> },
+                                )
                             }}
                         </Portal>
                     }
@@ -562,7 +566,7 @@ pub fn Editor(containers: Signal<Vec<ResourceId>>) -> impl IntoView {
 mod name {
     use super::{super::common::bulk::Value, ActiveResources, InputDebounce, State};
     use crate::{pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use serde::Serialize;
     use std::{ffi::OsString, path::PathBuf};
     use syre_core::types::ResourceId;
@@ -585,7 +589,8 @@ mod name {
                 Value::Equal(value) => value.clone(),
             })
         });
-        let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
+        let input_value: Signal<String> =
+            leptos_use::signal_debounced(input_value, *input_debounce);
 
         let _ = Effect::watch(
             input_value,
@@ -675,8 +680,6 @@ mod name {
                 on:input=move |e| {
                     set_input_value(event_target_value(&e));
                 }
-
-                debounce=*input_debounce
                 placeholder=placeholder
                 minlength="1"
                 class=(["border-red-600", "border-solid", "border-2"], input_error)
@@ -767,7 +770,7 @@ mod kind {
         update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_desktop_lib::command::container::bulk::PropertiesUpdate;
 
     #[component]
@@ -834,7 +837,7 @@ mod description {
         pages::project::state,
         types::{self, Messages},
     };
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_desktop_lib::command::container::bulk::PropertiesUpdate;
 
     #[component]
@@ -908,7 +911,7 @@ mod tags {
         update_properties, ActiveResources, State,
     };
     use crate::{components::DetailPopout, pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_desktop_lib::command::{bulk::TagsAction, container::bulk::PropertiesUpdate};
 
     #[component]
@@ -1025,7 +1028,7 @@ mod tags {
 
                             if errors.is_empty() {
                                 if let Some(onclose) = onclose {
-                                    onclose(());
+                                    onclose.run(());
                                 }
                             } else {
                                 let mut msg =
@@ -1041,13 +1044,13 @@ mod tags {
 
         let close = move |_| {
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
         };
 
         view! {
             <DetailPopout title="Add tags" onclose=Callback::new(close)>
-                <AddTagsEditor onadd=Callback::new(onadd) reset=reset_form class="w-full px-1" />
+                <AddTagsEditor onadd reset=reset_form class="w-full px-1" />
             </DetailPopout>
         }
     }
@@ -1064,7 +1067,7 @@ mod metadata {
         update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{components::DetailPopout, pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_core::types::data;
     use syre_desktop_lib::command::{bulk::MetadataAction, container::bulk::PropertiesUpdate};
 
@@ -1077,7 +1080,8 @@ mod metadata {
         let state = expect_context::<Signal<State>>();
         let input_debounce = expect_context::<InputDebounce>();
         let (modifications, set_modifications) = signal(vec![]);
-        let modifications = leptos_use::signal_debounced(modifications, *input_debounce);
+        let modifications: Signal<Vec<(String, data::Value)>> =
+            leptos_use::signal_debounced(modifications, *input_debounce);
 
         let onremove = Callback::new({
             let project = project.rid().read_only();
@@ -1250,7 +1254,7 @@ mod metadata {
 
                                 if errors.is_empty() {
                                     if let Some(onclose) = onclose {
-                                        onclose(());
+                                        onclose.run(());
                                     }
                                 } else {
                                     let mut msg = types::message::Builder::error(
@@ -1279,17 +1283,13 @@ mod metadata {
 
         let close = move |_| {
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
         };
 
         view! {
             <DetailPopout title="Add metadata" onclose=Callback::new(close)>
-                <AddDatumEditor
-                    keys=Signal::derive(keys)
-                    onadd=Callback::new(onadd)
-                    class="w-full px-1"
-                />
+                <AddDatumEditor keys=Signal::derive(keys) onadd=onadd class="w-full px-1" />
             </DetailPopout>
         }
     }
@@ -1309,7 +1309,7 @@ mod analysis_associations {
         types,
     };
     use has_id::HasId;
-    use leptos::{ev::MouseEvent, prelude::*, html};
+    use leptos::{ev::MouseEvent, html, prelude::*, task::spawn_local};
     use leptos_icons::Icon;
     use serde::{Deserialize, Serialize};
     use std::path::PathBuf;
@@ -1751,13 +1751,13 @@ mod analysis_associations {
         let onadd = move |association: AnalysisAssociation| {
             add_association.dispatch(association);
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
         };
 
         let close = move |_| {
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
         };
 

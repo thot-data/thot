@@ -35,13 +35,13 @@ pub mod message {
         Info,
     }
 
-    pub struct Builder {
+    pub struct Builder<T> {
         title: String,
-        body: Option<View>,
+        body: Option<View<T>>,
         kind: MessageKind,
     }
 
-    impl Builder {
+    impl<T> Builder<T> {
         fn new(title: impl Into<String>, kind: MessageKind) -> Self {
             Self {
                 title: title.into(),
@@ -66,18 +66,18 @@ pub mod message {
             Self::new(title, MessageKind::Info)
         }
 
-        pub fn body(&mut self, body: impl IntoView) -> &mut Self {
-            let _ = self.body.insert(body.into_view());
+        pub fn body(&mut self, body: View<T>) -> &mut Self {
+            let _ = self.body.insert(body);
             self
         }
 
-        pub fn build(self) -> Message {
+        pub fn build(self) -> Message<T> {
             self.into()
         }
     }
 
-    impl Into<Message> for Builder {
-        fn into(self) -> Message {
+    impl<T> Into<Message<T>> for Builder<T> {
+        fn into(self) -> Message<T> {
             let id = (js_sys::Math::random() * (usize::MAX as f64)) as usize;
             Message {
                 id,
@@ -88,15 +88,17 @@ pub mod message {
         }
     }
 
-    #[derive(Debug)]
-    pub struct Message {
+    #[derive(derive_more::Debug, Clone)]
+    pub struct Message<T> {
         id: usize,
         kind: MessageKind,
         title: String,
-        body: Option<View>,
+
+        #[debug(skip)]
+        body: Option<View<T>>,
     }
 
-    impl Message {
+    impl<T> Message<T> {
         pub fn id(&self) -> usize {
             self.id
         }
@@ -109,17 +111,17 @@ pub mod message {
             &self.title
         }
 
-        pub fn body(&self) -> Option<&View> {
+        pub fn body(&self) -> Option<&View<T>> {
             self.body.as_ref()
         }
     }
 
     /// App wide messages.
     #[derive(Clone, derive_more::Deref, Copy)]
-    pub struct Messages(RwSignal<Vec<Message>>);
+    pub struct Messages(RwSignal<Vec<Message>, LocalStorage>);
     impl Messages {
         pub fn new() -> Self {
-            Self(RwSignal::new(vec![]))
+            Self(RwSignal::new_local(vec![]))
         }
     }
 }

@@ -4,10 +4,10 @@ use crate::{
     types,
 };
 use futures::stream::StreamExt;
-use leptos::{html, prelude::*, task::spawn_local};
-use leptos_router::*;
+use leptos::{either::Either, html, prelude::*, task::spawn_local};
+use leptos_router::components::A;
 use serde::Serialize;
-use std::{path::PathBuf, rc::Rc};
+use std::{path::PathBuf, sync::Arc};
 use syre_core::{project::Project, system::User, types::ResourceId};
 use syre_desktop_lib as lib;
 use syre_local as local;
@@ -17,9 +17,9 @@ use web_sys::{MouseEvent, SubmitEvent};
 
 /// Context menu for containers that are `Ok`.
 #[derive(derive_more::Deref, Clone)]
-struct ContextMenuProjectOk(Rc<menu::Menu>);
+struct ContextMenuProjectOk(Arc<menu::Menu>);
 impl ContextMenuProjectOk {
-    pub fn new(menu: Rc<menu::Menu>) -> Self {
+    pub fn new(menu: Arc<menu::Menu>) -> Self {
         Self(menu)
     }
 }
@@ -35,9 +35,9 @@ pub fn Dashboard() -> impl IntoView {
     let context_menu_active_project_ok = RwSignal::<Option<ContextMenuActiveProject>>::new(None);
     provide_context(context_menu_active_project_ok.clone());
 
-    let projects = Resource::new(|| (), {
+    let projects = LocalResource::new({
         let user = user.rid().clone();
-        move |_| {
+        move || {
             let user = user.clone();
             async move { fetch_user_projects(user).await }
         }
@@ -45,7 +45,7 @@ pub fn Dashboard() -> impl IntoView {
 
     let context_menu_project_ok = LocalResource::new({
         let messages = messages.clone();
-        move |_| {
+        move || {
             let messages = messages.clone();
             async move {
                 let mut project_remove = tauri_sys::menu::item::MenuItemOptions::new("Remove");
@@ -67,18 +67,18 @@ pub fn Dashboard() -> impl IntoView {
                     )
                 });
 
-                Rc::new(menu)
+                Arc::new(menu)
             }
         }
     });
 
     view! {
         <Suspense fallback=Loading>
-            {move || {
-                let context_menu_project_ok = context_menu_project_ok.get()?;
-                let projects = projects.get()?;
-                Some(view! { <DashboardView projects context_menu_project_ok /> })
-            }}
+            {move || Suspend::new(async move {
+                let context_menu_project_ok = context_menu_project_ok.await;
+                let projects = projects.await;
+                view! { <DashboardView projects context_menu_project_ok /> }
+            })}
         </Suspense>
     }
 }
@@ -91,7 +91,7 @@ fn Loading() -> impl IntoView {
 #[component]
 fn DashboardView(
     projects: Vec<(PathBuf, db::state::ProjectData)>,
-    context_menu_project_ok: Rc<menu::Menu>,
+    context_menu_project_ok: Arc<menu::Menu>,
 ) -> impl IntoView {
     provide_context(ContextMenuProjectOk::new(context_menu_project_ok));
     let (projects, set_projects) = signal(
@@ -236,9 +236,9 @@ fn ProjectCard(project: ReadSignal<(PathBuf, db::state::ProjectData)>) -> impl I
     move || {
         project.with(|(path, project)| {
             if let db::state::DataResource::Ok(project) = project.properties() {
-                view! { <ProjectCardOk project=project.clone() path=path.clone() /> }
+                Either::Left(view! { <ProjectCardOk project=project.clone() path=path.clone() /> })
             } else {
-                view! { <ProjectCardErr path=path.clone() /> }
+                Either::Right(view! { <ProjectCardErr path=path.clone() /> })
             }
         })
     }
@@ -249,11 +249,7 @@ fn ProjectCardOk(project: Project, path: PathBuf) -> impl IntoView {
     let context_menu = expect_context::<ContextMenuProjectOk>();
     let context_menu_active_project =
         expect_context::<RwSignal<Option<ContextMenuActiveProject>>>();
-
-    let path_str = {
-        let path = path.clone();
-        move || path.to_string_lossy().to_string()
-    };
+    let path_string = path.to_string_lossy().to_string();
 
     let contextmenu = {
         let path = path.clone();
@@ -273,18 +269,15 @@ fn ProjectCardOk(project: Project, path: PathBuf) -> impl IntoView {
 
     view! {
         <A
-            href={
-                let project = project.rid().clone();
-                move || project.to_string()
-            }
+            href=project.rid().to_string()
             on:contextmenu=contextmenu
-            class="w-1/3 min-w-52 rounded border border-secondary-900 dark:bg-secondary-700 dark:border-secondary-50"
+            attr:class="w-1/3 min-w-52 rounded border border-secondary-900 dark:bg-secondary-700 dark:border-secondary-50"
         >
             <div class="px-4 py-2 flex flex-col h-full">
                 <h3 class="text-2xl font-primary">{project.name.clone()}</h3>
                 <div class="pb-2 grow">{project.description.clone()}</div>
-                <div title=path_str.clone() class="text-sm">
-                    <TruncateLeft>{path_str.clone()}</TruncateLeft>
+                <div title=path_string class="text-sm">
+                    <TruncateLeft clone:path_string>{path_string}</TruncateLeft>
                 </div>
             </div>
         </A>
@@ -347,7 +340,7 @@ fn CreateProjectDialog(path: RwSignal<Option<PathBuf>>) -> impl IntoView {
     let user = expect_context::<User>();
     let (error, set_error) = signal(None);
 
-    let create_project_action = Action::new({
+    let create_project_action: Action<_, _> = Action::new_unsync({
         let user = user.rid().clone();
         move |project_path: &PathBuf| {
             let project_path = project_path.clone();
@@ -376,7 +369,9 @@ fn CreateProjectDialog(path: RwSignal<Option<PathBuf>>) -> impl IntoView {
                 None => {
                     set_error(Some("Path is required."));
                 }
-                Some(path) => create_project_action.dispatch(path),
+                Some(path) => {
+                    create_project_action.dispatch(path);
+                }
             }
         }
     };

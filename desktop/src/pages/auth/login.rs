@@ -1,6 +1,6 @@
 use crate::components::{Autofocus, Logo};
-use leptos::{task::spawn_local,prelude::*};
-use leptos_router::{hooks::use_navigate, *};
+use leptos::{prelude::*, task::spawn_local};
+use leptos_router::{components::A, hooks::use_navigate};
 use serde::Serialize;
 use syre_core::system::User;
 use web_sys::{FormData, SubmitEvent};
@@ -47,22 +47,21 @@ pub fn Login() -> impl IntoView {
     view! {
         <div class="h-screen w-screen flex flex-col justify-center items-center gap-y-4">
             <div class="flex flex-col items-center w-20">
-                <Logo class="w-full"/>
+                <Logo attr:class="w-full" />
                 <h1 class="font-primary text-4xl">"Syre"</h1>
             </div>
             <div class="w-1/2">
                 <form node_ref=form_ref on:submit=login_user>
                     <div>
                         <label>
-                            "Email"
-                            <Autofocus>
-                            <input
-                                name="email"
-                                type="email"
-                                class="input-simple"
-                                required
-                                autofocus
-                            />
+                            "Email" <Autofocus>
+                                <input
+                                    type="email"
+                                    name="email"
+                                    class="input-simple"
+                                    required=true
+                                    autofocus
+                                />
                             </Autofocus>
                         </label>
                     </div>
@@ -71,7 +70,7 @@ pub fn Login() -> impl IntoView {
                         <button disabled=loading class="btn btn-primary">
                             "Login"
                         </button>
-                        <A href="/register" class="btn btn-secondary">
+                        <A href="/register" attr:class="btn btn-secondary">
                             "Sign up"
                         </A>
                     </div>

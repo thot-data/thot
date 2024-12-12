@@ -7,11 +7,18 @@ use crate::{
     types,
 };
 use futures::stream::StreamExt;
-use leptos::{html, prelude::*};
+use leptos::{
+    either::{either, Either},
+    ev::MouseEvent,
+    html,
+    portal::Portal,
+    prelude::*,
+    task::spawn_local,
+};
 use leptos_icons::*;
-use leptos_router::hooks::use_params_map;
+use leptos_router::{components::A, hooks::use_params_map};
 use serde::Serialize;
-use std::{io, path::PathBuf, rc::Rc, str::FromStr};
+use std::{io, path::PathBuf, str::FromStr, sync::Arc};
 use syre_core::{self as core, types::ResourceId};
 use syre_desktop_lib as lib;
 use syre_local::{self as local, types::AnalysisKind};
@@ -47,49 +54,47 @@ pub fn Workspace() -> impl IntoView {
     let params = use_params_map();
     let id =
         move || params.with(|params| ResourceId::from_str(&params.get("id").unwrap()).unwrap());
-    let active_user = Resource::new(|| (), |_| async move { commands::user::fetch_user().await });
-    let resources = Resource::new(id, |id| async move { fetch_project_resources(id).await });
+    let active_user = LocalResource::new(commands::user::fetch_user);
+    let resources = LocalResource::new(move || fetch_project_resources(id()));
 
     view! {
         <Suspense fallback=Loading>
             <ErrorBoundary fallback=|errors| {
                 view! { <UserError errors /> }
             }>
-                {move || {
-                    active_user()
-                        .map(|user| {
-                            user.map(|user| match user {
-                                None => view! { <NoUser /> },
-                                Some(user) => {
-                                    view! {
-                                        <Suspense fallback=Loading>
-                                            {
+                {move || Suspend::new(async move {
+                    let user = active_user.await;
+                    user.map(|user| match user {
+                        None => Either::Left(view! { <NoUser /> }),
+                        Some(user) => {
+                            Either::Right(
+                                view! {
+                                    <Suspense fallback=Loading>
+                                        {
+                                            let user = user.clone();
+                                            move || Suspend::new({
                                                 let user = user.clone();
-                                                move || {
-                                                    resources()
-                                                        .map(|resources| {
-                                                            resources
-                                                                .map(|(project_path, project_data, graph)| {
-                                                                    view! {
-                                                                        <WorkspaceView
-                                                                            user=user.clone()
-                                                                            project_path
-                                                                            project_data
-                                                                            graph
-                                                                        />
-                                                                    }
-                                                                })
-                                                                .or_else(|| Some(view! { <NoProject /> }))
+                                                async move {
+                                                    let resources = resources.await;
+                                                    resources
+                                                        .map(|(project_path, project_data, graph)| {
+                                                            Either::Left(
+                                                                view! {
+                                                                    <WorkspaceView user project_path project_data graph />
+                                                                },
+                                                            )
                                                         })
+                                                        .unwrap_or(Either::Right(view! { <NoProject /> }))
                                                 }
-                                            }
+                                            })
+                                        }
 
-                                        </Suspense>
-                                    }
-                                }
-                            })
-                        })
-                }}
+                                    </Suspense>
+                                },
+                            )
+                        }
+                    })
+                })}
             </ErrorBoundary>
         </Suspense>
     }
@@ -103,7 +108,7 @@ fn Loading() -> impl IntoView {
 #[component]
 fn NoUser() -> impl IntoView {
     let messages = expect_context::<types::Messages>();
-    let navigate = leptos_router::use_navigate();
+    let navigate = leptos_router::hooks::use_navigate();
 
     let msg = types::message::Builder::error("You are not logged in.").build();
     messages.update(|messages| messages.push(msg));
@@ -118,7 +123,7 @@ fn NoUser() -> impl IntoView {
 }
 
 #[component]
-fn UserError(errors: RwSignal<Errors>) -> impl IntoView {
+fn UserError(errors: ArcRwSignal<Errors>) -> impl IntoView {
     view! {
         <div class="text-center">
             <div class="text-large p4">"Error with user."</div>
@@ -133,7 +138,7 @@ fn NoProject() -> impl IntoView {
         <div>
             <div class="p-4 text-center">"Project state was not found."</div>
             <div class="text-center">
-                <A href="/" class="btn btn-primary">
+                <A href="/" attr:class="btn btn-primary">
                     "Dashboard"
                 </A>
             </div>
@@ -209,12 +214,13 @@ fn WorkspaceView(
                 <ProjectBar analyze_node />
             </div>
             {move || {
-                match graph.as_ref() {
+                either!(
+                    graph.as_ref(),
                     db::state::FolderResource::Present(graph) => {
                         view! { <WorkspaceGraph graph=graph.clone() analyze_node /> }
-                    }
+                    },
                     db::state::FolderResource::Absent => view! { <NoGraph /> },
-                }
+                )
             }}
 
             <div
@@ -222,7 +228,7 @@ fn WorkspaceView(
                 class=(["right-0", "left-0"], move || show_settings())
                 class="absolute top-0 bottom-0 transition-absolute-position z-20"
             >
-                <Settings onclose=move |_| show_settings.set(false) />
+                <Settings onclose=Callback::new(move |_| show_settings.set(false)) />
             </div>
         </div>
     }
@@ -246,10 +252,12 @@ fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> 
 
     let (drag_over_event, set_drag_over_event) = signal(tauri_sys::window::DragDropEvent::Leave);
     let drag_over_event = leptos_use::signal_throttled(drag_over_event, THROTTLE_DRAG_EVENT);
-    let (drag_over_container_elm, set_drag_over_container_elm) = signal(None);
+    let (drag_over_container_elm, set_drag_over_container_elm) = signal_local(None);
     let (drag_over_workspace_resource, set_drag_over_workspace_resource) =
         signal(DragOverWorkspaceResource::new());
-    provide_context(Signal::from(drag_over_workspace_resource));
+    let drag_over_workspace_resource_signal: Signal<DragOverWorkspaceResource> =
+        Signal::from(drag_over_workspace_resource);
+    provide_context(drag_over_workspace_resource_signal);
 
     spawn_local({
         let project = project.clone();
@@ -434,14 +442,15 @@ fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> 
             {move || {
                 if let Some(analyze_node) = analyze_node.get() {
                     let mount = (*analyze_node).clone();
-                    view! {
-                        <Portal mount>
-                            <analyze::Analyze />
-                        </Portal>
-                    }
-                        .into_view()
+                    Either::Left(
+                        view! {
+                            <Portal mount>
+                                <analyze::Analyze />
+                            </Portal>
+                        },
+                    )
                 } else {
-                    ().into_view()
+                    Either::Right(())
                 }
             }}
         </div>
@@ -451,7 +460,7 @@ fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> 
 #[component]
 fn ProjectNav() -> impl IntoView {
     let show_settings = expect_context::<ShowSettings>();
-    let open_settings = move |e: ev::MouseEvent| {
+    let open_settings = move |e: MouseEvent| {
         if e.button() != types::MouseButton::Primary {
             return;
         }
@@ -464,7 +473,7 @@ fn ProjectNav() -> impl IntoView {
             <ol class="flex grow">
                 <li>
                     <A href="/">
-                        <Logo class="h-4" />
+                        <Logo attr:class="h-4" />
                     </A>
                 </li>
             </ol>
@@ -487,7 +496,7 @@ mod analyze {
     use super::state;
     use crate::{components, types};
     use futures::stream::StreamExt;
-    use leptos::{ev::MouseEvent, prelude::*};
+    use leptos::{ev::MouseEvent, prelude::*, task::spawn_local};
     use leptos_icons::*;
     use std::path::PathBuf;
     use syre_core::types::ResourceId;
@@ -1744,7 +1753,7 @@ fn handle_event_graph_graph_removed(
             visibilities.retain(|(container, _)| {
                 graph
                     .nodes()
-                    .with_untracked(|nodes| nodes.iter().any(|node| Rc::ptr_eq(node, container)))
+                    .with_untracked(|nodes| nodes.iter().any(|node| Arc::ptr_eq(node, container)))
             });
         });
 }

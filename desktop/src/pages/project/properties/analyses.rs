@@ -6,12 +6,14 @@ use crate::{
 };
 use futures::StreamExt;
 use leptos::{
+    either::either,
     ev::{DragEvent, MouseEvent},
-    *,
+    prelude::*,
+    task::spawn_local,
 };
 use leptos_icons::Icon;
 use serde::Serialize;
-use std::{path::PathBuf, rc::Rc};
+use std::{path::PathBuf, sync::Arc};
 use syre_core::{self as core, types::ResourceId};
 use syre_desktop_lib as lib;
 use syre_local::{self as local, types::AnalysisKind};
@@ -20,9 +22,9 @@ use tauri_sys::{core::Channel, menu};
 
 /// Context menu for analyses that are `Ok`.
 #[derive(derive_more::Deref, Clone)]
-struct ContextMenuAnalysesOk(Rc<menu::Menu>);
+struct ContextMenuAnalysesOk(Arc<menu::Menu>);
 impl ContextMenuAnalysesOk {
-    pub fn new(menu: Rc<menu::Menu>) -> Self {
+    pub fn new(menu: Arc<menu::Menu>) -> Self {
         Self(menu)
     }
 }
@@ -39,15 +41,11 @@ impl ContextMenuActiveAnalysis {
 #[component]
 pub fn Editor() -> impl IntoView {
     let project = expect_context::<state::Project>();
-
     move || {
-        project.analyses().with(|analyses| match analyses {
-            db::state::DataResource::Ok(analyses) => {
-                view! { <AnalysesOk analyses=analyses.read_only() /> }
-            }
-
+        project.analyses().with(|analyses| either!(analyses,
+            db::state::DataResource::Ok(analyses) => view! { <AnalysesOk analyses=analyses.read_only() /> },
             db::state::DataResource::Err(err) => view! { <AnalysesErr error=err.clone() /> },
-        })
+        ))
     }
 }
 
@@ -71,7 +69,7 @@ fn AnalysesOk(analyses: ReadSignal<Vec<state::project::Analysis>>) -> impl IntoV
     let messages = expect_context::<types::Messages>();
     let drag_over_workspace_resource = expect_context::<Signal<DragOverWorkspaceResource>>();
 
-    let context_menu_active_analysis = RwSignal::new::<Option<ContextMenuActiveAnalysis>>(None);
+    let context_menu_active_analysis = RwSignal::<Option<ContextMenuActiveAnalysis>>::new(None);
     provide_context(context_menu_active_analysis.clone());
 
     let highlight = move || {
@@ -79,11 +77,10 @@ fn AnalysesOk(analyses: ReadSignal<Vec<state::project::Analysis>>) -> impl IntoV
             .with(|resource| matches!(resource.as_ref(), Some(WorkspaceResource::Analyses)))
     };
 
-    let context_menu_analyses_ok = LocalResource::new(|| (), {
+    let context_menu_analyses_ok = LocalResource::new({
         let project = project.clone();
         let messages = messages.clone();
-
-        move |_| {
+        move || {
             let project = project.clone();
             let messages = messages.clone();
             async move {
@@ -122,7 +119,7 @@ fn AnalysesOk(analyses: ReadSignal<Vec<state::project::Analysis>>) -> impl IntoV
                     )
                 });
 
-                Rc::new(menu)
+                Arc::new(menu)
             }
         }
     });
@@ -139,12 +136,10 @@ fn AnalysesOk(analyses: ReadSignal<Vec<state::project::Analysis>>) -> impl IntoV
                 <Suspense fallback=move || {
                     view! { <AnalysesLoading /> }
                 }>
-                    {move || {
-                        let Some(context_menu_analyses_ok) = context_menu_analyses_ok.get() else {
-                            return None;
-                        };
-                        Some(view! { <AnalysesOkView analyses context_menu_analyses_ok /> })
-                    }}
+                    {move || Suspend::new(async move {
+                        let context_menu_analyses_ok = context_menu_analyses_ok.await;
+                        view! { <AnalysesOkView analyses context_menu_analyses_ok /> }
+                    })}
                 </Suspense>
             </div>
         </div>
@@ -159,7 +154,7 @@ fn AnalysesLoading() -> impl IntoView {
 #[component]
 fn AnalysesOkView(
     analyses: ReadSignal<Vec<state::project::Analysis>>,
-    context_menu_analyses_ok: Rc<menu::Menu>,
+    context_menu_analyses_ok: Arc<menu::Menu>,
 ) -> impl IntoView {
     provide_context(ContextMenuAnalysesOk::new(context_menu_analyses_ok));
 
@@ -195,14 +190,10 @@ fn NoAnalyses() -> impl IntoView {
 #[component]
 fn Analysis(analysis: state::project::Analysis) -> impl IntoView {
     move || {
-        analysis.properties().with(|properties| match properties {
-            AnalysisKind::Script(_) => {
-                view! { <ScriptView analysis=analysis.clone() /> }
-            }
-            AnalysisKind::ExcelTemplate(template) => {
-                view! { <ExcelTemplateView template=template.clone() /> }
-            }
-        })
+        analysis.properties().with(|analyses| either!(analyses,
+            AnalysisKind::Script(_) => view! { <ScriptView analysis=analysis.clone() /> },
+            AnalysisKind::ExcelTemplate(template) => view! { <ExcelTemplateView template=template.clone() /> },
+        ))
     }
 }
 
@@ -299,16 +290,16 @@ fn ScriptView(analysis: state::project::Analysis) -> impl IntoView {
                             let mut msg =
                                 types::message::Builder::error("Could not save container.");
                             msg.body(format!("{err:?}"));
-                            msg
+                            msg.build()
                         }
                         AnalysesUpdate::RemoveFile(err) => {
                             let mut msg =
                                 types::message::Builder::error("Could not remove analysis file.");
                             msg.body(format!("{err:?}"));
-                            msg
+                            msg.build()
                         }
                     };
-                    messages.update(|messages| messages.push(msg.build()));
+                    messages.update(|messages| messages.push(msg));
                 }
             });
         }

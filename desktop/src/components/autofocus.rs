@@ -1,21 +1,19 @@
-use leptos::prelude::*;
+use leptos::{attr::Attribute, children::TypedChildren, html, prelude::*};
 
-/// Autofocuses the given element.
-///
-/// # Panics
-/// If more than one child element is provided.
+/// Autofocus the child element.
 ///
 /// # Notes
 /// + Undefined behavior if the child element is already bound to a NodeRef.
 #[component]
-pub fn Autofocus(children: Children) -> impl IntoView {
-    let mut children = children().nodes;
-    assert_eq!(children.len(), 1, "<Autofocus> only accepts one child");
-
+pub fn Autofocus<At>(
+    children: TypedChildren<html::HtmlElement<html::Input, At, ()>>,
+) -> impl IntoView
+where
+    At: Attribute,
+{
     let node_ref = NodeRef::new();
-    let child = children.remove(0);
-    let child = child.into_html_element().unwrap();
-    let child = child.node_ref(node_ref);
+    let child = children.into_inner();
+    let child = child().into_inner().node_ref(node_ref);
 
     Effect::new(move |_| {
         if let Some(node) = node_ref.get() {

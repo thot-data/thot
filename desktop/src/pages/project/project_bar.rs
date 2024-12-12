@@ -31,7 +31,7 @@ fn PreviewSelector() -> impl IntoView {
 
     let workspace_state = expect_context::<state::Workspace>();
     let state = workspace_state.preview().clone();
-    let (active, set_active) = signal::<Option<Closure<dyn FnMut(MouseEvent)>>>(None);
+    let (active, set_active) = signal_local::<Option<Closure<dyn FnMut(MouseEvent)>>>(None);
 
     let preview_list = move || {
         let mut out = vec![];

@@ -3,8 +3,10 @@ use crate::{components, pages::project, types};
 use description::Editor as Description;
 use kind::Editor as Kind;
 use leptos::{
+    either::either,
     ev::{Event, MouseEvent},
     html,
+    portal::Portal,
     prelude::*,
 };
 use leptos_icons::Icon;
@@ -265,7 +267,7 @@ pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
             .unwrap();
     };
 
-    let on_widget_close = move |_| {
+    let on_widget_close = move || {
         set_widget.update(|widget| {
             widget.take();
         });
@@ -402,13 +404,13 @@ pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
                     let mount = (*mount).clone();
                     view! {
                         <Portal mount>
-                            {move || match widget().unwrap() {
-                                Widget::AddTags => {
-                                    view! { <AddTags onclose=on_widget_close.clone() /> }
-                                }
-                                Widget::AddMetadatum => {
-                                    view! { <AddDatum onclose=on_widget_close.clone() /> }
-                                }
+                            {move || {
+                                let widget = widget().unwrap();
+                                either!(
+                                    widget,
+                                    Widget::AddTags => view! { <AddTags onclose=on_widget_close.clone() /> },
+                                    Widget::AddMetadatum => view! { <AddDatum onclose=on_widget_close.clone() /> },
+                                )
                             }}
                         </Portal>
                     }
@@ -424,7 +426,7 @@ mod name {
         container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{components::form::debounced::InputText, pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_desktop_lib::command::asset::bulk::PropertiesUpdate;
 
     #[component]
@@ -497,18 +499,16 @@ mod name {
             }
         };
 
-        let oninput_text = {
-            move |value: String| {
-                let value = value.trim();
-                let value = if value.is_empty() {
-                    None
-                } else {
-                    Some(value.to_string())
-                };
+        let oninput_text = Callback::new(move |value: String| {
+            let value = value.trim();
+            let value = if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            };
 
-                set_processed_value(value);
-            }
-        };
+            set_processed_value(value);
+        });
 
         let placeholder = {
             let value = value.clone();
@@ -523,7 +523,7 @@ mod name {
         let _ = Effect::watch(
             processed_value,
             move |processed_value, _, _| {
-                oninput(processed_value.clone());
+                oninput.run(processed_value.clone());
             },
             false,
         );
@@ -533,8 +533,8 @@ mod name {
                 value=Signal::derive(input_value)
                 oninput=oninput_text
                 debounce
-                placeholder=MaybeProp::derive(placeholder)
-                class="input-compact"
+                attr:placeholder=MaybeProp::derive(placeholder)
+                attr:class="input-compact"
             />
         }
     }
@@ -546,7 +546,7 @@ mod kind {
         container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_desktop_lib::command::asset::bulk::PropertiesUpdate;
 
     #[component]
@@ -603,7 +603,7 @@ mod description {
         container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_desktop_lib::command::asset::bulk::PropertiesUpdate;
 
     #[component]
@@ -670,7 +670,7 @@ mod tags {
         container_assets, update_properties, ActiveResources, State,
     };
     use crate::{components::DetailPopout, pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_desktop_lib::command::{asset::bulk::PropertiesUpdate, bulk::TagsAction};
 
     #[component]
@@ -770,7 +770,7 @@ mod tags {
 
                             if errors.is_empty() {
                                 if let Some(onclose) = onclose {
-                                    onclose(());
+                                    onclose.run(());
                                 }
                             } else {
                                 let mut msg =
@@ -784,15 +784,15 @@ mod tags {
             });
         });
 
-        let close = move |_| {
+        let onclose = Callback::new(move |_| {
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
-        };
+        });
 
         view! {
-            <DetailPopout title="Add tags" onclose=Callback::new(close)>
-                <AddTagsEditor onadd=Callback::new(onadd) class="w-full px-1" />
+            <DetailPopout title="Add tags" onclose>
+                <AddTagsEditor onadd class="w-full px-1" />
             </DetailPopout>
         }
     }
@@ -809,7 +809,7 @@ mod metadata {
         container_assets, update_properties, ActiveResources, InputDebounce, State,
     };
     use crate::{components::DetailPopout, pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_core::types::data;
     use syre_desktop_lib::command::{asset::bulk::PropertiesUpdate, bulk::MetadataAction};
 
@@ -822,7 +822,8 @@ mod metadata {
         let state = expect_context::<Signal<State>>();
         let input_debounce = expect_context::<InputDebounce>();
         let (modifications, set_modifications) = signal(vec![]);
-        let modifications = leptos_use::signal_debounced(modifications, *input_debounce);
+        let modifications: Signal<Vec<(String, data::Value)>> =
+            leptos_use::signal_debounced(modifications, *input_debounce);
 
         let onremove = Callback::new({
             let project = project.rid().read_only();
@@ -973,7 +974,7 @@ mod metadata {
 
                                 if errors.is_empty() {
                                     if let Some(onclose) = onclose {
-                                        onclose(());
+                                        onclose.run(());
                                     }
                                 } else {
                                     let mut msg = types::message::Builder::error(
@@ -1000,19 +1001,15 @@ mod metadata {
             })
         };
 
-        let close = move |_| {
+        let onclose = Callback::new(move |_| {
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
-        };
+        });
 
         view! {
-            <DetailPopout title="Add metadata" onclose=Callback::new(close)>
-                <AddDatumEditor
-                    keys=Signal::derive(keys)
-                    onadd=Callback::new(onadd)
-                    class="w-full px-1"
-                />
+            <DetailPopout title="Add metadata" onclose>
+                <AddDatumEditor keys=Signal::derive(keys) onadd class="w-full px-1" />
             </DetailPopout>
         }
     }

@@ -4,7 +4,9 @@ use description::Editor as Description;
 use kind::Editor as Kind;
 use leptos::{
     ev::{Event, MouseEvent},
-    *,
+    html,
+    portal::Portal,
+    prelude::*,
 };
 use leptos_icons::Icon;
 use metadata::{AddDatum, Editor as Metadata};
@@ -132,7 +134,7 @@ pub fn Editor(asset: state::Asset) -> impl IntoView {
                     let mount = (*mount).clone();
                     view! {
                         <Portal mount>
-                            <AddDatum onclose=move |_| add_metadatum_visible.set(false) />
+                            <AddDatum onclose=move || add_metadatum_visible.set(false) />
                         </Portal>
                     }
                 }}
@@ -144,7 +146,7 @@ pub fn Editor(asset: state::Asset) -> impl IntoView {
 mod name {
     use super::{update_properties, ActiveAsset, InputDebounce};
     use crate::{components::form::debounced::InputText, pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
 
     #[component]
     pub fn Editor() -> impl IntoView {
@@ -190,7 +192,14 @@ mod name {
             }
         });
 
-        view! { <InputText value=input_value oninput debounce=*input_debounce class="input-compact" /> }
+        view! {
+            <InputText
+                value=input_value
+                oninput
+                debounce=*input_debounce
+                attr:class="input-compact"
+            />
+        }
     }
 }
 
@@ -199,7 +208,7 @@ mod kind {
         super::common::kind::Editor as KindEditor, update_properties, ActiveAsset, InputDebounce,
     };
     use crate::{pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
 
     #[component]
     pub fn Editor() -> impl IntoView {
@@ -253,7 +262,7 @@ mod description {
         InputDebounce,
     };
     use crate::{pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
 
     #[component]
     pub fn Editor() -> impl IntoView {
@@ -306,7 +315,7 @@ mod tags {
         super::common::tags::Editor as TagsEditor, update_properties, ActiveAsset, InputDebounce,
     };
     use crate::{pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
 
     #[component]
     pub fn Editor() -> impl IntoView {
@@ -364,7 +373,7 @@ mod metadata {
         pages::project::state,
         types,
     };
-    use leptos::{ev::MouseEvent, prelude::*};
+    use leptos::{ev::MouseEvent, prelude::*, task::spawn_local};
     use leptos_icons::Icon;
     use syre_core::types::{ResourceId, Value};
 
@@ -404,7 +413,7 @@ mod metadata {
             }
         };
 
-        let onadd = {
+        let onadd = Callback::new({
             let asset = asset.clone();
             move |(key, value): (String, Value)| {
                 assert!(!key.is_empty());
@@ -433,26 +442,22 @@ mod metadata {
                         todo!()
                     } else {
                         if let Some(onclose) = onclose {
-                            onclose(());
+                            onclose.run(());
                         }
                     }
                 });
             }
-        };
+        });
 
-        let close = move |_| {
+        let onclose = Callback::new(move |_| {
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
-        };
+        });
 
         view! {
-            <DetailPopout title="Add metadata" onclose=Callback::new(close)>
-                <AddDatumEditor
-                    keys=Signal::derive(keys)
-                    onadd=Callback::new(onadd)
-                    class="w-full px-1"
-                />
+            <DetailPopout title="Add metadata" onclose>
+                <AddDatumEditor keys=Signal::derive(keys) onadd class="w-full px-1" />
             </DetailPopout>
         }
     }
@@ -532,7 +537,7 @@ mod metadata {
             false,
         );
 
-        let remove_datum = Callback::new({
+        let remove_datum = {
             let project = project.clone();
             let graph = graph.clone();
             let asset = asset.clone();
@@ -564,7 +569,7 @@ mod metadata {
                     }
                 });
             }
-        });
+        };
 
         view! {
             <div class="pb-2">

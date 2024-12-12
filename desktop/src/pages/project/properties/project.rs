@@ -9,6 +9,7 @@ use leptos::{
     ev::{MouseEvent, SubmitEvent},
     html,
     prelude::*,
+    task::spawn_local,
 };
 use name::Editor as Name;
 use serde::Serialize;
@@ -63,8 +64,8 @@ pub fn Editor() -> impl IntoView {
                             </label>
                         </div>
                     </form>
-                    <div title=project_path_str.clone()>
-                        <TruncateLeft>{project_path_str.clone()}</TruncateLeft>
+                    <div title=project_path_str>
+                        <TruncateLeft clone:project_path_str>{project_path_str}</TruncateLeft>
                     </div>
                 </div>
             </div>
@@ -87,7 +88,7 @@ pub fn Editor() -> impl IntoView {
 fn DeleteProjectConfirmation() -> impl IntoView {
     let project = expect_context::<state::Project>();
     let messages = expect_context::<types::Messages>();
-    let navigate = leptos_router::use_navigate();
+    let navigate = leptos_router::hooks::use_navigate();
     let (confirmation_text, set_confirmation_text) = signal("".to_string());
 
     let confirmation_valid = {
@@ -172,7 +173,7 @@ fn DeleteProjectConfirmation() -> impl IntoView {
 mod name {
     use super::{update_properties, InputDebounce};
     use crate::{components::form::debounced::InputText, pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
 
     #[component]
     pub fn Editor() -> impl IntoView {
@@ -210,7 +211,7 @@ mod name {
                 value=project.properties().name().read_only()
                 oninput=Callback::new(oninput)
                 debounce=*input_debounce
-                class="input-compact w-full"
+                attr:class="input-compact w-full"
             />
         }
     }
@@ -221,7 +222,7 @@ mod description {
         super::common::description::Editor as DescriptionEditor, update_properties, InputDebounce,
     };
     use crate::{pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
 
     #[component]
     pub fn Editor() -> impl IntoView {

@@ -9,7 +9,7 @@ use crate::{
 use leptos::prelude::*;
 use leptos_meta::*;
 use leptos_router::{
-    components::{FlatRoutes, Route, Router},
+    components::{FlatRoutes, Redirect, Route, Router},
     path,
 };
 use message::Messages;
@@ -52,8 +52,8 @@ pub fn App() -> impl IntoView {
 
     view! {
         <Title formatter=|text| text text="Syre" />
-        <Html class=class_html />
-        <Body class="h-screen font-secondary overflow-hidden dark:bg-secondary-800 dark:text-white" />
+        <Html attr:class=class_html />
+        <Body attr:class="h-screen font-secondary overflow-hidden dark:bg-secondary-800 dark:text-white" />
 
         <Router>
             <FlatRoutes fallback=NotFound>
@@ -70,7 +70,13 @@ pub fn App() -> impl IntoView {
 
 #[component]
 fn NotFound() -> impl IntoView {
-    view! { <div class="text-center text-lg">"Page not found"</div> }
+    view! {
+        <div class="text-center">
+            <div class="text-lg">"Page not found"</div>
+            <div>"Redirecting you home"</div>
+        </div>
+        <Redirect path="/" />
+    }
 }
 
 mod message {
@@ -91,6 +97,7 @@ mod message {
                         .with(|messages| {
                             messages
                                 .iter()
+                                .cloned()
                                 .rev()
                                 .map(|message| {
                                     view! { <Message message /> }
@@ -103,7 +110,7 @@ mod message {
     }
 
     #[component]
-    fn Message<'a>(message: &'a types::Message) -> impl IntoView {
+    fn Message(message: types::Message) -> impl IntoView {
         let messages = expect_context::<types::Messages>();
         let show_body = RwSignal::new(false);
 
@@ -141,7 +148,7 @@ mod message {
             <div class=class_main>
                 <div class="grow px-2">
                     <div class="relative flex gap-2">
-                        <div class="text-lg grow">{message.title()}</div>
+                        <div class="text-lg grow">{message.title().clone()}</div>
                         {message
                             .body()
                             .map(|_| {

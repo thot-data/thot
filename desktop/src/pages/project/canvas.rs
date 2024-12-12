@@ -12,13 +12,17 @@ use crate::{
 use futures::StreamExt;
 use has_id::HasId;
 use leptos::{
+    either::Either,
     ev::{DragEvent, MouseEvent, WheelEvent},
     html,
+    portal::Portal,
     prelude::*,
+    svg,
+    task::spawn_local,
 };
 use leptos_icons::*;
 use serde::Serialize;
-use std::{cmp, io, num::NonZeroUsize, path::PathBuf, rc::Rc};
+use std::{cmp, io, num::NonZeroUsize, path::PathBuf, sync::Arc};
 use syre_core::{project::AnalysisAssociation, types::ResourceId};
 use syre_desktop_lib as lib;
 use syre_local as local;
@@ -48,36 +52,36 @@ pub const DATA_KEY_ASSET: &str = "asset";
 
 /// Context menu for root container.
 #[derive(derive_more::Deref, Clone)]
-struct ContextMenuContainerRoot(Rc<menu::Menu>);
+struct ContextMenuContainerRoot(Arc<menu::Menu>);
 impl ContextMenuContainerRoot {
-    pub fn new(menu: Rc<menu::Menu>) -> Self {
+    pub fn new(menu: Arc<menu::Menu>) -> Self {
         Self(menu)
     }
 }
 
 /// Context menu for containers that are `Ok`.
 #[derive(derive_more::Deref, Clone)]
-struct ContextMenuContainerOk(Rc<menu::Menu>);
+struct ContextMenuContainerOk(Arc<menu::Menu>);
 impl ContextMenuContainerOk {
-    pub fn new(menu: Rc<menu::Menu>) -> Self {
+    pub fn new(menu: Arc<menu::Menu>) -> Self {
         Self(menu)
     }
 }
 
 /// Context menu for containers that are `Err`.
 #[derive(derive_more::Deref, Clone)]
-struct ContextMenuContainerErr(Rc<menu::Menu>);
+struct ContextMenuContainerErr(Arc<menu::Menu>);
 impl ContextMenuContainerErr {
-    pub fn new(menu: Rc<menu::Menu>) -> Self {
+    pub fn new(menu: Arc<menu::Menu>) -> Self {
         Self(menu)
     }
 }
 
 /// Context menu for assets.
 #[derive(derive_more::Deref, Clone)]
-struct ContextMenuAsset(Rc<menu::Menu>);
+struct ContextMenuAsset(Arc<menu::Menu>);
 impl ContextMenuAsset {
-    pub fn new(menu: Rc<menu::Menu>) -> Self {
+    pub fn new(menu: Arc<menu::Menu>) -> Self {
         Self(menu)
     }
 }
@@ -107,17 +111,17 @@ pub fn Canvas() -> impl IntoView {
     let messages = expect_context::<types::Messages>();
 
     let context_menu_active_container: RwSignal<Option<ContextMenuActiveContainer>> =
-        RwSignal::new::<Option<ContextMenuActiveContainer>>(None);
+        RwSignal::<Option<ContextMenuActiveContainer>>::new(None);
 
-    let context_menu_active_asset = RwSignal::new::<Option<ContextMenuActiveAsset>>(None);
+    let context_menu_active_asset = RwSignal::<Option<ContextMenuActiveAsset>>::new(None);
     provide_context(context_menu_active_container.clone());
     provide_context(context_menu_active_asset);
 
-    let context_menu_container_root = LocalResource::new(|| (), {
+    let context_menu_container_root = LocalResource::new({
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
-        move |_| {
+        move || {
             let project = project.clone();
             let graph = graph.clone();
             let messages = messages.clone();
@@ -141,16 +145,16 @@ pub fn Canvas() -> impl IntoView {
                     )
                 });
 
-                Rc::new(menu)
+                Arc::new(menu)
             }
         }
     });
 
-    let context_menu_container_ok = LocalResource::new(|| (), {
+    let context_menu_container_ok = LocalResource::new({
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
-        move |_| {
+        move || {
             let project = project.clone();
             let graph = graph.clone();
             let messages = messages.clone();
@@ -191,16 +195,16 @@ pub fn Canvas() -> impl IntoView {
                     )
                 });
 
-                Rc::new(menu)
+                Arc::new(menu)
             }
         }
     });
 
-    let context_menu_container_err = LocalResource::new(|| (), {
+    let context_menu_container_err = LocalResource::new({
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
-        move |_| {
+        move || {
             let project = project.clone();
             let graph = graph.clone();
             let messages = messages.clone();
@@ -231,16 +235,16 @@ pub fn Canvas() -> impl IntoView {
                     )
                 });
 
-                Rc::new(menu)
+                Arc::new(menu)
             }
         }
     });
 
-    let context_menu_asset = LocalResource::new(|| (), {
+    let context_menu_asset = LocalResource::new({
         let project = project.clone();
         let graph = graph.clone();
         let messages = messages.clone();
-        move |_| {
+        move || {
             let project = project.clone();
             let graph = graph.clone();
             let messages = messages.clone();
@@ -265,7 +269,7 @@ pub fn Canvas() -> impl IntoView {
                     )
                 });
 
-                Rc::new(menu)
+                Arc::new(menu)
             }
         }
     });
@@ -275,11 +279,11 @@ pub fn Canvas() -> impl IntoView {
             view! { <CanvasLoading /> }
         }>
 
-            {move || {
-                let context_menu_container_root = context_menu_container_root.get()?;
-                let context_menu_container_ok = context_menu_container_ok.get()?;
-                let context_menu_container_err = context_menu_container_err.get()?;
-                let context_menu_asset = context_menu_asset.get()?;
+            {move || Suspend::new(async move {
+                let context_menu_container_root = context_menu_container_root.await;
+                let context_menu_container_ok = context_menu_container_ok.await;
+                let context_menu_container_err = context_menu_container_err.await;
+                let context_menu_asset = context_menu_asset.await;
                 Some(
                     view! {
                         <CanvasView
@@ -290,7 +294,7 @@ pub fn Canvas() -> impl IntoView {
                         />
                     },
                 )
-            }}
+            })}
 
         </Suspense>
     }
@@ -304,12 +308,12 @@ fn CanvasLoading() -> impl IntoView {
 #[component]
 fn CanvasView(
     /// Context menu for the root container.
-    context_menu_container_root: Rc<menu::Menu>,
+    context_menu_container_root: Arc<menu::Menu>,
     /// Context menu for `Ok` non-root containers.
-    context_menu_container_ok: Rc<menu::Menu>,
+    context_menu_container_ok: Arc<menu::Menu>,
     /// Context menu for `Err` non-root containers.
-    context_menu_container_err: Rc<menu::Menu>,
-    context_menu_asset: Rc<menu::Menu>,
+    context_menu_container_err: Arc<menu::Menu>,
+    context_menu_asset: Arc<menu::Menu>,
 ) -> impl IntoView {
     let graph = expect_context::<state::Graph>();
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
@@ -444,12 +448,10 @@ fn CanvasView(
                     viewbox.height().get_untracked(),
                 );
 
-                leptos::batch(|| {
-                    viewbox.x().set(x);
-                    viewbox.y().set(y);
-                    viewbox.width().set(width);
-                    viewbox.height().set(height);
-                });
+                viewbox.x().set(x);
+                viewbox.y().set(y);
+                viewbox.width().set(width);
+                viewbox.height().set(height);
             } else if e.shift_key() {
                 let (x, y) = calculate_canvas_position_from_wheel_event(
                     e.delta_y(),
@@ -463,10 +465,8 @@ fn CanvasView(
                     graph.root().subtree_height().get().get(),
                 );
 
-                leptos::batch(|| {
-                    viewbox.x().set(x);
-                    viewbox.y().set(y);
-                });
+                viewbox.x().set(x);
+                viewbox.y().set(y);
             } else {
                 let (x, y) = calculate_canvas_position_from_wheel_event(
                     e.delta_x(),
@@ -480,10 +480,8 @@ fn CanvasView(
                     graph.root().subtree_height().get().get(),
                 );
 
-                leptos::batch(|| {
-                    viewbox.x().set(x);
-                    viewbox.y().set(y);
-                });
+                viewbox.x().set(x);
+                viewbox.y().set(y);
             }
         }
     };
@@ -623,7 +621,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
                                         display_nodes
                                             .iter()
                                             .find_map(|data| {
-                                                Rc::ptr_eq(data.container(), sibling)
+                                                Arc::ptr_eq(data.container(), sibling)
                                                     .then(|| data.width())
                                             })
                                             .unwrap()
@@ -757,22 +755,23 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
         {move || {
             if let Some(mount) = portal_ref.get() {
                 let mount = (*mount).clone();
-                view! {
-                    <Portal mount clone:root>
-                        <ModalDialog node_ref=create_child_ref clone:root>
-                            <CreateChildContainer
-                                parent=root.clone()
-                                parent_ref=create_child_ref.clone()
-                            />
-                        </ModalDialog>
-                    </Portal>
-                }
-                    .into_view()
+                Either::Left(
+                    view! {
+                        <Portal mount clone:root>
+                            <ModalDialog node_ref=create_child_ref clone:root>
+                                <CreateChildContainer
+                                    parent=root.clone()
+                                    parent_ref=create_child_ref.clone()
+                                />
+                            </ModalDialog>
+                        </Portal>
+                    },
+                )
             } else {
-                ().into_view()
+                Either::Right(())
             }
         }}
-    }
+    }.into_any()
 }
 
 #[component]
@@ -876,69 +875,70 @@ fn GraphEdges(
                 {move || {
                     if children_widths.with(|children| children.len()) > 0 {
                         let (x1, y1, x2, y2) = visibility_toggle_line_coordiantes();
-                        view! {
-                            <line
-                                x1=x1
-                                y1=y1
-                                x2=x2
-                                y2=y2
-                                class="stroke-secondary-400 dark:stroke-secondary-500"
-                            ></line>
+                        Either::Left(
+                            view! {
+                                <line
+                                    x1=x1
+                                    y1=y1
+                                    x2=x2
+                                    y2=y2
+                                    class="stroke-secondary-400 dark:stroke-secondary-500"
+                                ></line>
 
-                            {move || {
-                                let (cx, cy) = connector_lines_center.get();
-                                view! {
-                                    <svg
-                                        x=move || cx - CANVAS_BUTTON_RADIUS - CANVAS_BUTTON_STROKE
-                                        y=move || cy - CANVAS_BUTTON_RADIUS - CANVAS_BUTTON_STROKE
-                                        width=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
-                                        height=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
-                                        on:mousedown=toggle_container_visibility
-                                        class="group cursor-pointer"
-                                    >
-                                        <circle
-                                            r=TOGGLE_VIEW_INDICATOR_RADIUS
-                                            cx=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
-                                            cy=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
-                                            class="stroke-secondary-400 fill-secondary-400 dark:stroke-secondary-500 \
-                                            dark:fill-secondary-500 transition-opacity transition-delay-200 hover:opacity-0"
-                                        ></circle>
-                                        <g class="group-[:not(:hover)]:hidden">
+                                {move || {
+                                    let (cx, cy) = connector_lines_center.get();
+                                    view! {
+                                        <svg
+                                            x=move || cx - CANVAS_BUTTON_RADIUS - CANVAS_BUTTON_STROKE
+                                            y=move || cy - CANVAS_BUTTON_RADIUS - CANVAS_BUTTON_STROKE
+                                            width=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
+                                            height=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
+                                            on:mousedown=toggle_container_visibility
+                                            class="group cursor-pointer"
+                                        >
                                             <circle
-                                                r=CANVAS_BUTTON_RADIUS
+                                                r=TOGGLE_VIEW_INDICATOR_RADIUS
                                                 cx=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
                                                 cy=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
-                                                class="stroke-black dark:stroke-white fill-white \
-                                                dark:fill-secondary-700 stroke-2 transition-opacity transition-delay-200 \
-                                                opacity:0 hover:opacity-1"
+                                                class="stroke-secondary-400 fill-secondary-400 dark:stroke-secondary-500 \
+                                                dark:fill-secondary-500 transition-opacity transition-delay-200 hover:opacity-0"
                                             ></circle>
+                                            <g class="group-[:not(:hover)]:hidden">
+                                                <circle
+                                                    r=CANVAS_BUTTON_RADIUS
+                                                    cx=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                                                    cy=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                                                    class="stroke-black dark:stroke-white fill-white \
+                                                    dark:fill-secondary-700 stroke-2 transition-opacity transition-delay-200 \
+                                                    opacity:0 hover:opacity-1"
+                                                ></circle>
 
-                                            <svg
-                                                x=CANVAS_BUTTON_STROKE
-                                                y=CANVAS_BUTTON_STROKE
-                                                width=CANVAS_BUTTON_RADIUS * 2
-                                                height=CANVAS_BUTTON_RADIUS * 2
-                                            >
-                                                <Icon
-                                                    icon=Signal::derive(move || {
-                                                        if container_visibility() {
-                                                            components::icon::Eye
-                                                        } else {
-                                                            components::icon::EyeClosed
-                                                        }
-                                                    })
-                                                    width=(CANVAS_BUTTON_RADIUS * 2).to_string()
-                                                    height=(CANVAS_BUTTON_RADIUS * 2).to_string()
-                                                />
-                                            </svg>
-                                        </g>
-                                    </svg>
-                                }
-                            }}
-                        }
-                            .into_view()
+                                                <svg
+                                                    x=CANVAS_BUTTON_STROKE
+                                                    y=CANVAS_BUTTON_STROKE
+                                                    width=CANVAS_BUTTON_RADIUS * 2
+                                                    height=CANVAS_BUTTON_RADIUS * 2
+                                                >
+                                                    <Icon
+                                                        icon=Signal::derive(move || {
+                                                            if container_visibility() {
+                                                                components::icon::Eye
+                                                            } else {
+                                                                components::icon::EyeClosed
+                                                            }
+                                                        })
+                                                        width=(CANVAS_BUTTON_RADIUS * 2).to_string()
+                                                        height=(CANVAS_BUTTON_RADIUS * 2).to_string()
+                                                    />
+                                                </svg>
+                                            </g>
+                                        </svg>
+                                    }
+                                }}
+                            },
+                        )
                     } else {
-                        view! {}.into_view()
+                        Either::Right(())
                     }
                 }}
             </g>
@@ -957,7 +957,7 @@ fn CreateChildContainer(
     let graph = expect_context::<state::Graph>();
     let (name, set_name) = signal("".to_string());
 
-    let create_child = Action::new({
+    let create_child: Action<_, _> = Action::new_unsync({
         move |name: &String| {
             let graph = graph.clone();
             let project = project.rid().clone();
@@ -1002,7 +1002,7 @@ fn CreateChildContainer(
             <h1 class="text-center text-lg pb-2 dark:text-white">"Create a new child"</h1>
             <form on:submit=move |e| {
                 e.prevent_default();
-                create_child.dispatch(name())
+                create_child.dispatch(name());
             }>
                 <div class="pb-2">
                     <input
@@ -1021,9 +1021,9 @@ fn CreateChildContainer(
                                 if let Some(Err(error)) = value {
                                     tracing::debug!(? error);
                                     let msg = "Something went wrong.";
-                                    view! { <div>{msg}</div> }.into_view()
+                                    Either::Left(view! { <div>{msg}</div> })
                                 } else {
-                                    ().into_view()
+                                    Either::Right(())
                                 }
                             })
                     }}
@@ -1055,9 +1055,9 @@ fn ContainerView(
     move || {
         container.properties().with(|properties| {
             if properties.is_ok() {
-                view! { <ContainerOk node_ref container=container.clone() /> }
+                Either::Left(view! { <ContainerOk node_ref container=container.clone() /> })
             } else {
-                view! { <ContainerErr node_ref container=container.clone() /> }
+                Either::Right(view! { <ContainerErr node_ref container=container.clone() /> })
             }
         })
     }
@@ -1168,7 +1168,7 @@ fn ContainerOk(
         move |e: MouseEvent| {
             e.prevent_default();
 
-            let is_root = Rc::ptr_eq(&container, graph.root());
+            let is_root = Arc::ptr_eq(&container, graph.root());
             context_menu_active_container.update(|active_container| {
                 let _ = active_container.insert(container.clone().into());
             });
@@ -1323,10 +1323,9 @@ fn ContainerPreview(
 #[component]
 fn Assets(assets: ReadSignal<state::container::AssetsState>) -> impl IntoView {
     let messages = expect_context::<types::Messages>();
-
     move || {
         assets.with(|assets| match assets {
-            Ok(assets) => view! { <AssetsPreview assets=assets.read_only() /> }.into_view(),
+            Ok(assets) => Either::Left(view! { <AssetsPreview assets=assets.read_only() /> }),
             Err(err) => {
                 tracing::error!(?err);
                 messages.update(|messages| {
@@ -1336,7 +1335,7 @@ fn Assets(assets: ReadSignal<state::container::AssetsState>) -> impl IntoView {
                     messages.push(msg.build());
                 });
 
-                view! { <div class="text-center">"(assets error)"</div> }.into_view()
+                Either::Right(view! { <div class="text-center">"(assets error)"</div> })
             }
         })
     }
@@ -1485,7 +1484,7 @@ fn Asset(asset: state::Asset) -> impl IntoView {
         }
 
         e.stop_propagation();
-        remove.dispatch(())
+        remove.dispatch(());
     };
 
     let icon = Signal::derive({
@@ -1819,7 +1818,7 @@ fn ContainerErr(
         move |e: MouseEvent| {
             e.prevent_default();
 
-            let is_root = Rc::ptr_eq(&container, graph.root());
+            let is_root = Arc::ptr_eq(&container, graph.root());
             context_menu_active_container.update(|active_container| {
                 let _ = active_container.insert(container.clone().into());
             });
@@ -2311,10 +2310,10 @@ async fn remove_asset(
 mod display {
     use super::state;
     use leptos::prelude::*;
-    use std::{num::NonZeroUsize, rc::Rc};
+    use std::{num::NonZeroUsize, sync::Arc};
 
     // TODO: May be unnecesasry to wrap in `Rc`.
-    type Node = Rc<Data>;
+    type Node = Arc<Data>;
 
     #[derive(Clone, Debug)]
     pub struct Data {
@@ -2324,7 +2323,7 @@ mod display {
 
         // TODO: Use trigger?
         /// Updates internal state when `children` changes.
-        _update: Effect<()>,
+        _update: Effect<LocalStorage>,
         reactive_owner: Owner,
     }
 
@@ -2337,9 +2336,9 @@ mod display {
             reactive_owner: Owner,
         ) -> Self {
             let state_children = children;
-            let children = with_owner(reactive_owner, || RwSignal::new(vec![]));
+            let children = reactive_owner.with(|| RwSignal::new(vec![]));
 
-            let update = with_owner(reactive_owner, || {
+            let update = reactive_owner.with(|| {
                 Effect::new(move |_| {
                     let (removed, added) = state_children.with(|state_children| {
                         let removed = children.with_untracked(|children| {
@@ -2348,7 +2347,7 @@ mod display {
                                 .filter(|(child, _)| {
                                     !state_children
                                         .iter()
-                                        .any(|state_child| Rc::ptr_eq(state_child, child))
+                                        .any(|state_child| Arc::ptr_eq(state_child, child))
                                 })
                                 .map(|(child, _)| child)
                                 .cloned()
@@ -2361,7 +2360,7 @@ mod display {
                                 children.with_untracked(|children| {
                                     !children
                                         .iter()
-                                        .any(|(child, _)| Rc::ptr_eq(child, state_child))
+                                        .any(|(child, _)| Arc::ptr_eq(child, state_child))
                                 })
                             })
                             .cloned()
@@ -2372,14 +2371,14 @@ mod display {
 
                     children.update(|children| {
                         children.retain(|(child, _)| {
-                            !removed.iter().any(|removed| Rc::ptr_eq(removed, child))
+                            !removed.iter().any(|removed| Arc::ptr_eq(removed, child))
                         });
 
                         let added = added.iter().map(|added| {
                             nodes.with_untracked(|nodes| {
                                 let node = nodes
                                     .iter()
-                                    .find(|node| Rc::ptr_eq(&node.container, added))
+                                    .find(|node| Arc::ptr_eq(&node.container, added))
                                     .unwrap();
 
                                 (node.container.clone(), node.width())
@@ -2408,7 +2407,7 @@ mod display {
         }
 
         pub fn width(&self) -> Signal<NonZeroUsize> {
-            with_owner(self.reactive_owner, || {
+            self.reactive_owner.with(|| {
                 Signal::derive({
                     let visibility = self.visibility;
                     let children = self.children.read_only();
@@ -2443,7 +2442,7 @@ mod display {
 
         // TODO: Use trigger?
         /// Updates internal state when `children` changes.
-        _update: Effect<()>,
+        _update: Effect<LocalStorage>,
     }
 
     impl State {
@@ -2462,7 +2461,7 @@ mod display {
                         let visibility = visibilities
                             .with_untracked(|visibilities| {
                                 visibilities.iter().find_map(|(node, visibility)| {
-                                    Rc::ptr_eq(node, container).then_some(visibility.read_only())
+                                    Arc::ptr_eq(node, container).then_some(visibility.read_only())
                                 })
                             })
                             .unwrap();
@@ -2472,7 +2471,7 @@ mod display {
                             state_children.read_only(),
                             visibility,
                             nodes.read_only(),
-                            reactive_owner,
+                            reactive_owner.clone(),
                         ))
                     })
                     .collect::<Vec<_>>()
@@ -2483,7 +2482,7 @@ mod display {
                     children
                         .iter()
                         .find_map(|(parent, children)| {
-                            Rc::ptr_eq(parent, &data.container).then_some(children.read_only())
+                            Arc::ptr_eq(parent, &data.container).then_some(children.read_only())
                         })
                         .unwrap()
                 });
@@ -2495,7 +2494,7 @@ mod display {
                             data_nodes
                                 .iter()
                                 .find_map(|node| {
-                                    Rc::ptr_eq(&node.container, container_child)
+                                    Arc::ptr_eq(&node.container, container_child)
                                         .then_some((node.container.clone(), node.width()))
                                 })
                                 .unwrap()
@@ -2517,7 +2516,7 @@ mod display {
                                 .filter(|data| {
                                     !edges
                                         .iter()
-                                        .any(|(parent, _)| Rc::ptr_eq(parent, &data.container))
+                                        .any(|(parent, _)| Arc::ptr_eq(parent, &data.container))
                                 })
                                 .map(|data| data.container.clone())
                                 .collect::<Vec<_>>()
@@ -2528,7 +2527,7 @@ mod display {
                                 nodes.retain(|data| {
                                     !removed
                                         .iter()
-                                        .any(|removed| Rc::ptr_eq(removed, &data.container))
+                                        .any(|removed| Arc::ptr_eq(removed, &data.container))
                                 });
                             });
                         }
@@ -2537,7 +2536,9 @@ mod display {
                             .iter()
                             .filter(|(parent, _)| {
                                 nodes.with_untracked(|nodes| {
-                                    !nodes.iter().any(|node| Rc::ptr_eq(&node.container, parent))
+                                    !nodes
+                                        .iter()
+                                        .any(|node| Arc::ptr_eq(&node.container, parent))
                                 })
                             })
                             .collect::<Vec<_>>();
@@ -2549,7 +2550,7 @@ mod display {
                                     visibilities
                                         .iter()
                                         .find_map(|(container, visibility)| {
-                                            Rc::ptr_eq(container, parent)
+                                            Arc::ptr_eq(container, parent)
                                                 .then_some(visibility.read_only())
                                         })
                                         .unwrap()
@@ -2560,7 +2561,7 @@ mod display {
                                     state_children.read_only(),
                                     visibility,
                                     nodes.read_only(),
-                                    reactive_owner,
+                                    reactive_owner.clone(),
                                 ))
                             })
                             .collect::<Vec<_>>();
@@ -2569,7 +2570,7 @@ mod display {
                             let state_children = added_states
                                 .iter()
                                 .find_map(|(parent, children)| {
-                                    Rc::ptr_eq(parent, &data.container)
+                                    Arc::ptr_eq(parent, &data.container)
                                         .then_some(children.read_only())
                                 })
                                 .unwrap();
@@ -2581,7 +2582,7 @@ mod display {
                                         let data_child = added_data
                                             .iter()
                                             .find(|data_child| {
-                                                Rc::ptr_eq(&data_child.container, state_child)
+                                                Arc::ptr_eq(&data_child.container, state_child)
                                             })
                                             .unwrap();
 
@@ -2599,7 +2600,7 @@ mod display {
                                 let state_children = edges
                                     .iter()
                                     .find_map(|(parent, children)| {
-                                        Rc::ptr_eq(parent, &data.container)
+                                        Arc::ptr_eq(parent, &data.container)
                                             .then_some(children.read_only())
                                     })
                                     .unwrap();
@@ -2619,7 +2620,7 @@ mod display {
                                                     data.children.with_untracked(|data_children| {
                                                         !data_children.iter().any(
                                                             |(data_child, _)| {
-                                                                Rc::ptr_eq(data_child, state_child)
+                                                                Arc::ptr_eq(data_child, state_child)
                                                             },
                                                         )
                                                     })
@@ -2630,7 +2631,7 @@ mod display {
 
                                     let root = added_data
                                         .iter()
-                                        .find(|added| Rc::ptr_eq(&added.container, &missing_child))
+                                        .find(|added| Arc::ptr_eq(&added.container, &missing_child))
                                         .unwrap();
 
                                     data.children.update(|children| {
@@ -2652,7 +2653,7 @@ mod display {
                                 let state_children = edges
                                     .iter()
                                     .find_map(|(parent, children)| {
-                                        Rc::ptr_eq(parent, &data.container)
+                                        Arc::ptr_eq(parent, &data.container)
                                             .then_some(children.read_only())
                                     })
                                     .unwrap();
@@ -2668,7 +2669,7 @@ mod display {
                                             state_children
                                                 .iter()
                                                 .find(|state_child| {
-                                                    Rc::ptr_eq(state_child, data_child)
+                                                    Arc::ptr_eq(state_child, data_child)
                                                 })
                                                 .unwrap();
                                         });
@@ -2696,16 +2697,16 @@ mod display {
             self.nodes.with_untracked(|nodes| {
                 nodes
                     .iter()
-                    .find(|node| Rc::ptr_eq(&node.container, container))
+                    .find(|node| Arc::ptr_eq(&node.container, container))
                     .cloned()
             })
         }
 
         pub fn width(&self, container: &state::graph::Node) -> Option<Signal<NonZeroUsize>> {
             self.nodes.with_untracked(|nodes| {
-                nodes
-                    .iter()
-                    .find_map(|node| Rc::ptr_eq(&node.container, container).then_some(node.width()))
+                nodes.iter().find_map(|node| {
+                    Arc::ptr_eq(&node.container, container).then_some(node.width())
+                })
             })
         }
     }

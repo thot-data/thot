@@ -10,16 +10,15 @@ pub fn Settings(
     onclose: Callback<()>,
 ) -> impl IntoView {
     let user_settings = expect_context::<types::settings::User>();
-    let settings = Resource::new(|| (), |_| async move { fetch_user_settings().await });
+    let settings = LocalResource::new(fetch_user_settings);
     view! {
         <Suspense fallback=Loading>
-            {settings()
-                .map(|settings| {
-                    if let Some(settings) = settings {
-                        user_settings.set(settings);
-                    }
-                    view! { <SettingsView onclose /> }
-                })}
+            {move || Suspend::new(async move {
+                if let Some(settings) = settings.await {
+                    user_settings.set(settings);
+                }
+                view! { <SettingsView onclose /> }
+            })}
         </Suspense>
     }
 }
@@ -37,7 +36,7 @@ fn SettingsView(
 ) -> impl IntoView {
     let trigger_close = move |e: MouseEvent| {
         if e.button() == types::MouseButton::Primary {
-            onclose(());
+            onclose.run(());
         }
     };
 
@@ -68,8 +67,10 @@ fn SettingsView(
 mod desktop {
     use crate::{app::PrefersDarkTheme, types};
     use leptos::{
+        either::Either,
         ev::{Event, MouseEvent},
-        *,
+        prelude::*,
+        task::spawn_local,
     };
     use leptos_icons::*;
     use serde::{Deserialize, Serialize};
@@ -161,27 +162,31 @@ mod desktop {
                     <label>
                         {move || {
                             if prefers_dark_theme() {
-                                view! {
-                                    <button
-                                        type="button"
-                                        on:mousedown=toggle_theme
-                                        class="text-2xl p-2 border rounded"
-                                        title="Light mode"
-                                    >
-                                        <Icon icon=icondata::BsSun />
-                                    </button>
-                                }
+                                Either::Left(
+                                    view! {
+                                        <button
+                                            type="button"
+                                            on:mousedown=toggle_theme
+                                            class="text-2xl p-2 border rounded"
+                                            title="Light mode"
+                                        >
+                                            <Icon icon=icondata::BsSun />
+                                        </button>
+                                    },
+                                )
                             } else {
-                                view! {
-                                    <button
-                                        type="button"
-                                        on:mousedown=toggle_theme
-                                        class="text-2xl p-2 border border-black rounded"
-                                        title="Dark mode"
-                                    >
-                                        <Icon icon=icondata::BsMoon />
-                                    </button>
-                                }
+                                Either::Right(
+                                    view! {
+                                        <button
+                                            type="button"
+                                            on:mousedown=toggle_theme
+                                            class="text-2xl p-2 border border-black rounded"
+                                            title="Dark mode"
+                                        >
+                                            <Icon icon=icondata::BsMoon />
+                                        </button>
+                                    },
+                                )
                             }
                         }}
                     </label>
@@ -237,7 +242,7 @@ mod runner {
         let user = expect_context::<core::system::User>();
         let messages = expect_context::<types::Messages>();
         let user_settings = expect_context::<types::settings::User>();
-        let input_debounce = move || {
+        let input_debounce = Signal::derive(move || {
             user_settings.with(|settings| {
                 let debounce = match &settings.desktop {
                     Ok(settings) => settings.input_debounce_ms,
@@ -246,7 +251,7 @@ mod runner {
 
                 debounce as f64
             })
-        };
+        });
 
         let (python_path, set_python_path) = signal(user_settings.with_untracked(|settings| {
             settings
@@ -257,8 +262,8 @@ mod runner {
                 .flatten()
                 .cloned()
         }));
-        let python_path =
-            leptos_use::signal_debounced(python_path, Signal::derive(input_debounce.clone()));
+        let python_path: Signal<Option<PathBuf>> =
+            leptos_use::signal_debounced(python_path, input_debounce);
 
         let (r_path, set_r_path) = signal(user_settings.with_untracked(|settings| {
             settings
@@ -269,7 +274,7 @@ mod runner {
                 .flatten()
                 .cloned()
         }));
-        let r_path = leptos_use::signal_debounced(r_path, Signal::derive(input_debounce.clone()));
+        let r_path: Signal<Option<PathBuf>> = leptos_use::signal_debounced(r_path, input_debounce);
 
         let (continue_on_error, set_continue_on_error) =
             signal(user_settings.with_untracked(|settings| {

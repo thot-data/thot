@@ -13,35 +13,35 @@ categories = [ "gui", "science" ]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-wasm-bindgen = "0.2"
+chrono = { workspace = true, features = ["serde"] }
 codee = "0.2"
-wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1.7"
+derive_more = { workspace = true, features = ["debug"] }
+futures.workspace = true
+getrandom = { version = "0.2", features = ["js"] }
+has_id.workspace = true
+icondata = "0.5"
 js-sys = "0.3"
+leptos = { version = "0.7", features = ["nightly", "csr"] }
+leptos_icons = { git = "https://github.com/bicarlsen/leptos-icons", branch = "0.7" }
+leptos_meta = { version = "0.7" }
+leptos_router = { version = "0.7", features = ["nightly"] }
+leptos-use = { git = "https://github.com/Synphonyte/leptos-use.git", features = ["storage"]}
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde-wasm-bindgen = "0.6"
-console_error_panic_hook = "0.1.7"
-tracing.workspace = true
-tracing-subscriber = { workspace = true, features = ["time"] }
-tracing-web = "0.1.3"
-has_id.workspace = true
 syre-core = { workspace = true, features = ["serde"] }
+syre-desktop-lib = { path = "src-lib" }
 syre-local = { workspace = true }
 syre-local-database.workspace = true
-syre-desktop-lib = { path = "src-lib" }
-futures.workspace = true
-time = { version = "0.3", features = ["wasm-bindgen"] }
-getrandom = { version = "0.2", features = ["js"] }
 # tauri-sys = { git = "https://github.com/JonasKruckenberg/tauri-sys", branch = "v2", features = ["core", "event", "menu", "window"] }
 tauri-sys = { git = "https://github.com/bicarlsen/tauri-sys", branch = "v2", features = ["core", "event", "menu", "window"] }
-leptos = { version = "0.7", features = ["nightly", "csr"] }
-leptos_router = { version = "0.7", features = ["nightly"] }
-leptos_meta = { version = "0.7" }
-chrono = { workspace = true, features = ["serde"] }
-leptos_icons = "0.3.1"
-icondata = "0.5"
-leptos-use = { git = "https://github.com/Synphonyte/leptos-use.git", features = ["storage"]}
-derive_more.workspace = true
+time = { version = "0.3", features = ["wasm-bindgen"] }
+tracing-subscriber = { workspace = true, features = ["time"] }
+tracing-web = "0.1.3"
+tracing.workspace = true
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
 
 [dependencies.web-sys]  
 version = "0.3.70"

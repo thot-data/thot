@@ -1,6 +1,6 @@
 use crate::components::{Autofocus, Logo};
 use leptos::prelude::*;
-use leptos_router::{hooks::use_navigate, *};
+use leptos_router::{components::A, hooks::use_navigate};
 use serde::Serialize;
 use syre_core::system::User;
 use web_sys::{FormData, SubmitEvent};
@@ -11,22 +11,23 @@ pub fn Register() -> impl IntoView {
     let (error, set_error) = signal(None);
     let form_ref = NodeRef::new();
 
-    let register_user_action = Action::new(move |(email, name): &(String, Option<String>)| {
-        let email = email.clone();
-        let name = name.clone();
-        let navigate = navigate.clone();
-        async move {
-            match register(email, name).await {
-                Ok(_user) => {
-                    navigate("/", Default::default());
-                }
+    let register_user_action: Action<_, _> =
+        Action::new_unsync(move |(email, name): &(String, Option<String>)| {
+            let email = email.clone();
+            let name = name.clone();
+            let navigate = navigate.clone();
+            async move {
+                match register(email, name).await {
+                    Ok(_user) => {
+                        navigate("/", Default::default());
+                    }
 
-                Err(err) => {
-                    set_error(Some(err));
+                    Err(err) => {
+                        set_error(Some(err));
+                    }
                 }
             }
-        }
-    });
+        });
 
     let register_user = {
         move |e: SubmitEvent| {
@@ -56,7 +57,7 @@ pub fn Register() -> impl IntoView {
     view! {
         <div class="h-screen w-screen flex flex-col justify-center items-center gap-y-4">
             <div class="flex flex-col items-center w-20">
-                <Logo class="w-full" />
+                <Logo attr:class="w-full" />
                 <h1 class="font-primary text-4xl">"Syre"</h1>
             </div>
             <div class="w-1/2">
@@ -85,7 +86,7 @@ pub fn Register() -> impl IntoView {
                         <button disabled=register_user_action.pending() class="btn btn-primary">
                             "Sign up"
                         </button>
-                        <A href="/login" class="btn btn-secondary">
+                        <A href="/login" attr:class="btn btn-secondary">
                             "Log in"
                         </A>
                     </div>

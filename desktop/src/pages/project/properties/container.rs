@@ -5,8 +5,10 @@ use description::Editor as Description;
 use has_id::HasId;
 use kind::Editor as Kind;
 use leptos::{
+    either::either,
     ev::{Event, MouseEvent},
     html,
+    portal::Portal,
     prelude::*,
 };
 use leptos_icons::Icon;
@@ -163,7 +165,7 @@ pub fn Editor(container: state::Container) -> impl IntoView {
             .unwrap();
     };
 
-    let on_widget_close = move |_| {
+    let on_widget_close = move || {
         set_widget.update(|widget| {
             widget.take();
         });
@@ -340,27 +342,13 @@ pub fn Editor(container: state::Container) -> impl IntoView {
                         let mount = (*mount).clone();
                         view! {
                             <Portal mount>
-                                {move || match widget().unwrap() {
-                                    Widget::AddMetadatum => {
-                                        view! {
-                                            <AddDatum
-                                                metadata
-                                                container
-                                                onclose=on_widget_close.clone()
-                                            />
-                                        }
-                                            .into_view()
-                                    }
-                                    Widget::AddAnalysisAssociation => {
-                                        view! {
-                                            <AddAssociation
-                                                available_analyses
-                                                container
-                                                onclose=on_widget_close.clone()
-                                            />
-                                        }
-                                            .into_view()
-                                    }
+                                {move || {
+                                    let widget = widget().unwrap();
+                                    either!(
+                                        widget,
+                                        Widget::AddMetadatum => view! { <AddDatum metadata container onclose=on_widget_close.clone() /> },
+                                        Widget::AddAnalysisAssociation => view! { <AddAssociation available_analyses container onclose=on_widget_close.clone() /> },
+                                    )
                                 }}
                             </Portal>
                         }
@@ -374,7 +362,7 @@ pub fn Editor(container: state::Container) -> impl IntoView {
 mod name {
     use super::InputDebounce;
     use crate::{components::form::debounced::value, pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use serde::Serialize;
     use std::{ffi::OsString, path::PathBuf};
     use syre_core::types::ResourceId;
@@ -393,7 +381,8 @@ mod name {
         let input_debounce = expect_context::<InputDebounce>();
 
         let (input_value, set_input_value) = signal(value::State::clean(value.get_untracked()));
-        let input_value = leptos_use::signal_debounced(input_value, *input_debounce);
+        let input_value: Signal<value::State<String>> =
+            leptos_use::signal_debounced(input_value, *input_debounce);
         let (error, set_error) = signal(false);
 
         let _ = Effect::watch(
@@ -485,7 +474,7 @@ mod name {
 mod kind {
     use super::{super::common::kind::Editor as KindEditor, update_properties, InputDebounce};
     use crate::{pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_core::types::ResourceId;
     use syre_local_database as db;
 
@@ -543,7 +532,7 @@ mod description {
         super::common::description::Editor as DescriptionEditor, update_properties, InputDebounce,
     };
     use crate::{pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_core::types::ResourceId;
     use syre_local_database as db;
 
@@ -603,7 +592,7 @@ mod description {
 mod tags {
     use super::{super::common::tags::Editor as TagsEditor, update_properties, InputDebounce};
     use crate::{pages::project::state, types};
-    use leptos::prelude::*;
+    use leptos::{prelude::*, task::spawn_local};
     use syre_core::types::ResourceId;
     use syre_local_database as db;
 
@@ -670,7 +659,7 @@ mod metadata {
         pages::project::state,
         types,
     };
-    use leptos::{ev::MouseEvent, prelude::*};
+    use leptos::{ev::MouseEvent, html, prelude::*, task::spawn_local};
     use leptos_icons::Icon;
     use syre_core::types::{ResourceId, Value};
     use syre_local_database as db;
@@ -744,7 +733,7 @@ mod metadata {
                         todo!()
                     } else {
                         if let Some(onclose) = onclose {
-                            onclose(());
+                            onclose.run(());
                         }
                     }
                 }
@@ -753,7 +742,7 @@ mod metadata {
 
         let close = move |_| {
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
         };
 
@@ -968,13 +957,13 @@ mod analysis_associations {
         let onadd = move |association: AnalysisAssociation| {
             add_association.dispatch(association);
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
         };
 
         let close = move |_| {
             if let Some(onclose) = onclose {
-                onclose(());
+                onclose.run(());
             }
         };
 
@@ -1201,7 +1190,15 @@ mod analysis_associations {
             }
         };
 
-        let classes = move || class.with(|class| format!("flex flex-wrap {class}"));
+        let classes = move || {
+            class.with(|class| {
+                if let Some(class) = class {
+                    format!("flex flex-wrap {class}")
+                } else {
+                    "flex flex-wrap".to_string()
+                }
+            })
+        };
 
         view! {
             <div class=classes>

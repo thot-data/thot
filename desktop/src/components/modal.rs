@@ -14,7 +14,7 @@ pub fn ModalDialog(
             return;
         };
 
-        if let Some(dialog) = dialog.get() {
+        if let Some(dialog) = dialog.read_untracked().as_ref() {
             if target == *dialog {
                 dialog.close();
             }
