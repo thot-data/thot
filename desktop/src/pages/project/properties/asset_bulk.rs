@@ -422,8 +422,8 @@ pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
 
 mod name {
     use super::{
-        super::{common::bulk::Value, errors_to_list_view},
-        container_assets, update_properties, ActiveResources, InputDebounce, State,
+        super::common::bulk::Value, container_assets, update_properties, ActiveResources,
+        InputDebounce, State, UpdatePropertiesErrors,
     };
     use crate::{components::form::debounced::InputText, pages::project::state, types};
     use leptos::{prelude::*, task::spawn_local};
@@ -464,7 +464,7 @@ mod name {
                             if !errors.is_empty() {
                                 let mut msg =
                                     types::message::Builder::error("Could not save properties.");
-                                msg.body(errors_to_list_view(errors));
+                                msg.body(UpdatePropertiesErrors { errors });
                                 messages.update(|messages| messages.push(msg.build()));
                             }
                         }
@@ -542,8 +542,8 @@ mod name {
 
 mod kind {
     use super::{
-        super::{common::bulk::kind::Editor as KindEditor, errors_to_list_view},
-        container_assets, update_properties, ActiveResources, InputDebounce, State,
+        super::common::bulk::kind::Editor as KindEditor, container_assets, update_properties,
+        ActiveResources, InputDebounce, State, UpdatePropertiesErrors,
     };
     use crate::{pages::project::state, types};
     use leptos::{prelude::*, task::spawn_local};
@@ -584,7 +584,7 @@ mod kind {
                             if !errors.is_empty() {
                                 let mut msg =
                                     types::message::Builder::error("Could not save properties.");
-                                msg.body(errors_to_list_view(errors));
+                                msg.body(UpdatePropertiesErrors { errors });
                                 messages.update(|messages| messages.push(msg.build()));
                             }
                         }
@@ -599,8 +599,8 @@ mod kind {
 
 mod description {
     use super::{
-        super::{common::bulk::description::Editor as DescriptionEditor, errors_to_list_view},
-        container_assets, update_properties, ActiveResources, InputDebounce, State,
+        super::common::bulk::description::Editor as DescriptionEditor, container_assets,
+        update_properties, ActiveResources, InputDebounce, State, UpdatePropertiesErrors,
     };
     use crate::{pages::project::state, types};
     use leptos::{prelude::*, task::spawn_local};
@@ -641,7 +641,7 @@ mod description {
                             if !errors.is_empty() {
                                 let mut msg =
                                     types::message::Builder::error("Could not save properties.");
-                                msg.body(errors_to_list_view(errors));
+                                msg.body(UpdatePropertiesErrors { errors });
                                 messages.update(|messages| messages.push(msg.build()));
                             }
                         }
@@ -663,11 +663,8 @@ mod description {
 
 mod tags {
     use super::{
-        super::{
-            common::bulk::tags::{AddTags as AddTagsEditor, Editor as TagsEditor},
-            errors_to_list_view,
-        },
-        container_assets, update_properties, ActiveResources, State,
+        super::common::bulk::tags::{AddTags as AddTagsEditor, Editor as TagsEditor},
+        container_assets, update_properties, ActiveResources, State, UpdatePropertiesErrors,
     };
     use crate::{components::DetailPopout, pages::project::state, types};
     use leptos::{prelude::*, task::spawn_local};
@@ -719,7 +716,7 @@ mod tags {
                                     let mut msg = types::message::Builder::error(
                                         "Could not save properties.",
                                     );
-                                    msg.body(errors_to_list_view(errors));
+                                    msg.body(UpdatePropertiesErrors { errors });
                                     messages.update(|messages| messages.push(msg.build()));
                                 }
                             }
@@ -775,7 +772,7 @@ mod tags {
                             } else {
                                 let mut msg =
                                     types::message::Builder::error("Could not save properties.");
-                                msg.body(errors_to_list_view(errors));
+                                msg.body(UpdatePropertiesErrors { errors });
                                 messages.update(|messages| messages.push(msg.build()));
                             }
                         }
@@ -800,13 +797,11 @@ mod tags {
 
 mod metadata {
     use super::{
-        super::{
-            common::{
-                bulk::metadata::Editor as MetadataEditor, metadata::AddDatum as AddDatumEditor,
-            },
-            errors_to_list_view,
+        super::common::{
+            bulk::metadata::Editor as MetadataEditor, metadata::AddDatum as AddDatumEditor,
         },
         container_assets, update_properties, ActiveResources, InputDebounce, State,
+        UpdatePropertiesErrors,
     };
     use crate::{components::DetailPopout, pages::project::state, types};
     use leptos::{prelude::*, task::spawn_local};
@@ -862,7 +857,7 @@ mod metadata {
                                     let mut msg = types::message::Builder::error(
                                         "Could not save properties.",
                                     );
-                                    msg.body(errors_to_list_view(errors));
+                                    msg.body(UpdatePropertiesErrors { errors });
                                     messages.update(|messages| messages.push(msg.build()));
                                 }
                             }
@@ -917,7 +912,7 @@ mod metadata {
                                         let mut msg = types::message::Builder::error(
                                             "Could not save properties.",
                                         );
-                                        msg.body(errors_to_list_view(errors));
+                                        msg.body(UpdatePropertiesErrors { errors });
                                         messages.update(|messages| messages.push(msg.build()));
                                     }
                                 }
@@ -980,7 +975,7 @@ mod metadata {
                                     let mut msg = types::message::Builder::error(
                                         "Could not save properties.",
                                     );
-                                    msg.body(errors_to_list_view(errors));
+                                    msg.body(UpdatePropertiesErrors { errors });
                                     messages.update(|messages| messages.push(msg.build()));
                                 }
                             }
@@ -1066,4 +1061,16 @@ fn container_assets(
     }
 
     asset_ids.into_iter().map(|ids| ids.into()).collect()
+}
+
+struct UpdatePropertiesErrors {
+    errors: Vec<lib::command::asset::bulk::error::Update>,
+}
+
+impl types::message::MessageBody for UpdatePropertiesErrors {
+    fn to_message_body(&self) -> AnyView {
+        super::errors_to_list_view(self.errors.clone())
+            .into_view()
+            .into_any()
+    }
 }

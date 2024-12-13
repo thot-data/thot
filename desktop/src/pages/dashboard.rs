@@ -454,7 +454,7 @@ fn InitializeProject(
 ) -> impl IntoView {
     let user = expect_context::<User>();
     let messages = expect_context::<types::Messages>();
-    let initialize_project_action = Action::new({
+    let initialize_project_action: Action<_, _> = Action::new_unsync({
         let user = user.rid().clone();
         let messages = messages.clone();
         move |_| {
@@ -497,7 +497,7 @@ fn ImportProject(
     let user = expect_context::<User>();
     let messages = expect_context::<types::Messages>();
 
-    let import_project_action = Action::new({
+    let import_project_action: Action<_, _> = Action::new_unsync({
         let user = user.rid().clone();
         move |_| {
             let user = user.clone();

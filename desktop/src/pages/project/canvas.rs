@@ -1446,7 +1446,7 @@ fn Asset(asset: state::Asset) -> impl IntoView {
         }
     };
 
-    let remove = Action::new({
+    let remove:Action<_, _> = Action::new_unsync({
         let asset = asset.clone();
         let container = container.clone();
         let graph = graph.clone();
@@ -1627,7 +1627,7 @@ fn AnalysisAssociation(association: state::AnalysisAssociation) -> impl IntoView
         }
     };
 
-    let update_associations = Action::new({
+    let update_associations:Action<_, _> = Action::new_unsync({
         let project = project.clone();
         let container = container.clone();
         let messages = messages.clone();

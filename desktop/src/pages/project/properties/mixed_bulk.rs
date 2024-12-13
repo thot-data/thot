@@ -802,36 +802,10 @@ async fn update_properties(
 
             if !container_errors.is_empty() || !asset_errors.is_empty() {
                 let mut msg = types::message::Builder::error("Could not save properties.");
-
-                let errors = view! {
-                    <div>
-                        {if !container_errors.is_empty() {
-                            Either::Left(
-                                view! {
-                                    <div>
-                                        <h2>"Containers"</h2>
-                                        {errors_to_list_view(container_errors)}
-                                    </div>
-                                },
-                            )
-                        } else {
-                            Either::Right(view! {})
-                        }}
-                        {if !asset_errors.is_empty() {
-                            Either::Left(
-                                view! {
-                                    <div>
-                                        <h2>"Assets"</h2>
-                                        {errors_to_list_view(asset_errors)}
-                                    </div>
-                                },
-                            )
-                        } else {
-                            Either::Right(view! {})
-                        }}
-                    </div>
-                };
-                msg.body(errors);
+                msg.body(UpdatePropertiesErrors {
+                    container_errors,
+                    asset_errors,
+                });
                 messages.update(|messages| messages.push(msg.build()));
             }
         }
@@ -936,4 +910,43 @@ fn resources_to_update_args(
         .collect();
     let asset_ids = container_assets(&asset_ids, &graph);
     (containers, asset_ids)
+}
+
+struct UpdatePropertiesErrors {
+    container_errors: Vec<lib::command::container::bulk::error::Update>,
+    asset_errors: Vec<lib::command::asset::bulk::error::Update>,
+}
+
+impl types::message::MessageBody for UpdatePropertiesErrors {
+    fn to_message_body(&self) -> AnyView {
+        view! {
+            <div>
+                {if !self.container_errors.is_empty() {
+                    Either::Left(
+                        view! {
+                            <div>
+                                <h2>"Containers"</h2>
+                                {errors_to_list_view(self.container_errors.clone())}
+                            </div>
+                        },
+                    )
+                } else {
+                    Either::Right(view! {})
+                }}
+                {if !self.asset_errors.is_empty() {
+                    Either::Left(
+                        view! {
+                            <div>
+                                <h2>"Assets"</h2>
+                                {errors_to_list_view(self.asset_errors.clone())}
+                            </div>
+                        },
+                    )
+                } else {
+                    Either::Right(view! {})
+                }}
+            </div>
+        }
+        .into_any()
+    }
 }

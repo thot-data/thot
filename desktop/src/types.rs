@@ -26,6 +26,7 @@ impl PartialEq<MouseButton> for i16 {
 
 pub mod message {
     use leptos::prelude::*;
+    use std::sync::Arc;
 
     #[derive(Clone, Copy, Debug)]
     pub enum MessageKind {
@@ -35,13 +36,28 @@ pub mod message {
         Info,
     }
 
-    pub struct Builder<T> {
+    /// Allows display as a [`Message`] body.
+    pub trait MessageBody {
+        /// Dispay as a message body.
+        fn to_message_body(&self) -> AnyView;
+    }
+
+    impl<T> MessageBody for T
+    where
+        T: IntoAny + Clone,
+    {
+        fn to_message_body(&self) -> AnyView {
+            self.clone().into_any()
+        }
+    }
+
+    pub struct Builder {
         title: String,
-        body: Option<View<T>>,
+        body: Option<Arc<dyn MessageBody>>,
         kind: MessageKind,
     }
 
-    impl<T> Builder<T> {
+    impl Builder {
         fn new(title: impl Into<String>, kind: MessageKind) -> Self {
             Self {
                 title: title.into(),
@@ -66,18 +82,18 @@ pub mod message {
             Self::new(title, MessageKind::Info)
         }
 
-        pub fn body(&mut self, body: View<T>) -> &mut Self {
-            let _ = self.body.insert(body);
+        pub fn body(&mut self, body: impl MessageBody + 'static) -> &mut Self {
+            let _ = self.body.insert(Arc::new(body));
             self
         }
 
-        pub fn build(self) -> Message<T> {
+        pub fn build(self) -> Message {
             self.into()
         }
     }
 
-    impl<T> Into<Message<T>> for Builder<T> {
-        fn into(self) -> Message<T> {
+    impl Into<Message> for Builder {
+        fn into(self) -> Message {
             let id = (js_sys::Math::random() * (usize::MAX as f64)) as usize;
             Message {
                 id,
@@ -89,16 +105,16 @@ pub mod message {
     }
 
     #[derive(derive_more::Debug, Clone)]
-    pub struct Message<T> {
+    pub struct Message {
         id: usize,
         kind: MessageKind,
         title: String,
 
         #[debug(skip)]
-        body: Option<View<T>>,
+        body: Option<Arc<dyn MessageBody>>,
     }
 
-    impl<T> Message<T> {
+    impl Message {
         pub fn id(&self) -> usize {
             self.id
         }
@@ -111,8 +127,8 @@ pub mod message {
             &self.title
         }
 
-        pub fn body(&self) -> Option<&View<T>> {
-            self.body.as_ref()
+        pub fn body(&self) -> Option<AnyView> {
+            self.body.as_ref().map(|body| body.to_message_body())
         }
     }
 

@@ -217,7 +217,7 @@ pub mod container {
             }
 
             /// Error updating containers.
-            #[derive(Serialize, Deserialize, Debug)]
+            #[derive(Serialize, Deserialize, Debug, Clone)]
             pub enum Update {
                 Load(IoSerde),
                 Save(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
@@ -296,7 +296,7 @@ pub mod asset {
             use syre_local::error::IoSerde;
 
             /// Error updating containers.
-            #[derive(Serialize, Deserialize, Debug)]
+            #[derive(Serialize, Deserialize, Debug, Clone)]
             pub enum Update {
                 Load(IoSerde),
                 NotFound(Vec<ResourceId>),

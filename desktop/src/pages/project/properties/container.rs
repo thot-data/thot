@@ -916,43 +916,44 @@ mod analysis_associations {
         let graph = expect_context::<state::Graph>();
         let messages = expect_context::<types::Messages>();
 
-        let add_association = Action::new(move |association: &AnalysisAssociation| {
-            let node = container.with(|rid| graph.find_by_id(rid).unwrap());
-            let mut associations = node.analyses().with_untracked(|associations| {
-                let db::state::DataResource::Ok(associations) = associations else {
-                    panic!("invalid state");
-                };
+        let add_association: Action<_, _> =
+            Action::new_unsync(move |association: &AnalysisAssociation| {
+                let node = container.with(|rid| graph.find_by_id(rid).unwrap());
+                let mut associations = node.analyses().with_untracked(|associations| {
+                    let db::state::DataResource::Ok(associations) = associations else {
+                        panic!("invalid state");
+                    };
 
-                associations.with_untracked(|associations| {
-                    associations
-                        .iter()
-                        .map(|association| association.as_association())
-                        .collect::<Vec<_>>()
-                })
+                    associations.with_untracked(|associations| {
+                        associations
+                            .iter()
+                            .map(|association| association.as_association())
+                            .collect::<Vec<_>>()
+                    })
+                });
+                assert!(!associations
+                    .iter()
+                    .any(|assoc| assoc.analysis() == association.analysis()));
+                associations.push(association.clone());
+
+                let project = project.rid().get_untracked();
+                let container_path = graph.path(&node).unwrap();
+                let messages = messages.clone();
+                async move {
+                    if let Err(err) = commands::container::update_analysis_associations(
+                        project,
+                        container_path,
+                        associations,
+                    )
+                    .await
+                    {
+                        tracing::error!(?err);
+                        let mut msg = types::message::Builder::error("Could not save container.");
+                        msg.body(format!("{err:?}"));
+                        messages.update(|messages| messages.push(msg.build()));
+                    };
+                }
             });
-            assert!(!associations
-                .iter()
-                .any(|assoc| assoc.analysis() == association.analysis()));
-            associations.push(association.clone());
-
-            let project = project.rid().get_untracked();
-            let container_path = graph.path(&node).unwrap();
-            let messages = messages.clone();
-            async move {
-                if let Err(err) = commands::container::update_analysis_associations(
-                    project,
-                    container_path,
-                    associations,
-                )
-                .await
-                {
-                    tracing::error!(?err);
-                    let mut msg = types::message::Builder::error("Could not save container.");
-                    msg.body(format!("{err:?}"));
-                    messages.update(|messages| messages.push(msg.build()));
-                };
-            }
-        });
 
         let onadd = move |association: AnalysisAssociation| {
             add_association.dispatch(association);
@@ -983,7 +984,7 @@ mod analysis_associations {
         let graph = expect_context::<state::Graph>();
         let messages = expect_context::<types::Messages>();
 
-        let update_associations = Action::new({
+        let update_associations: Action<_, _> = Action::new_unsync({
             let project = project.rid().read_only();
             let graph = graph.clone();
             let container = container.clone();
@@ -1093,7 +1094,7 @@ mod analysis_associations {
             false,
         );
 
-        let update_association = Action::new({
+        let update_association: Action<_, _> = Action::new_unsync({
             let graph = graph.clone();
             let project = project.rid().read_only();
             move |association: &AnalysisAssociation| {
@@ -1203,7 +1204,7 @@ mod analysis_associations {
         view! {
             <div class=classes>
                 <div title=title.clone() class="grow">
-                    {title}
+                    {title.clone()}
                 </div>
                 <div class="inline-flex gap-2">
                     <input

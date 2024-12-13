@@ -633,9 +633,9 @@ mod name {
                                         let mut msg = types::message::Builder::error(
                                             "An error ocurred when renaming container folders.",
                                         );
-                                        msg.body(
-                                            view! { <ErrRenameIoMessage errors=rename_errors /> },
-                                        );
+                                        msg.body(RenameIoErrors {
+                                            errors: rename_errors,
+                                        });
                                         messages.push(msg.build());
                                     });
                                 }
@@ -652,7 +652,7 @@ mod name {
                                         let mut msg = types::message::Builder::error(
                                             "Could not rename containers",
                                         );
-                                        msg.body(view! { <ErrNameCollisionMessage paths /> });
+                                        msg.body(NameCollisionErrors { paths });
                                         messages.push(msg.build());
                                     });
                                 }
@@ -715,59 +715,73 @@ mod name {
         .await
     }
 
-    #[component]
-    fn ErrNameCollisionMessage(paths: Vec<PathBuf>) -> impl IntoView {
-        view! {
-            <div>
-                <p>
-                    "The paths"
-                    <ul>
-                        {paths
-                            .iter()
-                            .map(|path| {
-                                view! { <li>{path.to_string_lossy().to_string()}</li> }
-                            })
-                            .collect::<Vec<_>>()}
+    struct NameCollisionErrors {
+        paths: Vec<PathBuf>,
+    }
 
-                    </ul> "resulted in a name collistion."
-                </p>
-                <p>"No containers were renamed."</p>
-            </div>
+    impl types::message::MessageBody for NameCollisionErrors {
+        fn to_message_body(&self) -> AnyView {
+            view! {
+                <div>
+                    <p>
+                        "The paths"
+                        <ul>
+                            {self
+                                .paths
+                                .iter()
+                                .map(|path| {
+                                    view! { <li>{path.to_string_lossy().to_string()}</li> }
+                                })
+                                .collect::<Vec<_>>()}
+
+                        </ul> "resulted in a name collistion."
+                    </p>
+                    <p>"No containers were renamed."</p>
+                </div>
+            }
+            .into_view()
+            .into_any()
         }
     }
 
-    #[component]
-    fn ErrRenameIoMessage(
+    struct RenameIoErrors {
         errors: Vec<(PathBuf, lib::command::error::IoErrorKind)>,
-    ) -> impl IntoView {
-        view! {
-            <div>
-                <p>
-                    <ul>
-                        {errors
-                            .iter()
-                            .map(|(path, err)| {
-                                view! {
-                                    <li>
-                                        <strong>{path.to_string_lossy().to_string()}:</strong>
-                                        {format!("{err:?}")}
-                                    </li>
-                                }
-                            })
-                            .collect::<Vec<_>>()}
+    }
 
-                    </ul>
-                </p>
-                <p>"All other containers were renamed."</p>
-            </div>
+    impl types::message::MessageBody for RenameIoErrors {
+        fn to_message_body(&self) -> AnyView {
+            view! {
+                <div>
+                    <p>
+                        <ul>
+                            {self
+                                .errors
+                                .iter()
+                                .map(|(path, err)| {
+                                    view! {
+                                        <li>
+                                            <strong>{path.to_string_lossy().to_string()}:</strong>
+                                            {format!("{err:?}")}
+                                        </li>
+                                    }
+                                })
+                                .collect::<Vec<_>>()}
+
+                        </ul>
+                    </p>
+                    <p>"All other containers were renamed."</p>
+                </div>
+            }
+            .into_view()
+            .into_any()
         }
     }
 }
 
 mod kind {
     use super::{
-        super::{common::bulk::kind::Editor as KindEditor, errors_to_list_view},
-        update_properties, ActiveResources, InputDebounce, State,
+        super::common::bulk::kind::Editor as KindEditor, update_properties, ActiveResources,
+        InputDebounce, State, UpdatePropertiesErrors,
     };
     use crate::{pages::project::state, types};
     use leptos::{prelude::*, task::spawn_local};
@@ -815,7 +829,7 @@ mod kind {
                             if !errors.is_empty() {
                                 let mut msg =
                                     types::message::Builder::error("Could not save properties.");
-                                msg.body(errors_to_list_view(errors));
+                                msg.body(UpdatePropertiesErrors { errors });
                                 messages.update(|messages| messages.push(msg.build()));
                             }
                         }
@@ -830,8 +844,8 @@ mod kind {
 
 mod description {
     use super::{
-        super::{common::bulk::description::Editor as DescriptionEditor, errors_to_list_view},
-        update_properties, ActiveResources, InputDebounce, State,
+        super::common::bulk::description::Editor as DescriptionEditor, update_properties,
+        ActiveResources, InputDebounce, State, UpdatePropertiesErrors,
     };
     use crate::{
         pages::project::state,
@@ -882,7 +896,7 @@ mod description {
                             if !errors.is_empty() {
                                 let mut msg =
                                     types::message::Builder::error("Could not save properties.");
-                                msg.body(errors_to_list_view(errors));
+                                msg.body(UpdatePropertiesErrors { errors });
                                 messages.update(|messages| messages.push(msg.build()));
                             }
                         }
@@ -904,11 +918,8 @@ mod description {
 
 mod tags {
     use super::{
-        super::{
-            common::bulk::tags::{AddTags as AddTagsEditor, Editor as TagsEditor},
-            errors_to_list_view,
-        },
-        update_properties, ActiveResources, State,
+        super::common::bulk::tags::{AddTags as AddTagsEditor, Editor as TagsEditor},
+        update_properties, ActiveResources, State, UpdatePropertiesErrors,
     };
     use crate::{components::DetailPopout, pages::project::state, types};
     use leptos::{prelude::*, task::spawn_local};
@@ -966,7 +977,7 @@ mod tags {
                                     let mut msg = types::message::Builder::error(
                                         "Could not save properties.",
                                     );
-                                    msg.body(errors_to_list_view(errors));
+                                    msg.body(UpdatePropertiesErrors { errors });
                                     messages.update(|messages| messages.push(msg.build()));
                                 }
                             }
@@ -1033,7 +1044,7 @@ mod tags {
                             } else {
                                 let mut msg =
                                     types::message::Builder::error("Could not save properties.");
-                                msg.body(errors_to_list_view(errors));
+                                msg.body(UpdatePropertiesErrors { errors });
                                 messages.update(|messages| messages.push(msg.build()));
                             }
                         }
@@ -1058,13 +1069,10 @@ mod tags {
 
 mod metadata {
     use super::{
-        super::{
-            common::{
-                bulk::metadata::Editor as MetadataEditor, metadata::AddDatum as AddDatumEditor,
-            },
-            errors_to_list_view,
+        super::common::{
+            bulk::metadata::Editor as MetadataEditor, metadata::AddDatum as AddDatumEditor,
         },
-        update_properties, ActiveResources, InputDebounce, State,
+        update_properties, ActiveResources, InputDebounce, State, UpdatePropertiesErrors,
     };
     use crate::{components::DetailPopout, pages::project::state, types};
     use leptos::{prelude::*, task::spawn_local};
@@ -1126,7 +1134,7 @@ mod metadata {
                                     let mut msg = types::message::Builder::error(
                                         "Could not save properties.",
                                     );
-                                    msg.body(errors_to_list_view(errors));
+                                    msg.body(UpdatePropertiesErrors { errors });
                                     messages.update(|messages| messages.push(msg.build()));
                                 }
                             }
@@ -1189,7 +1197,7 @@ mod metadata {
                                         let mut msg = types::message::Builder::error(
                                             "Could not save properties.",
                                         );
-                                        msg.body(errors_to_list_view(errors));
+                                        msg.body(UpdatePropertiesErrors { errors });
                                         messages.update(|messages| messages.push(msg.build()));
                                     }
                                 }
@@ -1260,7 +1268,7 @@ mod metadata {
                                     let mut msg = types::message::Builder::error(
                                         "Could not save properties.",
                                     );
-                                    msg.body(errors_to_list_view(errors));
+                                    msg.body(UpdatePropertiesErrors { errors });
                                     messages.update(|messages| messages.push(msg.build()));
                                 }
                             }
@@ -1299,7 +1307,7 @@ mod analysis_associations {
     use super::{
         super::{
             common::{self, analysis_associations::AddAssociation as AddAssociationEditor},
-            errors_to_list_view, InputDebounce,
+            InputDebounce,
         },
         ActiveResources,
     };
@@ -1390,7 +1398,7 @@ mod analysis_associations {
         let containers = expect_context::<ActiveResources>();
         let state = expect_context::<Signal<super::State>>();
 
-        let remove_association = Action::new({
+        let remove_association: Action<_, _> = Action::new_unsync({
             let project = project.rid().read_only();
             let graph = graph.clone();
             let containers = containers.clone();
@@ -1429,7 +1437,7 @@ mod analysis_associations {
                             if !errors.is_empty() {
                                 let mut msg =
                                     types::message::Builder::error("Could not save properties.");
-                                msg.body(errors_to_list_view(errors));
+                                msg.body(UpdateAnalysisAssociationErrors { errors });
                                 messages.update(|messages| messages.push(msg.build()));
                             }
                         }
@@ -1533,7 +1541,7 @@ mod analysis_associations {
                                         let mut msg = types::message::Builder::error(
                                             "Could not save properties.",
                                         );
-                                        msg.body(errors_to_list_view(errors));
+                                        msg.body(UpdateAnalysisAssociationErrors { errors });
                                         messages.update(|messages| messages.push(msg.build()));
                                     }
                                 }
@@ -1610,7 +1618,7 @@ mod analysis_associations {
         view! {
             <div class=classes>
                 <div title=title.clone() class="grow">
-                    {title}
+                    {title.clone()}
                 </div>
                 <div class="inline-flex gap-2">
                     <input
@@ -1719,7 +1727,7 @@ mod analysis_associations {
         };
         let available_analyses = Signal::derive(available_analyses);
 
-        let add_association = Action::new({
+        let add_association: Action<_, _> = Action::new_unsync({
             let project = project.rid().read_only();
             move |association: &AnalysisAssociation| {
                 let container_paths = containers.with_untracked(|containers| {
@@ -1804,6 +1812,18 @@ mod analysis_associations {
         )
         .await
     }
+
+    struct UpdateAnalysisAssociationErrors {
+        errors: Vec<local::error::IoSerde>,
+    }
+
+    impl types::message::MessageBody for UpdateAnalysisAssociationErrors {
+        fn to_message_body(&self) -> AnyView {
+            super::super::errors_to_list_view(self.errors.clone())
+                .into_view()
+                .into_any()
+        }
+    }
 }
 
 /// # Returns
@@ -1834,4 +1854,16 @@ async fn update_properties(
         },
     )
     .await
+}
+
+struct UpdatePropertiesErrors {
+    errors: Vec<lib::command::container::bulk::error::Update>,
+}
+
+impl types::message::MessageBody for UpdatePropertiesErrors {
+    fn to_message_body(&self) -> AnyView {
+        super::errors_to_list_view(self.errors.clone())
+            .into_view()
+            .into_any()
+    }
 }

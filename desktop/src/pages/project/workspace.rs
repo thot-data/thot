@@ -535,7 +535,7 @@ mod analyze {
         let analysis_state = RwSignal::new(AnalysisState::Idle);
         provide_context(analysis_state);
 
-        let action = Action::new({
+        let action:Action<_, _> = Action::new_unsync({
             let analyses = project.analyses();
             let project = project.rid().read_only();
             move |root: &PathBuf| {
