@@ -67,11 +67,12 @@ fn PreviewSelector() -> impl IntoView {
         if e.button() != types::MouseButton::Primary {
             return;
         }
-        if active.with(|active| active.is_some()) {
+        if active.read().is_some() {
             return;
         }
+        e.stop_propagation();
 
-        let cb = Closure::new(move |e: MouseEvent| {
+        let cb: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |e: MouseEvent| {
             if e.button() != types::MouseButton::Primary {
                 return;
             }
@@ -95,9 +96,7 @@ fn PreviewSelector() -> impl IntoView {
                     .unwrap();
             });
 
-            set_active.update(|active| {
-                active.take();
-            });
+            set_active.write().take();
         });
 
         let window = web_sys::window().unwrap();
@@ -105,9 +104,7 @@ fn PreviewSelector() -> impl IntoView {
             .add_event_listener_with_callback("mousedown", cb.as_ref().unchecked_ref())
             .unwrap();
 
-        set_active.update(|active| {
-            let _ = active.insert(cb);
-        });
+        let _ = set_active.write().insert(cb);
     };
 
     let clear = move |e: MouseEvent| {
@@ -115,9 +112,7 @@ fn PreviewSelector() -> impl IntoView {
             return;
         }
 
-        state.update(|state| {
-            state.clear();
-        })
+        state.write().clear();
     };
 
     const CLASS_FORM_DIV: &str = "px-2 w-full";
@@ -127,8 +122,8 @@ fn PreviewSelector() -> impl IntoView {
         <div class="relative z-10">
             <div
                 on:mousedown=activate
+                class=("rounded-b-none", move || active.read().is_some())
                 class="cursor-pointer inline-flex w-40 px-2 rounded border border-secondary-600 dark:border-secondary-200"
-                class=("rounded-b-none", move || active.with(|active| active.is_some()))
             >
                 <span class="grow truncate">{preview_list}</span>
                 <span class="pl-2 inline-flex items-center">
@@ -137,7 +132,7 @@ fn PreviewSelector() -> impl IntoView {
             </div>
             <div
                 id=MENU_ID
-                class:hidden=move || active.with(|active| active.is_none())
+                class:hidden=move || active.read().is_none()
                 class="absolute w-40 rounded-b bg-white dark:bg-secondary-900 border border-t-0 border-secondary-600 dark:border-secondary-200"
             >
                 <form on:submit=move |e| e.prevent_default()>

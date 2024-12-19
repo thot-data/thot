@@ -244,7 +244,7 @@ mod state {
         }
     }
 
-    #[derive(derive_more::Deref, Clone)]
+    #[derive(derive_more::Deref, Clone, Copy)]
     pub struct ActiveResources(Signal<Vec<ResourceId>>);
     impl ActiveResources {
         pub fn new(resources: Signal<Vec<ResourceId>>) -> Self {
@@ -255,7 +255,7 @@ mod state {
 
 #[component]
 pub fn Editor(containers: Signal<Vec<ResourceId>>) -> impl IntoView {
-    assert!(containers.with(|containers| containers.len()) > 1);
+    assert!(containers.read_untracked().len() > 1);
     let graph = expect_context::<project::state::Graph>();
     let popout_portal = expect_context::<PopoutPortal>();
     let (widget, set_widget) = signal(None);
@@ -275,7 +275,7 @@ pub fn Editor(containers: Signal<Vec<ResourceId>>) -> impl IntoView {
         State::from_states(states)
     }));
 
-    provide_context(ActiveResources::new(containers.clone()));
+    provide_context(ActiveResources::new(containers));
 
     let show_add_tags = move |e: MouseEvent| {
         if e.button() == types::MouseButton::Primary {
@@ -376,8 +376,7 @@ pub fn Editor(containers: Signal<Vec<ResourceId>>) -> impl IntoView {
             <div class="text-center pt-1 pb-2">
                 <h3 class="font-primary">"Bulk containers"</h3>
                 <span class="text-sm text-secondary-500 dark:text-secondary-400">
-                    "Editing " {move || containers.with(|containers| containers.len())}
-                    " containers"
+                    "Editing " {move || containers.read().len()} " containers"
                 </span>
             </div>
             <form on:submit=move |e| e.prevent_default()>
@@ -584,7 +583,7 @@ mod name {
 
         let (input_error, set_input_error) = signal(false);
         let (input_value, set_input_value) = signal({
-            state.with(|state| match state.name().get() {
+            state.with_untracked(|state| match state.name().get_untracked() {
                 Value::Mixed => String::new(),
                 Value::Equal(value) => value.clone(),
             })
@@ -1209,7 +1208,13 @@ mod metadata {
             false,
         );
 
-        view! { <MetadataEditor value=state.with(|state| { state.metadata() }) onremove onmodify /> }
+        view! {
+            <MetadataEditor
+                value=state.with_untracked(|state| { state.metadata() })
+                onremove
+                onmodify
+            />
+        }
     }
 
     #[component]

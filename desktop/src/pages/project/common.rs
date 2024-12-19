@@ -18,7 +18,7 @@ pub fn interpret_resource_selection_action(
     if select_multiple {
         if selected_resources
             .iter()
-            .find(|resource| resource.rid().with(|resource| resource == rid))
+            .find(|resource| resource.rid().with_untracked(|resource| resource == rid))
             .is_some()
         {
             SelectionAction::Unselect

@@ -251,13 +251,16 @@ fn ContainerLayerTitleOk(
         .container_visibility_get(&container)
         .unwrap();
 
-    let toggle_container_visibility = move |e: MouseEvent| {
-        if e.button() != types::MouseButton::Primary {
-            return;
-        }
-        e.stop_propagation();
+    let toggle_container_visibility = {
+        let container_visibility = container_visibility.clone();
+        move |e: MouseEvent| {
+            if e.button() != types::MouseButton::Primary {
+                return;
+            }
+            e.stop_propagation();
 
-        container_visibility.set(!container_visibility());
+            container_visibility.set(!container_visibility());
+        }
     };
 
     let num_children = {
@@ -345,6 +348,11 @@ fn ContainerLayerTitleOk(
 
             let object = node.closest("foreignObject").unwrap().unwrap();
             let object_x = object.get_attribute("x").unwrap().parse::<isize>().unwrap();
+            let object_height = object
+                .get_attribute("height")
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
 
             let wrapper = node.closest("svg").unwrap().unwrap();
             let mut x = wrapper
@@ -375,8 +383,11 @@ fn ContainerLayerTitleOk(
                 current_wrapper = wrapper;
             }
 
-            let x0 = x + object_x - viewbox.width().with_untracked(|width| width / 2) as isize;
-            let y0 = y - viewbox.height().with_untracked(|height| height / 2) as isize;
+            tracing::debug!(?y, ?object_height, vbh = ?viewbox.height().get_untracked());
+            let x0 = x + object_x + (super::CONTAINER_WIDTH / 2) as isize
+                - viewbox.width().with_untracked(|width| width / 2) as isize;
+            let y0 = y + (object_height / 2) as isize
+                - viewbox.height().with_untracked(|height| height / 2) as isize;
             viewbox.x().set(x0);
             viewbox.y().set(y0);
         }
@@ -421,7 +432,7 @@ fn ContainerLayerTitleOk(
             prop:title=tooltip
             style:padding-left=move || { depth_to_padding(depth) }
             class="flex gap-1 cursor-pointer border-y border-transparent hover:border-secondary-400"
-            class=(["bg-primary-200", "dark:bg-secondary-900"], selected)
+            class=(["bg-primary-200", "dark:bg-secondary-900"], selected.clone())
         >
             <div class="inline-flex gap-1">
                 <span>
@@ -433,33 +444,40 @@ fn ContainerLayerTitleOk(
                     <TruncateLeft>{title}</TruncateLeft>
                 </div>
                 <div>
-                    {move || {
-                        if num_children() > 0 {
-                            let visibility_icon = Signal::derive(move || {
-                                container_visibility
-                                    .with(|visible| {
-                                        if *visible {
-                                            components::icon::Eye
-                                        } else {
-                                            components::icon::EyeClosed
-                                        }
-                                    })
-                            });
-                            Either::Left(
-                                view! {
-                                    <button
-                                        type="button"
-                                        on:mousedown=toggle_container_visibility
-                                        class="align-middle"
-                                    >
-                                        <Icon icon=visibility_icon />
-                                    </button>
-                                },
-                            )
-                        } else {
-                            Either::Right(())
+                    {
+                        let container_visibility = container_visibility.clone();
+                        let toggle_container_visibility = toggle_container_visibility.clone();
+                        move || {
+                            if num_children() > 0 {
+                                let visibility_icon = Signal::derive({
+                                    let container_visibility = container_visibility.clone();
+                                    move || {
+                                        container_visibility
+                                            .with(|visible| {
+                                                if *visible {
+                                                    components::icon::Eye
+                                                } else {
+                                                    components::icon::EyeClosed
+                                                }
+                                            })
+                                    }
+                                });
+                                Either::Left(
+                                    view! {
+                                        <button
+                                            type="button"
+                                            on:mousedown=toggle_container_visibility.clone()
+                                            class="align-middle"
+                                        >
+                                            <Icon icon=visibility_icon />
+                                        </button>
+                                    },
+                                )
+                            } else {
+                                Either::Right(())
+                            }
                         }
-                    }}
+                    }
                 </div>
             </div>
         </div>
@@ -613,7 +631,7 @@ fn AssetLayer(asset: state::Asset, depth: usize) -> impl IntoView {
             on:contextmenu=contextmenu
             title=asset_title_closure(&asset)
             style:padding-left=move || { depth_to_padding(depth + 2) }
-            class=(["bg-primary-200", "dark:bg-secondary-900"], selected)
+            class=(["bg-primary-200", "dark:bg-secondary-900"], selected.clone())
             class="cursor-pointer border-y border-transparent hover:border-secondary-400"
         >
             <div

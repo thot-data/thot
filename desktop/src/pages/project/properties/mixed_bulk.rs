@@ -704,7 +704,13 @@ mod metadata {
             false,
         );
 
-        view! { <MetadataEditor value=state.with(|state| { state.metadata() }) onremove onmodify /> }
+        view! {
+            <MetadataEditor
+                value=state.with_untracked(|state| { state.metadata() })
+                onremove
+                onmodify
+            />
+        }
     }
 
     #[component]

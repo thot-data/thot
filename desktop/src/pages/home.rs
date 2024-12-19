@@ -143,7 +143,10 @@ fn MainNav() -> impl IntoView {
                         href="/logout"
                         attr:class="inline-block align-middle p-1 hover:bg-secondary-100 dark:hover:bg-secondary-800 rounded border border-transparent hover:border-secondary-200 dark:hover:border-white"
                     >
-                        <Icon icon=icondata::IoLogOutOutline class="[&_*]:dark:!stroke-white h-4" />
+                        <Icon
+                            icon=icondata::IoLogOutOutline
+                            attr:class="[&_*]:dark:!stroke-white h-4"
+                        />
                     </A>
                 </li>
             </ol>

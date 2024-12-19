@@ -535,7 +535,7 @@ mod analyze {
         let analysis_state = RwSignal::new(AnalysisState::Idle);
         provide_context(analysis_state);
 
-        let action:Action<_, _> = Action::new_unsync({
+        let action: Action<_, _> = Action::new_unsync({
             let analyses = project.analyses();
             let project = project.rid().read_only();
             move |root: &PathBuf| {
@@ -1679,7 +1679,7 @@ fn handle_event_graph_graph_inserted(
         nodes
             .iter()
             .cloned()
-            .map(|container| (container, RwSignal::new(true)))
+            .map(|container| (container, ArcRwSignal::new(true)))
             .collect::<Vec<_>>()
     });
 
@@ -1743,6 +1743,7 @@ fn handle_event_graph_graph_removed(
             resources
         })
         .collect::<Vec<_>>();
+
     workspace_graph_state
         .selection_resources()
         .remove(&removed_ids);
@@ -1850,7 +1851,7 @@ fn handle_event_graph_container_properties_created(
         }
 
         Err(err) => {
-            if !container.properties().with(|properties| {
+            if !container.properties().with_untracked(|properties| {
                 if let Err(properties_err) = properties {
                     properties_err == err
                 } else {
@@ -1862,7 +1863,7 @@ fn handle_event_graph_container_properties_created(
                     .update(|properties| *properties = Err(err.clone()));
             }
 
-            if !container.analyses().with(|analyses| {
+            if !container.analyses().with_untracked(|analyses| {
                 if let Err(analyses_err) = analyses {
                     analyses_err == err
                 } else {

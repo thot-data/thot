@@ -148,7 +148,7 @@ pub fn Editor(container: state::Container) -> impl IntoView {
     let scroll = move |_: Event| {
         let wrapper = wrapper_node.get_untracked().unwrap();
         let portal = popout_portal.get_untracked().unwrap();
-        let Some(base) = widget.with(|widget| {
+        let Some(base) = widget.with_untracked(|widget| {
             widget.map(|widget| match widget {
                 Widget::AddMetadatum => metadata_node,
                 Widget::AddAnalysisAssociation => analyses_node,
@@ -414,7 +414,7 @@ mod name {
 
                     spawn_local({
                         let project = project.rid().get_untracked();
-                        let node = container.with(|rid| graph.find_by_id(rid).unwrap());
+                        let node = container.with_untracked(|rid| graph.find_by_id(rid).unwrap());
                         let path = graph.path(&node).unwrap();
                         let messages = messages.clone();
 
@@ -550,7 +550,7 @@ mod description {
         let oninput = {
             let messages = messages.write_only();
             move |value: Option<String>| {
-                let node = container.with(|rid| graph.find_by_id(rid).unwrap());
+                let node = container.with_untracked(|rid| graph.find_by_id(rid).unwrap());
                 let mut properties = node.properties().with_untracked(|properties| {
                     let db::state::DataResource::Ok(properties) = properties else {
                         panic!("invalid state");
@@ -610,7 +610,7 @@ mod tags {
         let oninput = {
             let messages = messages.write_only();
             move |value: Vec<String>| {
-                let node = container.with(|rid| graph.find_by_id(rid).unwrap());
+                let node = container.with_untracked(|rid| graph.find_by_id(rid).unwrap());
                 let mut properties = node.properties().with_untracked(|properties| {
                     let db::state::DataResource::Ok(properties) = properties else {
                         panic!("invalid state");
@@ -709,9 +709,9 @@ mod metadata {
 
         let onadd = move |(key, value): (String, Value)| {
             assert!(!key.is_empty());
-            assert!(!metadata.with(|metadata| metadata.iter().any(|(k, _)| *k == key)));
+            assert!(!metadata.with_untracked(|metadata| metadata.iter().any(|(k, _)| *k == key)));
 
-            let node = container.with(|rid| graph.find_by_id(rid).unwrap());
+            let node = container.with_untracked(|rid| graph.find_by_id(rid).unwrap());
             let path = graph.path(&node).unwrap();
             let mut properties = node.properties().with_untracked(|properties| {
                 let db::state::DataResource::Ok(properties) = properties else {
@@ -721,7 +721,7 @@ mod metadata {
                 properties.as_properties()
             });
 
-            let mut metadata = metadata.with(|metadata| metadata.as_properties());
+            let mut metadata = metadata.with_untracked(|metadata| metadata.as_properties());
             metadata.insert(key, value);
             properties.metadata = metadata;
 
@@ -785,7 +785,7 @@ mod metadata {
                             false
                         }
                     }) {
-                        return container.get();
+                        return container.get_untracked();
                     }
 
                     let node = container.with_untracked(|rid| graph.find_by_id(rid).unwrap());
@@ -826,7 +826,7 @@ mod metadata {
                     });
 
                     // return the current id to track if the container changed
-                    container.get()
+                    container.get_untracked()
                 }
             },
             false,
@@ -842,7 +842,7 @@ mod metadata {
                     return;
                 }
 
-                let node = container.with(|rid| graph.find_by_id(rid).unwrap());
+                let node = container.with_untracked(|rid| graph.find_by_id(rid).unwrap());
                 let mut properties = node.properties().with_untracked(|properties| {
                     let db::state::DataResource::Ok(properties) = properties else {
                         panic!("invalid state");
@@ -918,7 +918,7 @@ mod analysis_associations {
 
         let add_association: Action<_, _> =
             Action::new_unsync(move |association: &AnalysisAssociation| {
-                let node = container.with(|rid| graph.find_by_id(rid).unwrap());
+                let node = container.with_untracked(|rid| graph.find_by_id(rid).unwrap());
                 let mut associations = node.analyses().with_untracked(|associations| {
                     let db::state::DataResource::Ok(associations) = associations else {
                         panic!("invalid state");
@@ -990,7 +990,7 @@ mod analysis_associations {
             let container = container.clone();
             let messages = messages.clone();
             move |associations: &Vec<AnalysisAssociation>| {
-                let node = container.with(|rid| graph.find_by_id(rid).unwrap());
+                let node = container.with_untracked(|rid| graph.find_by_id(rid).unwrap());
                 let container_path = graph.path(&node).unwrap();
 
                 let project = project.get_untracked();
@@ -1088,7 +1088,7 @@ mod analysis_associations {
                 move || autorun.get()
             },
             move |autorun, _, _| {
-                let input = autorun_input_node.get().unwrap();
+                let input = autorun_input_node.get_untracked().unwrap();
                 input.set_checked(*autorun);
             },
             false,
@@ -1098,7 +1098,7 @@ mod analysis_associations {
             let graph = graph.clone();
             let project = project.rid().read_only();
             move |association: &AnalysisAssociation| {
-                let node = container.with(|rid| graph.find_by_id(rid).unwrap());
+                let node = container.with_untracked(|rid| graph.find_by_id(rid).unwrap());
                 let mut associations = node.analyses().with_untracked(|associations| {
                     let db::state::DataResource::Ok(associations) = associations else {
                         panic!("invalid state");
@@ -1115,7 +1115,7 @@ mod analysis_associations {
                     .iter_mut()
                     .find(|assoc| assoc.analysis() == association.analysis())
                     .unwrap();
-                *association = value.get();
+                *association = value.get_untracked();
 
                 let project = project.get_untracked();
                 let container_path = graph.path(&node).unwrap();

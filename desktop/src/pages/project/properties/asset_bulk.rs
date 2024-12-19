@@ -184,7 +184,7 @@ mod state {
 
 #[component]
 pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
-    assert!(assets.with(|assets| assets.len()) > 1);
+    assert!(assets.with_untracked(|assets| assets.len()) > 1);
     let graph = expect_context::<project::state::Graph>();
     let popout_portal = expect_context::<PopoutPortal>();
     let (widget, set_widget) = signal(None);
@@ -250,7 +250,7 @@ pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
     let scroll = move |_: Event| {
         let wrapper = wrapper_node.get_untracked().unwrap();
         let portal = popout_portal.get_untracked().unwrap();
-        let Some(base) = widget.with(|widget| {
+        let Some(base) = widget.with_untracked(|widget| {
             widget.map(|widget| match widget {
                 Widget::AddTags => tags_node,
                 Widget::AddMetadatum => metadata_node,
@@ -473,7 +473,13 @@ mod name {
             })
         });
 
-        view! { <NameEditor value=state.with(|state| { state.name() }) oninput debounce=*input_debounce /> }
+        view! {
+            <NameEditor
+                value=state.with_untracked(|state| { state.name() })
+                oninput
+                debounce=*input_debounce
+            />
+        }
     }
 
     #[component]
@@ -593,7 +599,13 @@ mod kind {
             });
         });
 
-        view! { <KindEditor value=state.with(|state| { state.kind() }) oninput debounce=*input_debounce /> }
+        view! {
+            <KindEditor
+                value=state.with_untracked(|state| { state.kind() })
+                oninput
+                debounce=*input_debounce
+            />
+        }
     }
 }
 
@@ -652,7 +664,7 @@ mod description {
 
         view! {
             <DescriptionEditor
-                value=state.with(|state| state.description())
+                value=state.with_untracked(|state| state.description())
                 oninput
                 debounce=*input_debounce
                 class="input-compact w-full align-top"
@@ -726,7 +738,7 @@ mod tags {
             }
         });
 
-        view! { <TagsEditor value=state.with(|state| { state.tags() }) onremove /> }
+        view! { <TagsEditor value=state.with_untracked(|state| { state.tags() }) onremove /> }
     }
 
     #[component]
@@ -924,7 +936,13 @@ mod metadata {
             false,
         );
 
-        view! { <MetadataEditor value=state.with(|state| { state.metadata() }) onremove onmodify /> }
+        view! {
+            <MetadataEditor
+                value=state.with_untracked(|state| { state.metadata() })
+                onremove
+                onmodify
+            />
+        }
     }
 
     #[component]

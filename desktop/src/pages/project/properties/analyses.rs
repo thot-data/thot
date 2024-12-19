@@ -69,7 +69,7 @@ fn AnalysesOk(analyses: ReadSignal<Vec<state::project::Analysis>>) -> impl IntoV
     let messages = expect_context::<types::Messages>();
     let drag_over_workspace_resource = expect_context::<Signal<DragOverWorkspaceResource>>();
 
-    let context_menu_active_analysis = RwSignal::<Option<ContextMenuActiveAnalysis>>::new(None);
+    let context_menu_active_analysis = ArcRwSignal::<Option<ContextMenuActiveAnalysis>>::new(None);
     provide_context(context_menu_active_analysis.clone());
 
     let highlight = move || {
@@ -83,6 +83,7 @@ fn AnalysesOk(analyses: ReadSignal<Vec<state::project::Analysis>>) -> impl IntoV
         move || {
             let project = project.clone();
             let messages = messages.clone();
+            let context_menu_active_analysis = context_menu_active_analysis.clone();
             async move {
                 let mut analysis_open = tauri_sys::menu::item::MenuItemOptions::new("Open");
                 analysis_open.set_id("analyses:open");
@@ -109,10 +110,11 @@ fn AnalysesOk(analyses: ReadSignal<Vec<state::project::Analysis>>) -> impl IntoV
                     let analysis_disable_all = listeners.pop().unwrap().unwrap();
                     let analysis_enable_all = listeners.pop().unwrap().unwrap();
                     let analysis_open = listeners.pop().unwrap().unwrap();
+                    let context_menu_active_analysis = context_menu_active_analysis.read_only();
                     handle_context_menu_analyses_events(
                         project,
                         messages,
-                        context_menu_active_analysis.read_only(),
+                        context_menu_active_analysis,
                         analysis_open,
                         analysis_enable_all,
                         analysis_disable_all,
@@ -203,7 +205,7 @@ fn ScriptView(analysis: state::project::Analysis) -> impl IntoView {
     let messages = expect_context::<types::Messages>();
     let context_menu = expect_context::<ContextMenuAnalysesOk>();
     let context_menu_active_analysis =
-        expect_context::<RwSignal<Option<ContextMenuActiveAnalysis>>>();
+        expect_context::<ArcRwSignal<Option<ContextMenuActiveAnalysis>>>();
 
     let script = {
         let properties = analysis.properties().clone();
@@ -262,7 +264,7 @@ fn ScriptView(analysis: state::project::Analysis) -> impl IntoView {
                     analyses
                         .iter()
                         .find_map(|analysis| {
-                            analysis.properties().with(|properties| {
+                            analysis.properties().with_untracked(|properties| {
                                 let AnalysisKind::Script(script) = properties else {
                                     return None;
                                 };
@@ -382,7 +384,7 @@ async fn remove_analysis(
 async fn handle_context_menu_analyses_events(
     project: state::Project,
     messages: types::Messages,
-    context_menu_active_analysis: ReadSignal<Option<ContextMenuActiveAnalysis>>,
+    context_menu_active_analysis: ArcReadSignal<Option<ContextMenuActiveAnalysis>>,
     analysis_open: Channel<String>,
     analysis_enable_all: Channel<String>,
     analysis_disable_all: Channel<String>,
@@ -398,7 +400,7 @@ async fn handle_context_menu_analyses_events(
                     handle_context_menu_analyses_events_analysis_open(
                         &project,
                         messages,
-                        context_menu_active_analysis
+                        context_menu_active_analysis.clone()
                     ).await;
                 }
             },
@@ -409,7 +411,7 @@ async fn handle_context_menu_analyses_events(
                     handle_context_menu_analyses_events_analysis_enable_all(
                         &project,
                         messages,
-                        context_menu_active_analysis
+                        context_menu_active_analysis.clone()
                     ).await;
                 }
             },
@@ -420,7 +422,7 @@ async fn handle_context_menu_analyses_events(
                     handle_context_menu_analyses_events_analysis_disable_all(
                         &project,
                         messages,
-                        context_menu_active_analysis
+                        context_menu_active_analysis.clone()
                     ).await;
                 }
             }
@@ -431,7 +433,7 @@ async fn handle_context_menu_analyses_events(
 async fn handle_context_menu_analyses_events_analysis_open(
     project: &state::Project,
     messages: types::Messages,
-    context_menu_active_analysis: ReadSignal<Option<ContextMenuActiveAnalysis>>,
+    context_menu_active_analysis: ArcReadSignal<Option<ContextMenuActiveAnalysis>>,
 ) {
     let analysis_root = project.path().get_untracked().join(
         project
@@ -488,7 +490,7 @@ async fn handle_context_menu_analyses_events_analysis_open(
 async fn handle_context_menu_analyses_events_analysis_enable_all(
     project: &state::Project,
     messages: types::Messages,
-    context_menu_active_analysis: ReadSignal<Option<ContextMenuActiveAnalysis>>,
+    context_menu_active_analysis: ArcReadSignal<Option<ContextMenuActiveAnalysis>>,
 ) {
     let analysis = context_menu_active_analysis
         .get_untracked()
@@ -527,7 +529,7 @@ async fn handle_context_menu_analyses_events_analysis_enable_all(
 async fn handle_context_menu_analyses_events_analysis_disable_all(
     project: &state::Project,
     messages: types::Messages,
-    context_menu_active_analysis: ReadSignal<Option<ContextMenuActiveAnalysis>>,
+    context_menu_active_analysis: ArcReadSignal<Option<ContextMenuActiveAnalysis>>,
 ) {
     let analysis = context_menu_active_analysis
         .get_untracked()

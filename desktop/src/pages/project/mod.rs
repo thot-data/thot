@@ -7,7 +7,7 @@ mod properties;
 mod state;
 mod workspace;
 
-pub(self) use canvas::Canvas;
+pub(self) use canvas::{Canvas, CONTAINER_WIDTH};
 pub(self) use layers::LayersNav;
 pub(self) use project_bar::ProjectBar;
 pub(self) use properties::PropertiesBar;

@@ -30,7 +30,7 @@ use syre_local_database as db;
 use tauri_sys::{core::Channel, menu};
 use wasm_bindgen::JsCast;
 
-const CONTAINER_WIDTH: usize = 300;
+pub const CONTAINER_WIDTH: usize = 300;
 const MAX_CONTAINER_HEIGHT: usize = 400;
 const CONTAINER_HEADER_HEIGHT: usize = 50;
 const CONTAINER_PREVIEW_LINE_HEIGHT: usize = 24;
@@ -666,7 +666,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
                         return;
                     }
                 }
-                let Some(node) = wrapper_node.get() else {
+                let Some(node) = wrapper_node.get_untracked() else {
                     return;
                 };
 
@@ -696,7 +696,11 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
 
     view! {
         <svg node_ref=wrapper_node width=width height=height x=x y=y>
-            <GraphEdges x_node children_widths=display_data.children() container_visibility />
+            <GraphEdges
+                x_node
+                children_widths=display_data.children()
+                container_visibility=container_visibility.clone()
+            />
             <g class="group">
                 <foreignObject width=CONTAINER_WIDTH height=container_height x=x_node y=0>
                     <ContainerView node_ref=container_node container=root.clone() />
@@ -733,12 +737,15 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
                             icon=components::icon::Add
                             width=(CANVAS_BUTTON_RADIUS as f64 * 2.0 * ICON_SCALE).to_string()
                             height=(CANVAS_BUTTON_RADIUS as f64 * 2.0 * ICON_SCALE).to_string()
-                            class="stroke-black dark:stroke-white stroke-2 linecap-round"
+                            attr:class="stroke-black dark:stroke-white stroke-2 linecap-round"
                         />
                     </svg>
                 </svg>
             </g>
-            <g class:hidden=move || !container_visibility()>
+            <g class:hidden={
+                let container_visibility = container_visibility.clone();
+                move || !container_visibility()
+            }>
                 <For
                     each=children
                     key={
@@ -777,8 +784,8 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
 #[component]
 fn GraphEdges(
     x_node: Signal<usize>,
-    children_widths: ReadSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
-    container_visibility: RwSignal<bool>,
+    children_widths: ArcReadSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
+    container_visibility: ArcRwSignal<bool>,
 ) -> impl IntoView {
     let container_preview_height = expect_context::<ContainerPreviewHeight>();
 
@@ -825,32 +832,39 @@ fn GraphEdges(
         (x, y)
     });
 
-    let toggle_container_visibility = move |e: MouseEvent| {
-        if e.button() != types::MouseButton::Primary {
-            return;
-        }
-        e.stop_propagation();
+    let toggle_container_visibility = {
+        let container_visibility = container_visibility.clone();
+        move |e: MouseEvent| {
+            if e.button() != types::MouseButton::Primary {
+                return;
+            }
+            e.stop_propagation();
 
-        container_visibility.set(!container_visibility());
+            container_visibility.set(!container_visibility());
+        }
     };
 
-    let x_children = Signal::derive(move || {
-        children_widths.with(|widths| {
-            widths
-                .iter()
-                .scan((0_usize, 0_usize), |(start, end), (_, width)| {
-                    *start = *end;
-                    *end += width.get().get();
-                    Some((*start, *end))
-                })
-                .collect::<Vec<_>>()
-        })
+    let x_children = Signal::derive({
+        let children_widths = children_widths.clone();
+        move || {
+            children_widths.with(|widths| {
+                widths
+                    .iter()
+                    .scan((0_usize, 0_usize), |(start, end), (_, width)| {
+                        *start = *end;
+                        *end += width.get().get();
+                        Some((*start, *end))
+                    })
+                    .collect::<Vec<_>>()
+            })
+        }
     });
 
     view! {
         <g>
-            <g class:hidden=move || {
-                !container_visibility()
+            <g class:hidden={
+                let container_visibility = container_visibility.clone();
+                move || { !container_visibility() }
             }>
                 {move || {
                     x_children
@@ -872,75 +886,87 @@ fn GraphEdges(
                 }}
             </g>
             <g>
-                {move || {
-                    if children_widths.with(|children| children.len()) > 0 {
-                        let (x1, y1, x2, y2) = visibility_toggle_line_coordiantes();
-                        Either::Left(
-                            view! {
-                                <line
-                                    x1=x1
-                                    y1=y1
-                                    x2=x2
-                                    y2=y2
-                                    class="stroke-secondary-400 dark:stroke-secondary-500"
-                                ></line>
+                {
+                    let container_visibility = container_visibility.clone();
+                    let toggle_container_visibility = toggle_container_visibility.clone();
+                    move || {
+                        if children_widths.with(|children| children.len()) > 0 {
+                            let (x1, y1, x2, y2) = visibility_toggle_line_coordiantes();
+                            Either::Left(
+                                view! {
+                                    <line
+                                        x1=x1
+                                        y1=y1
+                                        x2=x2
+                                        y2=y2
+                                        class="stroke-secondary-400 dark:stroke-secondary-500"
+                                    ></line>
 
-                                {move || {
-                                    let (cx, cy) = connector_lines_center.get();
-                                    view! {
-                                        <svg
-                                            x=move || cx - CANVAS_BUTTON_RADIUS - CANVAS_BUTTON_STROKE
-                                            y=move || cy - CANVAS_BUTTON_RADIUS - CANVAS_BUTTON_STROKE
-                                            width=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
-                                            height=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
-                                            on:mousedown=toggle_container_visibility
-                                            class="group cursor-pointer"
-                                        >
-                                            <circle
-                                                r=TOGGLE_VIEW_INDICATOR_RADIUS
-                                                cx=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
-                                                cy=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
-                                                class="stroke-secondary-400 fill-secondary-400 dark:stroke-secondary-500 \
-                                                dark:fill-secondary-500 transition-opacity transition-delay-200 hover:opacity-0"
-                                            ></circle>
-                                            <g class="group-[:not(:hover)]:hidden">
-                                                <circle
-                                                    r=CANVAS_BUTTON_RADIUS
-                                                    cx=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
-                                                    cy=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
-                                                    class="stroke-black dark:stroke-white fill-white \
-                                                    dark:fill-secondary-700 stroke-2 transition-opacity transition-delay-200 \
-                                                    opacity:0 hover:opacity-1"
-                                                ></circle>
-
+                                    {
+                                        let container_visibility = container_visibility.clone();
+                                        let toggle_container_visibility = toggle_container_visibility
+                                            .clone();
+                                        move || {
+                                            let (cx, cy) = connector_lines_center.get();
+                                            view! {
                                                 <svg
-                                                    x=CANVAS_BUTTON_STROKE
-                                                    y=CANVAS_BUTTON_STROKE
-                                                    width=CANVAS_BUTTON_RADIUS * 2
-                                                    height=CANVAS_BUTTON_RADIUS * 2
+                                                    x=move || cx - CANVAS_BUTTON_RADIUS - CANVAS_BUTTON_STROKE
+                                                    y=move || cy - CANVAS_BUTTON_RADIUS - CANVAS_BUTTON_STROKE
+                                                    width=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
+                                                    height=(CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE) * 2
+                                                    on:mousedown=toggle_container_visibility.clone()
+                                                    class="group cursor-pointer"
                                                 >
-                                                    <Icon
-                                                        icon=Signal::derive(move || {
-                                                            if container_visibility() {
-                                                                components::icon::Eye
-                                                            } else {
-                                                                components::icon::EyeClosed
-                                                            }
-                                                        })
-                                                        width=(CANVAS_BUTTON_RADIUS * 2).to_string()
-                                                        height=(CANVAS_BUTTON_RADIUS * 2).to_string()
-                                                    />
+                                                    <circle
+                                                        r=TOGGLE_VIEW_INDICATOR_RADIUS
+                                                        cx=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                                                        cy=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                                                        class="stroke-secondary-400 fill-secondary-400 dark:stroke-secondary-500 \
+                                                        dark:fill-secondary-500 transition-opacity transition-delay-200 hover:opacity-0"
+                                                    ></circle>
+                                                    <g class="group-[:not(:hover)]:hidden">
+                                                        <circle
+                                                            r=CANVAS_BUTTON_RADIUS
+                                                            cx=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                                                            cy=CANVAS_BUTTON_RADIUS + CANVAS_BUTTON_STROKE
+                                                            class="stroke-black dark:stroke-white fill-white \
+                                                            dark:fill-secondary-700 stroke-2 transition-opacity transition-delay-200 \
+                                                            opacity:0 hover:opacity-1"
+                                                        ></circle>
+
+                                                        <svg
+                                                            x=CANVAS_BUTTON_STROKE
+                                                            y=CANVAS_BUTTON_STROKE
+                                                            width=CANVAS_BUTTON_RADIUS * 2
+                                                            height=CANVAS_BUTTON_RADIUS * 2
+                                                        >
+                                                            <Icon
+                                                                icon=Signal::derive({
+                                                                    let container_visibility = container_visibility.clone();
+                                                                    move || {
+                                                                        if container_visibility() {
+                                                                            components::icon::Eye
+                                                                        } else {
+                                                                            components::icon::EyeClosed
+                                                                        }
+                                                                    }
+                                                                })
+                                                                width=(CANVAS_BUTTON_RADIUS * 2).to_string()
+                                                                height=(CANVAS_BUTTON_RADIUS * 2).to_string()
+                                                            />
+                                                        </svg>
+                                                    </g>
                                                 </svg>
-                                            </g>
-                                        </svg>
+                                            }
+                                        }
                                     }
-                                }}
-                            },
-                        )
-                    } else {
-                        Either::Right(())
+                                },
+                            )
+                        } else {
+                            Either::Right(())
+                        }
                     }
-                }}
+                }
             </g>
         </g>
     }
@@ -1446,7 +1472,7 @@ fn Asset(asset: state::Asset) -> impl IntoView {
         }
     };
 
-    let remove:Action<_, _> = Action::new_unsync({
+    let remove: Action<_, _> = Action::new_unsync({
         let asset = asset.clone();
         let container = container.clone();
         let graph = graph.clone();
@@ -1504,7 +1530,7 @@ fn Asset(asset: state::Asset) -> impl IntoView {
             on:mousedown=mousedown
             on:contextmenu=contextmenu
             title=asset_title_closure(&asset)
-            class=(["bg-secondary-300", "dark:bg-secondary-600"], selection_resource)
+            class=(["bg-secondary-300", "dark:bg-secondary-600"], selection_resource.clone())
             class="flex gap-2 cursor-pointer px-2 py-0.5 border border-transparent \
             hover:border-secondary-600 dark:hover:border-secondary-400"
             data-resource=DATA_KEY_ASSET
@@ -1627,7 +1653,7 @@ fn AnalysisAssociation(association: state::AnalysisAssociation) -> impl IntoView
         }
     };
 
-    let update_associations:Action<_, _> = Action::new_unsync({
+    let update_associations: Action<_, _> = Action::new_unsync({
         let project = project.clone();
         let container = container.clone();
         let messages = messages.clone();
@@ -2312,34 +2338,33 @@ mod display {
     use leptos::prelude::*;
     use std::{num::NonZeroUsize, sync::Arc};
 
-    // TODO: May be unnecesasry to wrap in `Rc`.
+    // TODO: May be unnecesasry to wrap in `Arc`.
     type Node = Arc<Data>;
 
     #[derive(Clone, Debug)]
     pub struct Data {
         container: state::graph::Node,
-        visibility: ReadSignal<bool>,
-        children: RwSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
+        visibility: ArcReadSignal<bool>,
+        children: ArcRwSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
 
         // TODO: Use trigger?
         /// Updates internal state when `children` changes.
         _update: Effect<LocalStorage>,
-        reactive_owner: Owner,
     }
 
     impl Data {
         fn from(
             container: state::graph::Node,
             children: ReadSignal<Vec<state::graph::Node>>,
-            visibility: ReadSignal<bool>,
-            nodes: ReadSignal<Vec<Node>>,
-            reactive_owner: Owner,
+            visibility: ArcReadSignal<bool>,
+            nodes: ArcReadSignal<Vec<Node>>,
         ) -> Self {
             let state_children = children;
-            let children = reactive_owner.with(|| RwSignal::new(vec![]));
+            let children = ArcRwSignal::new(vec![]);
 
-            let update = reactive_owner.with(|| {
-                Effect::new(move |_| {
+            let update = Effect::new({
+                let children = children.clone();
+                move |_| {
                     let (removed, added) = state_children.with(|state_children| {
                         let removed = children.with_untracked(|children| {
                             children
@@ -2386,7 +2411,7 @@ mod display {
                         });
                         children.extend(added);
                     });
-                })
+                }
             });
 
             Self {
@@ -2394,7 +2419,6 @@ mod display {
                 visibility,
                 children,
                 _update: update,
-                reactive_owner,
             }
         }
 
@@ -2402,15 +2426,16 @@ mod display {
             &self.container
         }
 
-        pub fn children(&self) -> ReadSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>> {
+        pub fn children(&self) -> ArcReadSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>> {
             self.children.read_only()
         }
 
         pub fn width(&self) -> Signal<NonZeroUsize> {
-            self.reactive_owner.with(|| {
+            let reactive_owner = Owner::current().unwrap();
+            reactive_owner.with(move || {
+                let visibility = self.visibility.clone();
+                let children = self.children.read_only();
                 Signal::derive({
-                    let visibility = self.visibility;
-                    let children = self.children.read_only();
                     move || {
                         children.with(|children| {
                             let children_widths = children
@@ -2436,7 +2461,7 @@ mod display {
 
     #[derive(Clone, Debug)]
     pub struct State {
-        nodes: RwSignal<Vec<Node>>,
+        nodes: ArcRwSignal<Vec<Node>>,
         root: state::graph::Node,
         children: ReadSignal<state::graph::Children>,
 
@@ -2451,9 +2476,7 @@ mod display {
             edges: ReadSignal<state::graph::Children>,
             visibilities: ReadSignal<state::workspace_graph::ContainerVisibility>,
         ) -> Self {
-            let reactive_owner = Owner::current().unwrap(); // Needed so signals created in the effect aren't disposed of when the effect runs again.
-            let nodes = RwSignal::new(vec![]);
-
+            let nodes = ArcRwSignal::new(vec![]);
             let data_nodes = edges.with_untracked(|children| {
                 children
                     .iter()
@@ -2471,7 +2494,6 @@ mod display {
                             state_children.read_only(),
                             visibility,
                             nodes.read_only(),
-                            reactive_owner.clone(),
                         ))
                     })
                     .collect::<Vec<_>>()
@@ -2506,8 +2528,9 @@ mod display {
                     .update_untracked(|children| children.extend(display_children))
             });
 
-            nodes.update_untracked(|nodes| nodes.extend(data_nodes));
+            nodes.write_untracked().extend(data_nodes);
             let update = Effect::new({
+                let nodes = nodes.clone();
                 move |_| {
                     edges.with(|edges| {
                         let removed = nodes.with_untracked(|nodes| {
@@ -2561,7 +2584,6 @@ mod display {
                                     state_children.read_only(),
                                     visibility,
                                     nodes.read_only(),
-                                    reactive_owner.clone(),
                                 ))
                             })
                             .collect::<Vec<_>>();
@@ -2595,88 +2617,7 @@ mod display {
                                 .update_untracked(|children| children.extend(children_width))
                         });
 
-                        nodes.with_untracked(|nodes| {
-                            nodes.iter().for_each(|data| {
-                                let state_children = edges
-                                    .iter()
-                                    .find_map(|(parent, children)| {
-                                        Arc::ptr_eq(parent, &data.container)
-                                            .then_some(children.read_only())
-                                    })
-                                    .unwrap();
-
-                                let data_children_len =
-                                    data.children.with_untracked(|children| children.len());
-                                let state_children_len =
-                                    state_children.with_untracked(|children| children.len());
-                                if data_children_len != state_children_len {
-                                    assert_eq!(state_children_len, data_children_len + 1);
-
-                                    let missing_child = state_children
-                                        .with_untracked(|state_children| {
-                                            state_children
-                                                .iter()
-                                                .find(|state_child| {
-                                                    data.children.with_untracked(|data_children| {
-                                                        !data_children.iter().any(
-                                                            |(data_child, _)| {
-                                                                Arc::ptr_eq(data_child, state_child)
-                                                            },
-                                                        )
-                                                    })
-                                                })
-                                                .cloned()
-                                        })
-                                        .unwrap();
-
-                                    let root = added_data
-                                        .iter()
-                                        .find(|added| Arc::ptr_eq(&added.container, &missing_child))
-                                        .unwrap();
-
-                                    data.children.update(|children| {
-                                        children.push((root.container.clone(), root.width()));
-                                    });
-                                }
-                            });
-                        });
-
                         nodes.update(|nodes| nodes.extend(added_data));
-
-                        // NOTE: This is purely a safety check to ensure
-                        // the graph and display states are equal.
-                        // No state is modified.
-                        #[cfg(debug_assertions)]
-                        nodes.with_untracked(|nodes| {
-                            assert_eq!(nodes.len(), edges.len());
-                            for data in nodes.iter() {
-                                let state_children = edges
-                                    .iter()
-                                    .find_map(|(parent, children)| {
-                                        Arc::ptr_eq(parent, &data.container)
-                                            .then_some(children.read_only())
-                                    })
-                                    .unwrap();
-
-                                let data_children_len =
-                                    data.children.with_untracked(|children| children.len());
-                                let state_children_len =
-                                    state_children.with_untracked(|children| children.len());
-                                assert_eq!(data_children_len, state_children_len);
-                                data.children.with_untracked(|data_children| {
-                                    for (data_child, _) in data_children {
-                                        state_children.with_untracked(|state_children| {
-                                            state_children
-                                                .iter()
-                                                .find(|state_child| {
-                                                    Arc::ptr_eq(state_child, data_child)
-                                                })
-                                                .unwrap();
-                                        });
-                                    }
-                                });
-                            }
-                        })
                     })
                 }
             });
@@ -2689,7 +2630,7 @@ mod display {
             }
         }
 
-        pub fn nodes(&self) -> ReadSignal<Vec<Node>> {
+        pub fn nodes(&self) -> ArcReadSignal<Vec<Node>> {
             self.nodes.read_only()
         }
 

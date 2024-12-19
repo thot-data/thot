@@ -1276,7 +1276,10 @@ pub mod bulk {
                                                         dark:hover:bg-secondary-600"
                                                     >
 
-                                                        <Icon icon=components::icon::Add class="inline-block" />
+                                                        <Icon
+                                                            icon=components::icon::Remove
+                                                            attr:class="inline-block"
+                                                        />
                                                     </button>
                                                 </li>
                                             }

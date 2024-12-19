@@ -23,7 +23,8 @@ has_id.workspace = true
 icondata = "0.5"
 js-sys = "0.3"
 leptos = { version = "0.7", features = ["nightly", "csr"] }
-leptos_icons = { git = "https://github.com/bicarlsen/leptos-icons", branch = "0.7" }
+# leptos_icons = { git = "https://github.com/bicarlsen/leptos-icons", branch = "0.7" }
+leptos_icons = { git = "https://github.com/carloskiki/leptos-icons" }
 leptos_meta = { version = "0.7" }
 leptos_router = { version = "0.7", features = ["nightly"] }
 leptos-use = { git = "https://github.com/Synphonyte/leptos-use.git", features = ["storage"]}

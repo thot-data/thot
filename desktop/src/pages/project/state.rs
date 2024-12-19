@@ -92,7 +92,7 @@ pub mod workspace_graph {
     use syre_core::types::ResourceId;
     use syre_local_database as db;
 
-    pub type ContainerVisibility = Vec<(super::graph::Node, RwSignal<bool>)>;
+    pub type ContainerVisibility = Vec<(super::graph::Node, ArcRwSignal<bool>)>;
 
     #[derive(Clone, Debug)]
     pub struct State {
@@ -140,7 +140,7 @@ pub mod workspace_graph {
                 nodes
                     .iter()
                     .cloned()
-                    .map(|node| (node, RwSignal::new(true)))
+                    .map(|node| (node, ArcRwSignal::new(true)))
                     .collect()
             });
 
@@ -162,7 +162,7 @@ pub mod workspace_graph {
         pub fn container_visibility_get(
             &self,
             container: &super::graph::Node,
-        ) -> Option<RwSignal<bool>> {
+        ) -> Option<ArcRwSignal<bool>> {
             self.container_visibility.with_untracked(|containers| {
                 containers.iter().find_map(|(node, visibility)| {
                     Arc::ptr_eq(node, container).then_some(visibility.clone())
@@ -210,7 +210,7 @@ pub mod workspace_graph {
         }
 
         /// Get a resources selection state.
-        pub fn get(&self, rid: &ResourceId) -> Option<ReadSignal<bool>> {
+        pub fn get(&self, rid: &ResourceId) -> Option<ArcReadSignal<bool>> {
             self.resources.with_untracked(|resources| {
                 resources.iter().find_map(|resource| {
                     resource
@@ -408,7 +408,7 @@ pub mod workspace_graph {
     pub struct ResourceSelection {
         rid: ReadSignal<ResourceId>,
         kind: ResourceKind,
-        selected: RwSignal<bool>,
+        selected: ArcRwSignal<bool>,
     }
 
     impl ResourceSelection {
@@ -416,7 +416,7 @@ pub mod workspace_graph {
             Self {
                 rid,
                 kind,
-                selected: RwSignal::new(false),
+                selected: ArcRwSignal::new(false),
             }
         }
     }

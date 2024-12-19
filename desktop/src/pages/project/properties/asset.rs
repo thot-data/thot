@@ -419,7 +419,7 @@ mod metadata {
                 assert!(!key.is_empty());
                 assert!(!asset
                     .metadata()
-                    .with(|metadata| metadata.iter().any(|(k, _)| *k == key)));
+                    .with_untracked(|metadata| metadata.iter().any(|(k, _)| *k == key)));
 
                 let mut properties = asset.as_properties();
                 let mut metadata = asset
@@ -449,14 +449,14 @@ mod metadata {
             }
         });
 
-        let onclose = Callback::new(move |_| {
+        let close_popout = Callback::new(move |_| {
             if let Some(onclose) = onclose {
                 onclose.run(());
             }
         });
 
         view! {
-            <DetailPopout title="Add metadata" onclose>
+            <DetailPopout title="Add metadata" onclose=close_popout>
                 <AddDatumEditor keys=Signal::derive(keys) onadd class="w-full px-1" />
             </DetailPopout>
         }
