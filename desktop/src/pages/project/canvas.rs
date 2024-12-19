@@ -1276,7 +1276,6 @@ fn ContainerOk(
                 <div class="pb-2 text-center text-lg">
                     <span class="font-primary">{title}</span>
                 </div>
-
                 <div
                     on:wheel=wheel
                     class="grow overflow-y-auto scrollbar-thin scrollbar-thumb-rounded-full scrollbar-track-rounded-full"
@@ -2649,6 +2648,66 @@ mod display {
                     Arc::ptr_eq(&node.container, container).then_some(node.width())
                 })
             })
+        }
+    }
+}
+
+mod display_2 {
+    use super::state;
+    use leptos::prelude::*;
+    use std::{
+        num::{NonZero, NonZeroUsize},
+        sync::Arc,
+    };
+    use syre_core::types::ResourceId;
+
+    pub type Node = Arc<Data>;
+    pub struct Data {
+        rid: ReadSignal<ResourceId>,
+        visibility: ReadSignal<bool>,
+
+        depth: RwSignal<usize>,
+        height: RwSignal<NonZeroUsize>,
+        width: RwSignal<NonZeroUsize>,
+        height_visible: RwSignal<NonZeroUsize>,
+        width_visible: RwSignal<NonZeroUsize>,
+    }
+
+    pub struct Graph {
+        edges: Vec<(Node, RwSignal<Vec<Node>>)>,
+    }
+
+    impl Graph {
+        pub fn children(&self, parent: &ResourceId) -> Option<ReadSignal<Vec<Node>>> {
+            self.edges.iter().find_map(|(node, children)| {
+                (node.rid.read_untracked() == *parent).then_some(children.read_only())
+            })
+        }
+
+        pub fn depth(&self, root: &ResourceId) -> Option<NonZeroUsize> {
+            let depth = self
+                .children(root)?
+                .read_untracked()
+                .iter()
+                .map(|child| self.depth(&*child.rid.read_untracked()).unwrap())
+                .max()
+                .map(|max| max.clone().checked_add(1).unwrap())
+                .unwrap_or(NonZeroUsize::new(1).unwrap());
+
+            Some(depth)
+        }
+
+        pub fn depth_visible(&self, root: &ResourceId) -> Option<NonZeroUsize> {
+            let depth = self
+                .children(root)?
+                .read_untracked()
+                .iter()
+                .map(|child| self.depth(&*child.rid.read_untracked()).unwrap())
+                .max()
+                .map(|max| max.clone().checked_add(1).unwrap())
+                .unwrap_or(NonZeroUsize::new(1).unwrap());
+
+            Some(depth)
         }
     }
 }

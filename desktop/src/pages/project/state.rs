@@ -608,7 +608,7 @@ pub mod project {
         }
 
         pub fn is_present(&self) -> bool {
-            self.fs_resource.with(|resource| resource.is_present())
+            self.fs_resource.read().is_present()
         }
     }
 }
@@ -1211,35 +1211,44 @@ pub mod graph {
             }
 
             let ancestors = self.ancestors(&root);
-            for (parent, ancestor) in iter::zip(ancestors.iter().skip(1), ancestors.iter()) {
-                let delta_height = cmp::max(
-                    root.graph.subtree_height.with_untracked(|height| {
-                        let sibling_height_max =
-                            self.children(parent).unwrap().with_untracked(|siblings| {
-                                siblings
-                                    .iter()
-                                    .filter_map(|sibling| {
-                                        (!Node::ptr_eq(sibling, &ancestor))
-                                            .then_some(sibling.graph.subtree_height.get_untracked())
-                                    })
-                                    .max()
-                                    .map(|sibling_max_height| sibling_max_height.get())
-                                    .unwrap_or(0)
-                            });
+            let sibling_height_max = parent.with_untracked(|parent| {
+                self.children(parent).unwrap().with_untracked(|siblings| {
+                    siblings
+                        .iter()
+                        .filter_map(|sibling| {
+                            (!Node::ptr_eq(sibling, &root))
+                                .then_some(sibling.graph.subtree_height.get_untracked())
+                        })
+                        .max()
+                        .map(|sibling_max_height| sibling_max_height.get())
+                        .unwrap_or(0)
+                })
+            });
 
-                        height.get() as isize - sibling_height_max as isize
-                    }),
-                    0,
-                ) as usize;
+            parent
+                .read_untracked()
+                .graph
+                .subtree_height
+                .set(NonZeroUsize::new(sibling_height_max + 1).unwrap());
 
-                if delta_height == 0 {
+            for ancestor in ancestors.iter().skip(2) {
+                let sibling_height_max =
+                    self.children(ancestor).unwrap().with_untracked(|siblings| {
+                        siblings
+                            .iter()
+                            .map(|sibling| sibling.graph.subtree_height.get_untracked())
+                            .max()
+                            .map(|sibling_max_height| sibling_max_height.get())
+                            .unwrap_or(0)
+                    });
+
+                let new_height = NonZeroUsize::new(sibling_height_max + 1).unwrap();
+                assert!(new_height <= *ancestor.subtree_height().read_untracked());
+                if new_height < *ancestor.subtree_height().read_untracked() {
+                    ancestor.graph.subtree_height.set(new_height);
+                } else {
                     break;
                 }
-
-                parent.graph.subtree_height.update(|height| {
-                    let val = height.get() - delta_height;
-                    *height = NonZeroUsize::new(val).unwrap()
-                });
             }
 
             // NB: Parents do not update signal when child is removed.
