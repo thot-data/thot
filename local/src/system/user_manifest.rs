@@ -1,7 +1,7 @@
 use super::collections::user_manifest::UserManifest;
 use super::config::Config;
 use crate::error::{Error, IoSerde, Result, Users as UsersError};
-use std::{collections::HashMap, result::Result as StdResult};
+use std::result::Result as StdResult;
 use syre_core::error::{Error as CoreError, Resource as ResourceError};
 use syre_core::system::User;
 use syre_core::types::ResourceId;

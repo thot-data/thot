@@ -318,6 +318,7 @@ fn CanvasView(
     let graph = expect_context::<state::Graph>();
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
     let workspace_state = expect_context::<state::Workspace>();
+    let display_state = expect_context::<state::Display>();
     let viewbox = expect_context::<ViewboxState>();
 
     let portal_ref = NodeRef::new();
@@ -383,7 +384,7 @@ fn CanvasView(
     };
 
     let mousemove = {
-        let graph = graph.clone();
+        let root = display_state.find(graph.root()).unwrap();
         let viewbox = viewbox.clone();
         move |e: MouseEvent| {
             if pan_drag.with(|c| c.is_some()) {
@@ -399,11 +400,11 @@ fn CanvasView(
 
                 let x = viewbox.x().get() - (dx as f64 / vb_scale()) as isize;
                 let y = viewbox.y().get() - (dy as f64 / vb_scale()) as isize;
-                let x_max = (graph.root().subtree_width().get().get()
+                let x_max = (root.width().get_untracked().get()
                     * (CONTAINER_WIDTH + PADDING_X_SIBLING)) as isize
                     - viewbox.width().get() as isize / 2;
                 let y_max = cmp::max(
-                    (graph.root().subtree_height().get().get()
+                    (root.height().get_untracked().get()
                         * (MAX_CONTAINER_HEIGHT + PADDING_Y_CHILDREN)) as isize
                         - viewbox.height().get() as isize / 2,
                     0,
@@ -431,7 +432,7 @@ fn CanvasView(
     };
 
     let wheel = {
-        let graph = graph.clone();
+        let root = display_state.find(graph.root()).unwrap();
         let viewbox = viewbox.clone();
         move |e: WheelEvent| {
             if e.ctrl_key() {
@@ -461,8 +462,8 @@ fn CanvasView(
                     viewbox.width().get(),
                     viewbox.height().get(),
                     vb_scale(),
-                    graph.root().subtree_width().get().get(),
-                    graph.root().subtree_height().get().get(),
+                    root.width().get_untracked().get(),
+                    root.height().get_untracked().get(),
                 );
 
                 viewbox.x().set(x);
@@ -476,8 +477,8 @@ fn CanvasView(
                     viewbox.width().get(),
                     viewbox.height().get(),
                     vb_scale(),
-                    graph.root().subtree_width().get().get(),
-                    graph.root().subtree_height().get().get(),
+                    root.width().get_untracked().get(),
+                    root.height().get_untracked().get(),
                 );
 
                 viewbox.x().set(x);
@@ -529,7 +530,7 @@ fn Graph() -> impl IntoView {
 fn GraphView(root: state::graph::Node) -> impl IntoView {
     let graph = expect_context::<state::Graph>();
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
-    let display_state = expect_context::<display::State>();
+    let display_state = expect_context::<state::Display>();
     let container_preview_height = expect_context::<ContainerPreviewHeight>();
     let viewbox = expect_context::<ViewboxState>();
     let portal_ref = expect_context::<PortalRef>();
@@ -570,7 +571,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
         }
     };
 
-    let display_data = display_state.get(&root).unwrap();
+    let display_data = display_state.find(&root).unwrap();
 
     let container_height = Signal::derive(move || {
         container_preview_height.with(|preview_height| CONTAINER_HEADER_HEIGHT + preview_height)
@@ -587,10 +588,11 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
 
     let height = {
         let root = root.clone();
+        let root_height = display_data.height();
         let container_visibility = container_visibility.read_only();
         move || {
             let height = if container_visibility() {
-                let height = root.subtree_height().with(|height| height.get());
+                let height = root_height.with(|height| height.get());
                 height * (container_height.get() + PADDING_Y_CHILDREN) - PADDING_Y_CHILDREN
                     + CANVAS_BUTTON_RADIUS
                     + CANVAS_BUTTON_STROKE
@@ -604,42 +606,9 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
         }
     };
 
-    let older_sibling_widths = Signal::derive({
-        let root = root.clone();
-        let display_nodes = display_state.nodes();
-
-        move || {
-            siblings()
-                .map(|siblings| {
-                    siblings.with(|siblings| {
-                        root.sibling_index().with(|index| {
-                            siblings
-                                .iter()
-                                .take(*index)
-                                .map(|sibling| {
-                                    display_nodes.with(|display_nodes| {
-                                        display_nodes
-                                            .iter()
-                                            .find_map(|data| {
-                                                Arc::ptr_eq(data.container(), sibling)
-                                                    .then(|| data.width())
-                                            })
-                                            .unwrap()
-                                    })
-                                })
-                                .collect::<Vec<_>>()
-                        })
-                    })
-                })
-                .unwrap_or(vec![])
-        }
-    });
-
-    let x = move || {
-        let x = older_sibling_widths
-            .with(|widths| widths.iter().fold(0, |x, width| x + width.get().get()));
-
-        x * (CONTAINER_WIDTH + PADDING_X_SIBLING)
+    let x = {
+        let sibling_width_until = display_state.sibling_width_until(&root).unwrap();
+        Signal::derive(move || *sibling_width_until.read() * (CONTAINER_WIDTH + PADDING_X_SIBLING))
     };
 
     let y = {
@@ -659,7 +628,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
     let _ = Effect::watch(
         container_visibility.read_only(),
         {
-            let subtree_width = root.subtree_width();
+            let subtree_width = display_state.find(&root).unwrap().width();
             move |visible, visible_prev, _| {
                 if let Some(visible_prev) = visible_prev {
                     if visible == visible_prev {
@@ -694,13 +663,20 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
         false,
     );
 
+    let children_widths = {
+        let children = display_state.children(&root).unwrap();
+        Signal::derive(move || {
+            children
+                .read()
+                .iter()
+                .map(|child| child.width())
+                .collect::<Vec<_>>()
+        })
+    };
+
     view! {
         <svg node_ref=wrapper_node width=width height=height x=x y=y>
-            <GraphEdges
-                x_node
-                children_widths=display_data.children()
-                container_visibility=container_visibility.clone()
-            />
+            <GraphEdges x_node children_widths container_visibility=container_visibility.clone() />
             <g class="group">
                 <foreignObject width=CONTAINER_WIDTH height=container_height x=x_node y=0>
                     <ContainerView node_ref=container_node container=root.clone() />
@@ -784,7 +760,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
 #[component]
 fn GraphEdges(
     x_node: Signal<usize>,
-    children_widths: ArcReadSignal<Vec<(state::graph::Node, Signal<NonZeroUsize>)>>,
+    children_widths: Signal<Vec<ArcReadSignal<NonZeroUsize>>>,
     container_visibility: ArcRwSignal<bool>,
 ) -> impl IntoView {
     let container_preview_height = expect_context::<ContainerPreviewHeight>();
@@ -850,7 +826,7 @@ fn GraphEdges(
             children_widths.with(|widths| {
                 widths
                     .iter()
-                    .scan((0_usize, 0_usize), |(start, end), (_, width)| {
+                    .scan((0_usize, 0_usize), |(start, end), width| {
                         *start = *end;
                         *end += width.get().get();
                         Some((*start, *end))
@@ -1045,7 +1021,7 @@ fn CreateChildContainer(
                             .value()
                             .with(|value| {
                                 if let Some(Err(error)) = value {
-                                    tracing::debug!(? error);
+                                    tracing::debug!(?error);
                                     let msg = "Something went wrong.";
                                     Either::Left(view! { <div>{msg}</div> })
                                 } else {
@@ -1263,9 +1239,7 @@ fn ContainerOk(
                     move || !highlight()
                 },
             )
-
             class=(["border-4", "border-primary-700"], highlight.clone())
-
             class="h-full cursor-pointer rounded bg-white dark:bg-secondary-700"
             data-resource=DATA_KEY_CONTAINER
             data-rid=rid
@@ -2430,30 +2404,27 @@ mod display {
         }
 
         pub fn width(&self) -> Signal<NonZeroUsize> {
-            let reactive_owner = Owner::current().unwrap();
-            reactive_owner.with(move || {
-                let visibility = self.visibility.clone();
-                let children = self.children.read_only();
-                Signal::derive({
-                    move || {
-                        children.with(|children| {
-                            let children_widths = children
+            let visibility = self.visibility.clone();
+            let children = self.children.read_only();
+            Signal::derive({
+                move || {
+                    children.with(|children| {
+                        let children_widths = children
+                            .iter()
+                            .map(|(_data, width)| width)
+                            .collect::<Vec<_>>();
+
+                        if visibility.get() && !children_widths.is_empty() {
+                            let width = children_widths
                                 .iter()
-                                .map(|(_data, width)| width)
-                                .collect::<Vec<_>>();
+                                .fold(0, |width, child_width| width + child_width.get().get());
 
-                            if visibility.get() && !children_widths.is_empty() {
-                                let width = children_widths
-                                    .iter()
-                                    .fold(0, |width, child_width| width + child_width.get().get());
-
-                                NonZeroUsize::new(width).unwrap()
-                            } else {
-                                NonZeroUsize::new(1).unwrap()
-                            }
-                        })
-                    }
-                })
+                            NonZeroUsize::new(width).unwrap()
+                        } else {
+                            NonZeroUsize::new(1).unwrap()
+                        }
+                    })
+                }
             })
         }
     }
@@ -2648,66 +2619,6 @@ mod display {
                     Arc::ptr_eq(&node.container, container).then_some(node.width())
                 })
             })
-        }
-    }
-}
-
-mod display_2 {
-    use super::state;
-    use leptos::prelude::*;
-    use std::{
-        num::{NonZero, NonZeroUsize},
-        sync::Arc,
-    };
-    use syre_core::types::ResourceId;
-
-    pub type Node = Arc<Data>;
-    pub struct Data {
-        rid: ReadSignal<ResourceId>,
-        visibility: ReadSignal<bool>,
-
-        depth: RwSignal<usize>,
-        height: RwSignal<NonZeroUsize>,
-        width: RwSignal<NonZeroUsize>,
-        height_visible: RwSignal<NonZeroUsize>,
-        width_visible: RwSignal<NonZeroUsize>,
-    }
-
-    pub struct Graph {
-        edges: Vec<(Node, RwSignal<Vec<Node>>)>,
-    }
-
-    impl Graph {
-        pub fn children(&self, parent: &ResourceId) -> Option<ReadSignal<Vec<Node>>> {
-            self.edges.iter().find_map(|(node, children)| {
-                (node.rid.read_untracked() == *parent).then_some(children.read_only())
-            })
-        }
-
-        pub fn depth(&self, root: &ResourceId) -> Option<NonZeroUsize> {
-            let depth = self
-                .children(root)?
-                .read_untracked()
-                .iter()
-                .map(|child| self.depth(&*child.rid.read_untracked()).unwrap())
-                .max()
-                .map(|max| max.clone().checked_add(1).unwrap())
-                .unwrap_or(NonZeroUsize::new(1).unwrap());
-
-            Some(depth)
-        }
-
-        pub fn depth_visible(&self, root: &ResourceId) -> Option<NonZeroUsize> {
-            let depth = self
-                .children(root)?
-                .read_untracked()
-                .iter()
-                .map(|child| self.depth(&*child.rid.read_untracked()).unwrap())
-                .max()
-                .map(|max| max.clone().checked_add(1).unwrap())
-                .unwrap_or(NonZeroUsize::new(1).unwrap());
-
-            Some(depth)
         }
     }
 }

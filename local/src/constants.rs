@@ -1,5 +1,4 @@
 //! Crate wide constant values.
-use std::ffi::OsStr;
 
 /// Current project format version.
 pub static PROJECT_FORMAT_VERSION: &str = "0.11.0";

@@ -3,19 +3,14 @@ use super::resources::{Analyses, Project};
 use crate::{
     common,
     system::{collections::ProjectManifest, project_manifest},
-    Error, Result,
+    Result,
 };
 use std::{
-    fs,
-    io::{self, BufRead},
+    fs, io,
     path::{Path, PathBuf},
     result::Result as StdResult,
 };
-use syre_core::{
-    error::{Error as CoreError, Project as CoreProjectError},
-    project::Project as CoreProject,
-    types::ResourceId,
-};
+use syre_core::types::ResourceId;
 
 // ************
 // *** Init ***

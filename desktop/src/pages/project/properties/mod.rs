@@ -1,7 +1,7 @@
 use super::state::{self, workspace_graph};
 use crate::types;
 use leptos::{either::EitherOf7, html, prelude::*};
-use std::fmt;
+use std::{assert_matches::assert_matches, fmt};
 use syre_desktop_lib as lib;
 
 mod analyses;
@@ -73,66 +73,106 @@ pub fn PropertiesBar() -> impl IntoView {
 
     let widget = {
         let selected = workspace_graph_state.selection_resources().selected();
-        move || {
-            active_editor.with(|active_editor| match active_editor {
-                EditorKind::Project => EitherOf7::A(Project),
-                EditorKind::Analyses => EitherOf7::B(view! {
-                    <div id=ANALYSES_ID class="h-full">
-                        <Analyses />
-                    </div>
-                }),
-                EditorKind::Container => {
-                    let container = selected.with(|selected| {
-                        let [resource] = &selected[..] else {
-                            panic!("invalid state");
-                        };
+        move || match *active_editor.read() {
+            EditorKind::Project => EitherOf7::A(Project),
+            EditorKind::Analyses => EitherOf7::B(view! {
+                <div id=ANALYSES_ID class="h-full">
+                    <Analyses />
+                </div>
+            }),
+            EditorKind::Container => {
+                let container = selected.with(|selected| {
+                    let [resource] = &selected[..] else {
+                        panic!("invalid state");
+                    };
 
-                        resource
-                            .rid()
-                            .with_untracked(|rid| graph.find_by_id(rid).unwrap())
-                    });
+                    resource
+                        .rid()
+                        .with_untracked(|rid| graph.find_by_id(rid).unwrap())
+                });
 
-                    EitherOf7::C(view! { <Container container=container.state().clone() /> })
-                }
-                EditorKind::Asset => {
-                    let asset = selected.with(|selected| {
-                        let [resource] = &selected[..] else {
-                            panic!("invalid state");
-                        };
+                EitherOf7::C(view! { <Container container=(*container).clone() /> })
+            }
+            EditorKind::Asset => {
+                let asset = selected.with(|selected| {
+                    let [resource] = &selected[..] else {
+                        panic!("invalid state");
+                    };
 
-                        resource
-                            .rid()
-                            .with(|rid| graph.find_asset_by_id(rid).unwrap())
-                    });
+                    resource
+                        .rid()
+                        .with(|rid| graph.find_asset_by_id(rid).unwrap())
+                });
 
-                    EitherOf7::D(view! { <Asset asset /> })
-                }
-                EditorKind::ContainerBulk => {
-                    let containers = Signal::derive(move || {
-                        selected.with(|selected| {
-                            selected
-                                .iter()
-                                .map(|resource| resource.rid().get())
-                                .collect::<Vec<_>>()
+                EitherOf7::D(view! { <Asset asset /> })
+            }
+            EditorKind::ContainerBulk => {
+                // let containers = Signal::derive(move || {
+                //     selected
+                //         .read()
+                //         .iter()
+                //         .map(|resource| {
+                //             assert_matches!(
+                //                 resource.kind(),
+                //                 state::workspace_graph::ResourceKind::Container
+                //             );
+                //             resource.rid().get()
+                //         })
+                //         .collect::<Vec<_>>()
+                // });
+
+                // TOOD: Workaround for `selected` firing before `active_editor` is updated.
+                let containers = Signal::derive(move || {
+                    selected
+                        .read()
+                        .iter()
+                        .filter_map(|resource| {
+                            matches!(
+                                resource.kind(),
+                                state::workspace_graph::ResourceKind::Container
+                            )
+                            .then_some(resource.rid().get())
                         })
-                    });
+                        .collect::<Vec<_>>()
+                });
 
-                    EitherOf7::E(view! { <ContainerBulk containers /> })
-                }
-                EditorKind::AssetBulk => {
-                    let assets = Signal::derive(move || {
-                        selected.with(|selected| {
-                            selected
-                                .iter()
-                                .map(|resource| resource.rid().get())
-                                .collect::<Vec<_>>()
-                        })
-                    });
+                EitherOf7::E(view! { <ContainerBulk containers /> })
+            }
+            EditorKind::AssetBulk => {
+                // let assets = Signal::derive(move || {
+                //     selected.with(|selected| {
+                //         selected
+                //             .iter()
+                //             .map(|resource| {
+                //                 assert_matches!(
+                //                     resource.kind(),
+                //                     state::workspace_graph::ResourceKind::Asset
+                //                 );
+                //                 resource.rid().get()
+                //             })
+                //             .collect::<Vec<_>>()
+                //     })
+                // });
 
-                    EitherOf7::F(view! { <AssetBulk assets /> })
-                }
-                EditorKind::MixedBulk => EitherOf7::G(view! { <MixedBulk resources=selected /> }),
-            })
+                // TOOD: Workaround for `selected` firing before `active_editor` is updated.
+                let assets = Signal::derive(move || {
+                    selected.with(|selected| {
+                        selected
+                            .iter()
+                            .filter_map(|resource| {
+                                matches!(
+                                    resource.kind(),
+                                    state::workspace_graph::ResourceKind::Asset
+                                )
+                                .then_some(resource.rid().get())
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                });
+
+                EitherOf7::F(view! { <AssetBulk assets /> })
+            }
+            EditorKind::MixedBulk => EitherOf7::G(view! { <MixedBulk resources=selected /> }),
         }
     };
 

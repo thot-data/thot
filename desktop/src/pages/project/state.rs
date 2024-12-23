@@ -1,4 +1,5 @@
 pub use container::{AnalysisAssociation, Asset, State as Container};
+pub use display::State as Display;
 pub use graph::State as Graph;
 pub use metadata::Metadata;
 pub use project::{Analysis, State as Project};
@@ -619,107 +620,20 @@ pub mod graph {
     use leptos::prelude::*;
     use std::{
         ffi::OsString,
-        iter,
-        num::NonZeroUsize,
-        ops::Deref,
         path::{Component, Path, PathBuf},
         sync::{Arc, Mutex},
     };
     use syre_core::types::ResourceId;
     use syre_local_database as db;
 
-    pub type Node = Arc<Data>;
-
-    #[derive(Debug, Clone)]
-    pub struct Data {
-        state: Container,
-        graph: GraphData,
-    }
-
-    impl Data {
-        /// # Arguments
-        /// 1. `container`: Container state.
-        /// 2. `subtree_width`: Width of the subtree rooted at container.
-        /// 3. `subtree_height`: Height of the subtree rooted at container.
-        /// 4. `sibling_index`: Index amongst siblings.
-        pub fn new(
-            container: db::state::Container,
-            subtree_width: NonZeroUsize,
-            subtree_height: NonZeroUsize,
-            sibling_index: usize,
-        ) -> Self {
-            Self {
-                state: Container::new(container),
-                graph: GraphData::new(subtree_width, subtree_height, sibling_index),
-            }
-        }
-
-        pub fn state(&self) -> &Container {
-            &self.state
-        }
-
-        pub fn subtree_height(&self) -> ReadSignal<NonZeroUsize> {
-            self.graph.subtree_height.read_only()
-        }
-
-        pub fn subtree_width(&self) -> ReadSignal<NonZeroUsize> {
-            self.graph.subtree_width.read_only()
-        }
-
-        pub fn sibling_index(&self) -> ReadSignal<usize> {
-            self.graph.sibling_index.read_only()
-        }
-    }
-
-    impl Deref for Data {
-        type Target = Container;
-        fn deref(&self) -> &Self::Target {
-            &self.state
-        }
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct GraphData {
-        subtree_width: RwSignal<NonZeroUsize>,
-        subtree_height: RwSignal<NonZeroUsize>,
-
-        /// Index amongst siblings.
-        sibling_index: RwSignal<usize>,
-    }
-
-    impl GraphData {
-        pub fn new(
-            subtree_width: NonZeroUsize,
-            subtree_height: NonZeroUsize,
-            sibling_index: usize,
-        ) -> Self {
-            Self {
-                subtree_width: RwSignal::new(subtree_width),
-                subtree_height: RwSignal::new(subtree_height),
-                sibling_index: RwSignal::new(sibling_index),
-            }
-        }
-
-        pub(self) fn set_subtree_width(&self, width: NonZeroUsize) {
-            self.subtree_width.set(width);
-        }
-
-        pub(self) fn set_subtree_height(&self, height: NonZeroUsize) {
-            self.subtree_height.set(height);
-        }
-
-        pub(self) fn set_sibling_index(&self, index: usize) {
-            self.sibling_index.set(index);
-        }
-    }
-
+    pub type Node = Arc<Container>;
     pub type Children = Vec<(Node, RwSignal<Vec<Node>>)>;
 
     #[derive(Clone)]
     pub struct State {
-        nodes: RwSignal<Vec<Node>>, // NOTE: `nodes` is redundant with `children`, could be removed.
+        nodes: RwSignal<Vec<Node>>, // TODO: `nodes` is redundant with `children`, could be removed.
         root: Node,
-        children: RwSignal<Children>,
+        children: RwSignal<Children>, // TODO: Rename to `edges`.
         parents: Arc<Mutex<Vec<(Node, RwSignal<Node>)>>>,
     }
 
@@ -737,35 +651,9 @@ pub mod graph {
                 })
                 .collect::<Vec<_>>();
 
-            let graph_data = (0..nodes.len())
-                .map(|root| Self::graph_data(root, &children))
-                .collect::<Vec<_>>();
-
-            let sibling_index = (0..nodes.len())
-                .into_iter()
-                .map(|node| {
-                    parents[node]
-                        .map(|parent| {
-                            children[parent]
-                                .iter()
-                                .position(|child| *child == node)
-                                .unwrap()
-                        })
-                        .unwrap_or(0)
-                })
-                .collect::<Vec<_>>();
-
             let nodes = nodes
                 .into_iter()
-                .enumerate()
-                .map(|(index, container)| {
-                    Arc::new(Data::new(
-                        container,
-                        graph_data[index].0,
-                        graph_data[index].1,
-                        sibling_index[index],
-                    ))
-                })
+                .map(|container| Node::new(Container::new(container)))
                 .collect::<Vec<_>>();
 
             let root = nodes[0].clone();
@@ -797,34 +685,6 @@ pub mod graph {
                 children: RwSignal::new(children),
                 parents: Arc::new(Mutex::new(parents)),
             }
-        }
-
-        /// # Arguments
-        /// `root`: Index of the subtree's root.
-        /// `graph`: Graph edges as indices.
-        ///
-        /// # Returns
-        /// Tuple of `(subgraph width, subgraph height)` for the given node.
-        fn graph_data(root: usize, graph: &Vec<Vec<usize>>) -> (NonZeroUsize, NonZeroUsize) {
-            let children_data = graph[root]
-                .iter()
-                .map(|child| Self::graph_data(*child, graph))
-                .collect::<Vec<_>>();
-
-            let width = children_data
-                .iter()
-                .map(|data| data.0)
-                .reduce(|total, width| total.checked_add(width.get()).unwrap())
-                .unwrap_or(NonZeroUsize::new(1).unwrap());
-
-            let height = children_data
-                .iter()
-                .map(|data| data.1)
-                .max()
-                .map(|height| height.checked_add(1).unwrap())
-                .unwrap_or(NonZeroUsize::new(1).unwrap());
-
-            (width, height)
         }
 
         pub fn nodes(&self) -> RwSignal<Vec<Node>> {
@@ -985,7 +845,7 @@ pub mod graph {
                 nodes
                     .iter()
                     .find(|node| {
-                        node.state.properties().with_untracked(|properties| {
+                        node.properties().with_untracked(|properties| {
                             if let db::state::DataResource::Ok(properties) = properties {
                                 properties.rid().with_untracked(|id| id == rid)
                             } else {
@@ -1003,7 +863,7 @@ pub mod graph {
                 nodes
                     .iter()
                     .find(|node| {
-                        node.state.assets().with_untracked(|assets| {
+                        node.assets().with_untracked(|assets| {
                             if let db::state::DataResource::Ok(assets) = assets {
                                 assets.with_untracked(|assets| {
                                     assets
@@ -1022,7 +882,7 @@ pub mod graph {
         pub fn find_asset_by_id(&self, rid: &ResourceId) -> Option<super::Asset> {
             self.nodes.with_untracked(|nodes| {
                 nodes.iter().find_map(|node| {
-                    node.state.assets().with_untracked(|assets| {
+                    node.assets().with_untracked(|assets| {
                         if let db::state::DataResource::Ok(assets) = assets {
                             assets.with_untracked(|assets| {
                                 assets.iter().find_map(|asset| {
@@ -1045,8 +905,6 @@ pub mod graph {
     impl State {
         /// Inserts a subgraph at the indicated path.
         pub fn insert(&self, parent: impl AsRef<Path>, graph: Self) -> Result<(), error::Insert> {
-            use std::cmp;
-
             let Self {
                 nodes,
                 root,
@@ -1069,72 +927,6 @@ pub mod graph {
             let Some(parent) = self.find(parent)? else {
                 return Err(error::Insert::ParentNotFound);
             };
-
-            parent.graph.subtree_height.update(|height| {
-                *height = cmp::max(
-                    height.clone(),
-                    root.subtree_height()
-                        .get_untracked()
-                        .checked_add(1)
-                        .unwrap(),
-                )
-            });
-            for ancestor in self.ancestors(&parent).iter().skip(1) {
-                let height = ancestor.subtree_height().get_untracked();
-                let height_new = self
-                    .children(ancestor)
-                    .unwrap()
-                    .with_untracked(|children| {
-                        children
-                            .iter()
-                            .map(|child| child.subtree_height().get_untracked())
-                            .collect::<Vec<_>>()
-                    })
-                    .into_iter()
-                    .max()
-                    .unwrap()
-                    .checked_add(1)
-                    .unwrap();
-
-                if height_new > height {
-                    ancestor.graph.set_subtree_height(height_new);
-                } else if height_new == height {
-                    break;
-                } else {
-                    panic!("inserting should not reduce height");
-                }
-            }
-
-            let siblings = self.children(&parent).unwrap();
-            parent.graph.subtree_width.update(|width| {
-                let root_width = root.subtree_width().get_untracked();
-                if siblings.with_untracked(|siblings| siblings.is_empty()) {
-                    *width = root_width;
-                } else {
-                    *width = width.checked_add(root_width.get()).unwrap();
-                }
-            });
-            for ancestor in self.ancestors(&parent).iter().skip(1) {
-                let width = ancestor.subtree_width().get_untracked();
-                let width_new = self.children(ancestor).unwrap().with_untracked(|children| {
-                    children
-                        .iter()
-                        .map(|child| child.subtree_width().get_untracked())
-                        .reduce(|total, width| total.checked_add(width.get()).unwrap())
-                        .unwrap()
-                });
-
-                if width_new > width {
-                    ancestor.graph.set_subtree_width(width_new);
-                } else if width_new == width {
-                    break;
-                } else {
-                    panic!("inserting should not reduce width");
-                }
-            }
-
-            root.graph
-                .set_sibling_index(siblings.with_untracked(|siblings| siblings.len()));
 
             // NB: Order of adding parents then children then nodes is
             // important for recursion in graph view.
@@ -1167,8 +959,6 @@ pub mod graph {
         /// # Notes
         /// + Parent node signals are not updated.
         pub fn remove(&self, path: impl AsRef<Path>) -> Result<Vec<Node>, error::Remove> {
-            use std::cmp;
-
             let Some(root) = self.find(path.as_ref())? else {
                 return Err(error::Remove::NotFound);
             };
@@ -1176,80 +966,6 @@ pub mod graph {
             let parent = self.parent(&root).unwrap();
             let descendants = self.descendants(&root);
             assert!(!descendants.is_empty());
-
-            let root_width = root.graph.subtree_width.get_untracked().get();
-            let parent_width = parent
-                .with_untracked(|parent| parent.subtree_width().get_untracked())
-                .get();
-            let delta_width = if root_width == 1 && parent_width == 1 {
-                0
-            } else if root_width == parent_width {
-                root_width - 1
-            } else {
-                root_width
-            };
-
-            parent.with_untracked(|parent| {
-                self.children(parent).unwrap().with_untracked(|siblings| {
-                    root.graph.sibling_index.with_untracked(|root_index| {
-                        for sibling in siblings.iter().skip(root_index + 1) {
-                            sibling.graph.sibling_index.update(|index| {
-                                *index -= 1;
-                            })
-                        }
-                    })
-                })
-            });
-
-            if delta_width > 0 {
-                for ancestor in self.ancestors(&root).iter().skip(1) {
-                    ancestor.graph.subtree_width.update(|width| {
-                        let val = width.get() - delta_width;
-                        *width = NonZeroUsize::new(val).unwrap();
-                    });
-                }
-            }
-
-            let ancestors = self.ancestors(&root);
-            let sibling_height_max = parent.with_untracked(|parent| {
-                self.children(parent).unwrap().with_untracked(|siblings| {
-                    siblings
-                        .iter()
-                        .filter_map(|sibling| {
-                            (!Node::ptr_eq(sibling, &root))
-                                .then_some(sibling.graph.subtree_height.get_untracked())
-                        })
-                        .max()
-                        .map(|sibling_max_height| sibling_max_height.get())
-                        .unwrap_or(0)
-                })
-            });
-
-            parent
-                .read_untracked()
-                .graph
-                .subtree_height
-                .set(NonZeroUsize::new(sibling_height_max + 1).unwrap());
-
-            for ancestor in ancestors.iter().skip(2) {
-                let sibling_height_max =
-                    self.children(ancestor).unwrap().with_untracked(|siblings| {
-                        siblings
-                            .iter()
-                            .map(|sibling| sibling.graph.subtree_height.get_untracked())
-                            .max()
-                            .map(|sibling_max_height| sibling_max_height.get())
-                            .unwrap_or(0)
-                    });
-
-                let new_height = NonZeroUsize::new(sibling_height_max + 1).unwrap();
-                assert!(new_height <= *ancestor.subtree_height().read_untracked());
-                if new_height < *ancestor.subtree_height().read_untracked() {
-                    ancestor.graph.subtree_height.set(new_height);
-                } else {
-                    break;
-                }
-            }
 
             // NB: Parents do not update signal when child is removed.
             self.parents.lock().unwrap().retain(|(child, _)| {
@@ -1292,7 +1008,7 @@ pub mod graph {
                 return Err(error::Move::NotFound);
             };
 
-            node.state.name().set(to.into());
+            node.name().set(to.into());
             Ok(())
         }
     }
@@ -1340,6 +1056,608 @@ pub mod graph {
                 Self::InvalidPath
             }
         }
+    }
+}
+
+pub mod display {
+    use super::{graph, workspace_graph};
+    use leptos::prelude::*;
+    use std::{
+        num::NonZeroUsize,
+        sync::{Arc, Mutex},
+    };
+
+    /// [`Data`] builder.
+    pub struct Builder {
+        container: graph::Node,
+        visibility: ArcReadSignal<bool>,
+
+        depth: Option<usize>,
+        sibling_index: Option<usize>,
+        height: Option<NonZeroUsize>,
+        width: Option<NonZeroUsize>,
+    }
+
+    impl Builder {
+        pub fn new(container: graph::Node, visibility: ArcReadSignal<bool>) -> Self {
+            Self {
+                container,
+                visibility,
+                depth: None,
+                sibling_index: None,
+                height: None,
+                width: None,
+            }
+        }
+
+        pub fn depth(&mut self, depth: usize) {
+            let _ = self.depth.insert(depth);
+        }
+
+        pub fn sibling_index(&mut self, index: usize) {
+            let _ = self.sibling_index.insert(index);
+        }
+
+        pub fn height(&mut self, height: NonZeroUsize) {
+            let _ = self.height.insert(height);
+        }
+
+        pub fn width(&mut self, width: NonZeroUsize) {
+            let _ = self.width.insert(width);
+        }
+
+        pub fn build(self) -> Data {
+            let Self {
+                container,
+                visibility,
+                depth,
+                sibling_index,
+                height,
+                width,
+            } = self;
+
+            let height = ArcRwSignal::new(height.unwrap());
+            let width = ArcRwSignal::new(width.unwrap());
+
+            let height_visible = ArcSignal::derive({
+                let visibility = visibility.clone();
+                let height = height.clone();
+                move || {
+                    if *visibility.read() {
+                        height.get()
+                    } else {
+                        NonZeroUsize::new(1).unwrap()
+                    }
+                }
+            });
+
+            let width_visible = ArcSignal::derive({
+                let visibility = visibility.clone();
+                let width = width.clone();
+                move || {
+                    if *visibility.read() {
+                        width.get()
+                    } else {
+                        NonZeroUsize::new(1).unwrap()
+                    }
+                }
+            });
+
+            Data {
+                container,
+                visibility,
+                depth: ArcRwSignal::new(depth.unwrap()),
+                sibling_index: ArcRwSignal::new(sibling_index.unwrap()),
+                height,
+                width,
+                height_visible,
+                width_visible,
+            }
+        }
+    }
+
+    pub struct Data {
+        container: graph::Node,
+        visibility: ArcReadSignal<bool>,
+
+        depth: ArcRwSignal<usize>,
+        sibling_index: ArcRwSignal<usize>,
+        height: ArcRwSignal<NonZeroUsize>,
+        width: ArcRwSignal<NonZeroUsize>,
+        height_visible: ArcSignal<NonZeroUsize>,
+        width_visible: ArcSignal<NonZeroUsize>,
+    }
+
+    impl Data {
+        pub fn depth(&self) -> ArcReadSignal<usize> {
+            self.depth.read_only()
+        }
+
+        pub fn sibling_index(&self) -> ArcReadSignal<usize> {
+            self.sibling_index.read_only()
+        }
+
+        pub fn width(&self) -> ArcReadSignal<NonZeroUsize> {
+            self.width.read_only()
+        }
+
+        pub fn height(&self) -> ArcReadSignal<NonZeroUsize> {
+            self.height.read_only()
+        }
+    }
+
+    pub type Node = Arc<Data>;
+
+    #[derive(Clone)]
+    pub struct State {
+        root: Node,
+        edges: RwSignal<Vec<(Node, ArcRwSignal<Vec<Node>>)>>,
+        parents: Arc<Mutex<Vec<(Node, ArcRwSignal<Node>)>>>,
+    }
+
+    impl State {
+        pub fn from(
+            graph: &graph::State,
+            visibilities: ReadSignal<workspace_graph::ContainerVisibility>,
+        ) -> Self {
+            let graph_nodes = graph.nodes().read_untracked();
+            let mut nodes = graph_nodes
+                .iter()
+                .map(|state_node| {
+                    let visibility = visibilities
+                        .read_untracked()
+                        .iter()
+                        .find_map(|(node, visibility)| {
+                            graph::Node::ptr_eq(node, state_node).then_some(visibility.clone())
+                        })
+                        .unwrap();
+
+                    Builder::new(state_node.clone(), visibility.read_only())
+                })
+                .collect::<Vec<_>>();
+
+            Self::set_subtree_properties(&mut nodes, graph);
+            let nodes = nodes
+                .into_iter()
+                .map(|node| Node::new(node.build()))
+                .collect::<Vec<_>>();
+
+            let root = graph
+                .nodes()
+                .read_untracked()
+                .iter()
+                .position(|node| graph::Node::ptr_eq(node, graph.root()))
+                .unwrap();
+            let root = nodes[root].clone();
+
+            let parents = graph.nodes().with_untracked(|graph_nodes| {
+                graph_nodes
+                    .iter()
+                    .filter_map(|state_node| {
+                        graph.parent(state_node).map(|parent| {
+                            let parent_idx = graph_nodes
+                                .iter()
+                                .position(|node| {
+                                    graph::Node::ptr_eq(node, &*parent.read_untracked())
+                                })
+                                .unwrap();
+
+                            let child_idx = graph_nodes
+                                .iter()
+                                .position(|node| graph::Node::ptr_eq(node, state_node))
+                                .unwrap();
+
+                            (
+                                nodes[child_idx].clone(),
+                                ArcRwSignal::new(nodes[parent_idx].clone()),
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            });
+
+            let edges = nodes
+                .iter()
+                .enumerate()
+                .map(|(idx, node)| {
+                    let state_node = &graph.nodes().read_untracked()[idx];
+                    let state_children = graph.children(state_node).unwrap();
+                    let children = state_children
+                        .read_untracked()
+                        .iter()
+                        .map(|state_child| {
+                            let child_idx = graph
+                                .nodes()
+                                .read_untracked()
+                                .iter()
+                                .position(|node| graph::Node::ptr_eq(node, state_child))
+                                .unwrap();
+
+                            nodes[child_idx].clone()
+                        })
+                        .collect::<Vec<_>>();
+
+                    (node.clone(), ArcRwSignal::new(children))
+                })
+                .collect::<Vec<_>>();
+
+            Self {
+                edges: RwSignal::new(edges),
+                root,
+                parents: Arc::new(Mutex::new(parents)),
+            }
+        }
+
+        /// Set `depth`, `height`, `width`, and `sibling_index` of nodes.
+        fn set_subtree_properties(nodes: &mut Vec<Builder>, graph: &graph::State) {
+            fn inner(
+                nodes: &mut Vec<Builder>,
+                graph: &graph::State,
+                root: &graph::Node,
+                depth: usize,
+                sibling_index: usize,
+            ) {
+                let idx = graph
+                    .nodes()
+                    .read_untracked()
+                    .iter()
+                    .position(|node| graph::Node::ptr_eq(node, root))
+                    .unwrap();
+
+                nodes[idx].depth(depth);
+                nodes[idx].sibling_index(sibling_index);
+
+                let children = graph.children(root).unwrap();
+                children
+                    .read_untracked()
+                    .iter()
+                    .enumerate()
+                    .for_each(|(sibling_index, child)| {
+                        inner(nodes, graph, child, depth + 1, sibling_index)
+                    });
+
+                let children_idx = children
+                    .read_untracked()
+                    .iter()
+                    .map(|child| {
+                        graph
+                            .nodes()
+                            .read_untracked()
+                            .iter()
+                            .position(|node| graph::Node::ptr_eq(node, child))
+                            .unwrap()
+                    })
+                    .collect::<Vec<_>>();
+
+                let max_child_height = children_idx
+                    .iter()
+                    .map(|idx| nodes[*idx].height.as_ref().unwrap().get())
+                    .max()
+                    .unwrap_or(0);
+                nodes[idx].height(NonZeroUsize::new(max_child_height + 1).unwrap());
+
+                let width = children_idx
+                    .iter()
+                    .map(|idx| nodes[*idx].width.as_ref().unwrap().clone())
+                    .reduce(|width, child_width| width.checked_add(child_width.get()).unwrap())
+                    .unwrap_or(NonZeroUsize::new(1).unwrap());
+                nodes[idx].width(width);
+            }
+
+            inner(nodes, graph, graph.root(), 0, 0)
+        }
+
+        fn parent(&self, child: &graph::Node) -> Option<ArcReadSignal<Node>> {
+            self.parents
+                .lock()
+                .unwrap()
+                .iter()
+                .find_map(|(node, parent)| {
+                    graph::Node::ptr_eq(&node.container, child).then_some(parent.read_only())
+                })
+        }
+
+        fn _parent(&self, child: &Node) -> Option<ArcRwSignal<Node>> {
+            self.parents
+                .lock()
+                .unwrap()
+                .iter()
+                .find_map(|(node, parent)| Node::ptr_eq(node, child).then_some(parent.clone()))
+        }
+
+        /// Find children of a [`Node`].
+        fn _children(&self, parent: &Node) -> Option<ArcRwSignal<Vec<Node>>> {
+            self.edges
+                .read_untracked()
+                .iter()
+                .find_map(|(node, children)| {
+                    Node::ptr_eq(node, &parent).then_some(children.clone())
+                })
+        }
+
+        /// Updates nodes' `width` from `node`, recursing upwards.
+        fn update_widths_from(&self, node: &Node) {
+            let node_width = self
+                ._children(node)
+                .unwrap()
+                .read_untracked()
+                .iter()
+                .map(|child| child.width().get_untracked())
+                .reduce(|total, width| total.checked_add(width.get()).unwrap())
+                .unwrap();
+
+            node.width.set(node_width);
+            if let Some(parent) = self._parent(node) {
+                self.update_widths_from(&*parent.read_untracked());
+            }
+        }
+    }
+
+    impl State {
+        pub fn insert(&self, parent: &graph::Node, graph: Self) -> Result<(), error::NotFound> {
+            let parent = self.find(parent).ok_or(error::NotFound)?;
+
+            let children = self._children(&parent).unwrap();
+            graph.insert_update_depth(parent.depth.get_untracked() + 1);
+            graph
+                .root
+                .sibling_index
+                .set(children.read_untracked().len());
+
+            self.insert_update_height(&parent, &graph.root);
+            self.insert_update_width(&parent, graph.root.width().get_untracked());
+
+            let Self {
+                root,
+                edges: graph_edges,
+                parents,
+            } = graph;
+            children.update(|children| children.push(root.clone()));
+            self.edges
+                .update(|edges| edges.extend(graph_edges.get_untracked()));
+            self.parents
+                .lock()
+                .unwrap()
+                .extend(Arc::into_inner(parents).unwrap().into_inner().unwrap());
+            self.parents
+                .lock()
+                .unwrap()
+                .push((root, ArcRwSignal::new(parent)));
+
+            Ok(())
+        }
+
+        /// Update `Node::depth`s placing the root node at the given depth and recursing downward.
+        fn insert_update_depth(&self, depth: usize) {
+            fn inner(graph: &State, root: &Node, depth: usize) {
+                root.depth.set(depth);
+                let children = graph._children(root).unwrap();
+                children
+                    .read_untracked()
+                    .iter()
+                    .for_each(|child| inner(graph, child, depth + 1));
+            }
+
+            inner(self, &self.root, depth)
+        }
+
+        /// Update `[Node]::height`s starting at the given node and recursing upwards.
+        fn insert_update_height(&self, parent: &Node, child: &Node) {
+            let max_sibling_height = self
+                ._children(parent)
+                .unwrap()
+                .read_untracked()
+                .iter()
+                .filter_map(|node| {
+                    (!Node::ptr_eq(node, child)).then_some(node.height().get_untracked())
+                })
+                .max();
+
+            let update = max_sibling_height
+                .map(|max_sibling_height| *child.height().read_untracked() > max_sibling_height)
+                .unwrap_or(true);
+
+            if update {
+                parent
+                    .height
+                    .set(child.height().get_untracked().checked_add(1).unwrap());
+                if let Some(grandparent) = self._parent(parent) {
+                    self.insert_update_height(&grandparent.get_untracked(), parent);
+                }
+            }
+        }
+
+        /// Update `[Node]::width`s starting at the given node and recursing upwards.
+        fn insert_update_width(&self, parent: &Node, child_width: NonZeroUsize) {
+            const ONE: NonZeroUsize = NonZeroUsize::new(1).unwrap();
+            let children = self._children(&parent).unwrap();
+            let children_empty = children.read_untracked().is_empty();
+            if children_empty && child_width == ONE {
+                assert_eq!(parent.width().read_untracked(), ONE);
+                return;
+            }
+
+            if children_empty {
+                *parent.width.write() = child_width;
+            } else {
+                let parent_width = children
+                    .read_untracked()
+                    .iter()
+                    .map(|child| child.width().get_untracked())
+                    .fold(child_width, |total, width| {
+                        total.checked_add(width.get()).unwrap()
+                    });
+
+                parent.width.set(parent_width);
+            }
+
+            if let Some(grandparent) = self._parent(parent) {
+                self.update_widths_from(&*grandparent.read_untracked());
+            }
+        }
+    }
+
+    impl State {
+        pub fn remove(&self, root: &graph::Node) -> Result<(), error::NotFound> {
+            let root = self.find(root).ok_or(error::NotFound)?;
+            assert!(!Node::ptr_eq(&root, &self.root));
+
+            self.remove_update_height(&root);
+            self.remove_update_width(&root);
+
+            let parent = self._parent(&root).unwrap();
+            let descendants = self.descendants(&root);
+            assert!(!descendants.is_empty());
+            self.edges.write().retain(|(parent, _)| {
+                !descendants
+                    .iter()
+                    .any(|descendant| Node::ptr_eq(descendant, parent))
+            });
+            self.parents.lock().unwrap().retain(|(child, _)| {
+                !descendants
+                    .iter()
+                    .any(|descendant| Node::ptr_eq(descendant, child))
+            });
+            let siblings = self._children(&*parent.read_untracked()).unwrap();
+            siblings
+                .write()
+                .retain(|sibling| !Node::ptr_eq(sibling, &root));
+            siblings
+                .read_untracked()
+                .iter()
+                .skip(root.sibling_index.get_untracked())
+                .for_each(|sibling| {
+                    sibling.sibling_index.update(|idx| *idx -= 1);
+                });
+
+            Ok(())
+        }
+
+        /// Update `[Node]::height`s starting at the given node and recursing upwards.
+        fn remove_update_height(&self, root: &Node) {
+            let parent = self._parent(root).unwrap();
+            let max_sibling_height = self
+                ._children(&*parent.read_untracked())
+                .unwrap()
+                .read_untracked()
+                .iter()
+                .filter_map(|node| {
+                    (!Node::ptr_eq(node, root)).then_some(node.height().get_untracked())
+                })
+                .max();
+
+            let update = max_sibling_height
+                .map(|max_sibling_height| *root.height().read_untracked() > max_sibling_height)
+                .unwrap_or(true);
+
+            if update {
+                parent.read_untracked().height.set(
+                    max_sibling_height
+                        .map(|max_sibling_height| max_sibling_height.checked_add(1).unwrap())
+                        .unwrap_or(NonZeroUsize::new(1).unwrap()),
+                );
+                if let Some(grandparent) = self._parent(&*parent.read_untracked()) {
+                    self.insert_update_height(
+                        &grandparent.get_untracked(),
+                        &*parent.read_untracked(),
+                    );
+                }
+            }
+        }
+
+        /// Update `[Node]::width`s starting at the given node and recursing upwards.
+        fn remove_update_width(&self, root: &Node) {
+            const ONE: NonZeroUsize = NonZeroUsize::new(1).unwrap();
+            let parent = self._parent(root).unwrap();
+            if *parent.read_untracked().width().read_untracked() == ONE {
+                return;
+            }
+
+            let siblings = self._children(&*parent.read_untracked()).unwrap();
+            let parent_width = siblings
+                .read_untracked()
+                .iter()
+                .filter_map(|sibling| {
+                    (!Node::ptr_eq(sibling, root)).then_some(sibling.width().get_untracked())
+                })
+                .reduce(|total, width| total.checked_add(width.get()).unwrap())
+                .unwrap_or(ONE);
+            parent.read_untracked().width.set(parent_width);
+
+            if let Some(grandparent) = self._parent(&*parent.read_untracked()) {
+                self.update_widths_from(&*grandparent.read_untracked());
+            }
+        }
+
+        /// # Returns
+        /// Descendants of the root node, including the root node.
+        /// If the root node is not found, an empty `Vec` is returned.
+        pub fn descendants(&self, root: &Node) -> Vec<Node> {
+            let Some(children) = self._children(root) else {
+                return vec![];
+            };
+
+            let mut descendants = children
+                .read_untracked()
+                .iter()
+                .flat_map(|child| self.descendants(child))
+                .collect::<Vec<_>>();
+
+            descendants.insert(0, root.clone());
+            descendants
+        }
+    }
+
+    impl State {
+        pub fn find(&self, container: &graph::Node) -> Option<Node> {
+            self.edges.read_untracked().iter().find_map(|(node, _)| {
+                graph::Node::ptr_eq(&node.container, container).then_some(node.clone())
+            })
+        }
+
+        pub fn children(&self, parent: &graph::Node) -> Option<ArcReadSignal<Vec<Node>>> {
+            self.edges
+                .read_untracked()
+                .iter()
+                .find_map(|(node, children)| {
+                    graph::Node::ptr_eq(&node.container, parent).then_some(children.read_only())
+                })
+        }
+
+        pub fn sibling_width_until(&self, container: &graph::Node) -> Option<ArcSignal<usize>> {
+            let container = self.find(container)?;
+            let Some(parent) = self._parent(&container) else {
+                return Some(ArcSignal::derive(move || 0));
+            };
+
+            Some(ArcSignal::derive({
+                let edges = self.edges.read_only();
+                let sibling_index = container.sibling_index();
+                move || {
+                    let siblings = edges
+                        .read_untracked()
+                        .iter()
+                        .find_map(|(parent_node, children)| {
+                            Node::ptr_eq(parent_node, &*parent.read())
+                                .then_some(children.read_only())
+                        })
+                        .unwrap();
+
+                    siblings
+                        .read()
+                        .iter()
+                        .take(sibling_index.get())
+                        .map(|node| node.width().get().get())
+                        .reduce(|total, width| total + width)
+                        .unwrap_or(0)
+                }
+            }))
+        }
+    }
+
+    pub mod error {
+        #[derive(Debug)]
+        pub struct NotFound;
     }
 }
 
@@ -1459,27 +1777,27 @@ pub mod container {
             }
         }
         pub fn rid(&self) -> RwSignal<ResourceId> {
-            self.rid.clone()
+            self.rid
         }
 
         pub fn name(&self) -> RwSignal<String> {
-            self.name.clone()
+            self.name
         }
 
         pub fn kind(&self) -> RwSignal<Option<String>> {
-            self.kind.clone()
+            self.kind
         }
 
         pub fn description(&self) -> RwSignal<Option<String>> {
-            self.description.clone()
+            self.description
         }
 
         pub fn tags(&self) -> RwSignal<Vec<String>> {
-            self.tags.clone()
+            self.tags
         }
 
         pub fn metadata(&self) -> RwSignal<Metadata> {
-            self.metadata.clone()
+            self.metadata
         }
     }
 
