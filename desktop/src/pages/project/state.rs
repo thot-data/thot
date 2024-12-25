@@ -438,7 +438,7 @@ pub mod project {
         project::Project as CoreProject,
         types::{ResourceId, ResourceMap, UserId, UserPermissions},
     };
-    use syre_local::types::{AnalysisKind, ProjectSettings};
+    use syre_local::{project::config::Settings as ProjectSettings, types::AnalysisKind};
     use syre_local_database as db;
 
     pub type AnalysesState = db::state::DataResource<RwSignal<Vec<Analysis>>>;
@@ -1987,8 +1987,8 @@ pub mod container {
     }
 
     impl Settings {
-        pub fn new(settings: syre_local::types::ContainerSettings) -> Self {
-            let syre_local::types::ContainerSettings {
+        pub fn new(settings: syre_local::project::config::ContainerSettings) -> Self {
+            let syre_local::project::config::ContainerSettings {
                 creator,
                 created,
                 permissions,

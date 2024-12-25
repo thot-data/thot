@@ -129,8 +129,10 @@ mod state {
     use super::super::container;
     use crate::{
         error::IoSerde,
-        project::resources::Container as LocalContainer,
-        types::{ContainerSettings, StoredContainerProperties},
+        project::{
+            config::{ContainerSettings, StoredContainerProperties},
+            resources::Container as LocalContainer,
+        },
     };
     use std::{
         fs, io,

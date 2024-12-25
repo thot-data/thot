@@ -59,7 +59,7 @@ pub fn PropertiesBar() -> impl IntoView {
         user_settings.with(|settings| {
             let debounce = match &settings.desktop {
                 Ok(settings) => settings.input_debounce_ms,
-                Err(_) => lib::settings::Desktop::default().input_debounce_ms,
+                Err(_) => lib::settings::user::Desktop::default().input_debounce_ms,
             };
 
             debounce as f64

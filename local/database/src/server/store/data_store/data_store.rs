@@ -336,7 +336,7 @@ pub mod project {
     use serde::{Deserialize, Serialize};
     use std::path::PathBuf;
     use syre_core::{project::Project as CoreProject, types::ResourceId};
-    use syre_local::{project::resources::Project as LocalProject, types::ProjectSettings};
+    use syre_local::project::{config::Settings, resources::Project as LocalProject};
 
     impl Store {
         pub async fn handle_command_project(&self, cmd: Command) {
@@ -425,7 +425,7 @@ pub mod project {
                 ..
             } = properties;
 
-            let ProjectSettings {
+            let Settings {
                 local_format_version: _,
                 created,
                 creator,
@@ -682,7 +682,7 @@ pub mod container {
         project::{ContainerProperties, Metadata},
         types::{ResourceId, UserId},
     };
-    use syre_local::{project::resources::Container, types::ContainerSettings};
+    use syre_local::project::{config::ContainerSettings, resources::Container};
 
     impl Store {
         pub async fn handle_command_container(&self, cmd: Command) {

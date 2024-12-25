@@ -16,7 +16,7 @@ use std::{
     thread,
 };
 use syre_fs_watcher::{self as watcher};
-use syre_local::Reducible;
+use syre_local::{project::config, Reducible};
 
 type Result<T = ()> = std::result::Result<T, error::Error>;
 
@@ -527,7 +527,7 @@ impl Simulator {
                         let mv = &folders[rng.gen_range(0..folders.len())];
                         let mv_path = state.fs().graph().path(mv).unwrap();
                         actions.extend(Self::valid_actions_project_config_resource::<
-                            syre_local::types::ProjectSettings,
+                            config::Settings,
                             _,
                         >(
                             constants::PROJECT_SETTINGS_FILE,
@@ -1072,7 +1072,7 @@ impl Simulator {
                 let folder = &folders[rng.gen_range(0..folders.len())];
                 let mv_path = state.fs().graph().path(folder).unwrap();
                 actions.extend(Self::valid_actions_project_config_resource::<
-                    syre_local::types::StoredContainerProperties,
+                    config::StoredContainerProperties,
                     _,
                 >(
                     constants::CONTAINER_FILE,
@@ -1085,7 +1085,7 @@ impl Simulator {
                 let folder = &folders[rng.gen_range(0..folders.len())];
                 let mv_path = state.fs().graph().path(folder).unwrap();
                 actions.extend(Self::valid_actions_project_config_resource::<
-                    syre_local::types::ContainerSettings,
+                    config::ContainerSettings,
                     _,
                 >(
                     constants::CONTAINER_SETTINGS_FILE,
@@ -1259,19 +1259,19 @@ impl Simulator {
                 serde_json::to_writer(file, &project).unwrap();
             }
             state::app::FileResource::ProjectSettings(_) => {
-                let settings = syre_local::types::ProjectSettings::new();
+                let settings = config::Settings::new();
                 let file = fs::OpenOptions::new().write(true).open(&path).unwrap();
                 serde_json::to_writer(file, &settings).unwrap();
             }
             state::app::FileResource::ContainerProperties(_) => {
                 let container =
                     syre_core::project::Container::new(path.file_name().unwrap().to_string_lossy());
-                let container: syre_local::types::StoredContainerProperties = container.into();
+                let container: config::StoredContainerProperties = container.into();
                 let file = fs::OpenOptions::new().write(true).open(&path).unwrap();
                 serde_json::to_writer(file, &container).unwrap();
             }
             state::app::FileResource::ContainerSettings(_) => {
-                let settings = syre_local::types::ContainerSettings::default();
+                let settings = config::ContainerSettings::default();
                 let file = fs::OpenOptions::new().write(true).open(&path).unwrap();
                 serde_json::to_writer(file, &settings).unwrap();
             }

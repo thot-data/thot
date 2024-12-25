@@ -2,10 +2,10 @@ use std::{
     cell::RefCell,
     ffi::OsString,
     ops::Deref,
-    path::{Path, PathBuf},
+    path::PathBuf,
     rc::{Rc, Weak},
 };
-use syre_local::{common, Reducible};
+use syre_local::{common, project::config, Reducible};
 
 pub mod app;
 pub mod fs;
@@ -594,7 +594,7 @@ impl Reducible for State {
 
                         app::FileResource::ProjectSettings(_) => match kind {
                             fs::ModifyKind::Initialize => {
-                                let settings = syre_local::types::ProjectSettings::new();
+                                let settings = config::Settings::new();
                                 let fs_resource = self.fs.find_file(&file).unwrap();
                                 fs_resource
                                     .borrow_mut()
@@ -613,7 +613,7 @@ impl Reducible for State {
                                 let name = file.parent().unwrap().parent().unwrap();
                                 let container =
                                     syre_core::project::Container::new(name.to_string_lossy());
-                                let properties: syre_local::types::StoredContainerProperties =
+                                let properties: config::StoredContainerProperties =
                                     container.into();
                                 let fs_resource = self.fs.find_file(&file).unwrap();
                                 fs_resource
@@ -630,7 +630,7 @@ impl Reducible for State {
 
                         app::FileResource::ContainerSettings(_) => match kind {
                             fs::ModifyKind::Initialize => {
-                                let settings = syre_local::types::ContainerSettings::default();
+                                let settings = config::ContainerSettings::default();
                                 let fs_resource = self.fs.find_file(&file).unwrap();
                                 fs_resource
                                     .borrow_mut()

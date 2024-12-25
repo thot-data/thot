@@ -1,9 +1,9 @@
 //! Container and container settings.
+use super::super::config::{ContainerSettings, StoredContainerProperties};
 use crate::{
     common,
     error::{Error, Result},
     file_resource::LocalResource,
-    types::{ContainerSettings, StoredContainerProperties},
 };
 use has_id::HasId;
 use std::{

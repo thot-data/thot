@@ -1,15 +1,12 @@
 //! Local runner hooks.
-use std::{
-    path::{Path, PathBuf},
-    process,
-};
+use std::path::{Path, PathBuf};
 use syre_core::{
     self as core,
     project::{ExcelTemplate, Script, ScriptLang},
     runner::{Runnable, RunnerHooks},
     types::ResourceId,
 };
-use syre_local::{system::config, types::analysis::AnalysisKind};
+use syre_local::{system::config, types::AnalysisKind};
 use syre_local_database as db;
 
 pub struct Builder<'a> {
@@ -21,16 +18,16 @@ pub struct Builder<'a> {
 impl<'a> Builder<'a> {
     /// # Arguments
     /// `path`: Path to the projects base directory.
-    pub fn new(
-        path: &'a impl AsRef<Path>,
-        project: &'a db::state::ProjectData,
-        settings: Option<&'a config::runner_settings::Settings>,
-    ) -> Self {
+    pub fn new(path: &'a impl AsRef<Path>, project: &'a db::state::ProjectData) -> Self {
         Self {
             path,
             project,
-            settings,
+            settings: None,
         }
+    }
+
+    pub fn settings(&mut self, settings: &'a config::runner_settings::Settings) {
+        let _ = self.settings.insert(settings);
     }
 
     pub fn build(self) -> Result<Runner, error::From> {

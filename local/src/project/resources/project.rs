@@ -1,19 +1,23 @@
 //! Project and project settings.
-use crate::common::{self, project_file, project_settings_file};
-use crate::error::IoSerde as IoSerdeError;
-use crate::file_resource::LocalResource;
-use crate::types::ProjectSettings;
-use std::fs;
-use std::io::{self, BufReader, Write};
-use std::ops::{Deref, DerefMut};
-use std::path::{Path, PathBuf};
+use super::super::config::Settings;
+use crate::{
+    common::{self, project_file, project_settings_file},
+    error::IoSerde as IoSerdeError,
+    file_resource::LocalResource,
+};
+use std::{
+    fs,
+    io::{self, BufReader, Write},
+    ops::{Deref, DerefMut},
+    path::{Path, PathBuf},
+};
 use syre_core::project::Project as CoreProject;
 
 /// Represents a Syre project.
 pub struct Project {
     inner: CoreProject,
     base_path: PathBuf,
-    settings: ProjectSettings,
+    settings: Settings,
 }
 
 impl Project {
@@ -45,7 +49,7 @@ impl Project {
         Ok(Self {
             base_path: path,
             inner: CoreProject::new(name),
-            settings: ProjectSettings::new(),
+            settings: Settings::new(),
         })
     }
 
@@ -54,7 +58,7 @@ impl Project {
         Self {
             base_path: path.into(),
             inner: project,
-            settings: ProjectSettings::new(),
+            settings: Settings::new(),
         }
     }
 
@@ -78,7 +82,7 @@ impl Project {
         };
 
         let settings = 'settings: {
-            let path = base_path.join(<Project as LocalResource<ProjectSettings>>::rel_path());
+            let path = base_path.join(<Project as LocalResource<Settings>>::rel_path());
             let file = match fs::File::open(path) {
                 Ok(file) => file,
                 Err(err) => break 'settings Err(err.into()),
@@ -105,7 +109,7 @@ impl Project {
     /// Save all data.
     pub fn save(&self) -> Result<(), io::Error> {
         let project_path = <Project as LocalResource<CoreProject>>::path(self);
-        let settings_path = <Project as LocalResource<ProjectSettings>>::path(self);
+        let settings_path = <Project as LocalResource<Settings>>::path(self);
         let Some(parent) = project_path.parent() else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidFilename,
@@ -130,11 +134,11 @@ impl Project {
         &self.inner
     }
 
-    pub fn settings(&self) -> &ProjectSettings {
+    pub fn settings(&self) -> &Settings {
         &self.settings
     }
 
-    pub fn settings_mut(&mut self) -> &mut ProjectSettings {
+    pub fn settings_mut(&mut self) -> &mut Settings {
         &mut self.settings
     }
 
@@ -164,7 +168,7 @@ impl Project {
     ///
     /// # Returns
     /// Tuple of (properties, settings, base path).
-    pub fn into_parts(self) -> (CoreProject, ProjectSettings, PathBuf) {
+    pub fn into_parts(self) -> (CoreProject, Settings, PathBuf) {
         let Self {
             inner,
             base_path,
@@ -200,9 +204,9 @@ impl Project {
     /// Only load the project's settings.
     pub fn load_from_settings_only(
         base_path: impl Into<PathBuf>,
-    ) -> Result<ProjectSettings, IoSerdeError> {
+    ) -> Result<Settings, IoSerdeError> {
         let base_path = fs::canonicalize(base_path.into())?;
-        let path = base_path.join(<Project as LocalResource<ProjectSettings>>::rel_path());
+        let path = base_path.join(<Project as LocalResource<Settings>>::rel_path());
         let file = fs::File::open(path)?;
         let reader = BufReader::new(file);
         Ok(serde_json::from_reader(reader)?)
@@ -239,7 +243,7 @@ impl LocalResource<CoreProject> for Project {
     }
 }
 
-impl LocalResource<ProjectSettings> for Project {
+impl LocalResource<Settings> for Project {
     fn rel_path() -> PathBuf {
         project_settings_file()
     }
@@ -252,5 +256,5 @@ impl LocalResource<ProjectSettings> for Project {
 #[derive(PartialEq, Debug)]
 pub struct LoadError {
     pub properties: Result<CoreProject, IoSerdeError>,
-    pub settings: Result<ProjectSettings, IoSerdeError>,
+    pub settings: Result<Settings, IoSerdeError>,
 }

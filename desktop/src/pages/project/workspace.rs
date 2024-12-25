@@ -1,6 +1,4 @@
-use super::{
-    super::Settings, canvas, properties, state, Canvas, LayersNav, ProjectBar, PropertiesBar,
-};
+use super::{canvas, properties, state, Canvas, LayersNav, ProjectBar, PropertiesBar, Settings};
 use crate::{
     commands, common,
     components::{self, drawer, Drawer, Logo},
@@ -163,7 +161,9 @@ fn WorkspaceView(
     provide_context(DragOverWorkspaceResource::new());
     provide_context(RwSignal::new(properties::EditorKind::default()));
     let user_settings = types::settings::User::new(lib::settings::User::default());
-    provide_context(user_settings.clone());
+    let project_settings = types::settings::Project::new(lib::settings::Project::default());
+    provide_context(user_settings);
+    provide_context(project_settings);
 
     let show_settings = ShowSettings::new();
     provide_context(show_settings);
@@ -1988,7 +1988,7 @@ fn handle_event_graph_container_properties_modified(event: lib::Event, graph: st
 
 fn update_container_properties(
     container: state::graph::Node,
-    update: &local::types::StoredContainerProperties,
+    update: &local::project::config::StoredContainerProperties,
 ) {
     container.properties().with_untracked(|properties| {
         let db::state::DataResource::Ok(properties) = properties else {

@@ -153,4 +153,12 @@ pub mod settings {
             Self(RwSignal::new(settings))
         }
     }
+
+    #[derive(derive_more::Deref, Clone, Copy)]
+    pub struct Project(RwSignal<lib::settings::Project>);
+    impl Project {
+        pub fn new(settings: lib::settings::Project) -> Self {
+            Self(RwSignal::new(settings))
+        }
+    }
 }

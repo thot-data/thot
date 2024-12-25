@@ -58,7 +58,7 @@ fn NoSettings() -> impl IntoView {
 }
 
 #[component]
-fn HomeView(user_settings: lib::settings::User) -> impl IntoView {
+fn HomeView(user_settings: lib::settings::user::Settings) -> impl IntoView {
     let messages = expect_context::<types::Messages>();
     provide_context(types::settings::User::new(user_settings.clone()));
     let show_settings = ShowSettings::new();
@@ -89,7 +89,7 @@ fn HomeView(user_settings: lib::settings::User) -> impl IntoView {
     }
 
     view! {
-        <div class="relative">
+        <div class="relative h-full w-full">
             <MainNav />
             <main>
                 <div>
@@ -133,7 +133,8 @@ fn MainNav() -> impl IntoView {
                     <button
                         on:mousedown=open_settings
                         type="button"
-                        class="align-middle p-1 hover:bg-secondary-100 dark:hover:bg-secondary-800 rounded border border-transparent hover:border-secondary-200 dark:hover:border-white"
+                        class="align-middle p-1 hover:bg-secondary-100 dark:hover:bg-secondary-800 rounded \
+                        border border-transparent hover:border-secondary-200 dark:hover:border-white"
                     >
                         <Icon icon=components::icon::Settings />
                     </button>
@@ -141,7 +142,8 @@ fn MainNav() -> impl IntoView {
                 <li>
                     <A
                         href="/logout"
-                        attr:class="inline-block align-middle p-1 hover:bg-secondary-100 dark:hover:bg-secondary-800 rounded border border-transparent hover:border-secondary-200 dark:hover:border-white"
+                        attr:class="inline-block align-middle p-1 hover:bg-secondary-100 dark:hover:bg-secondary-800 \
+                        rounded border border-transparent hover:border-secondary-200 dark:hover:border-white"
                     >
                         <Icon
                             icon=icondata::IoLogOutOutline
@@ -154,6 +156,6 @@ fn MainNav() -> impl IntoView {
     }
 }
 
-async fn fetch_user_settings() -> Option<lib::settings::User> {
+async fn fetch_user_settings() -> Option<lib::settings::user::Settings> {
     tauri_sys::core::invoke("user_settings", ()).await
 }

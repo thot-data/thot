@@ -37,7 +37,7 @@ tracing = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4"] }
 validator = "0.19"
 walkdir.workspace = true
-windows-sys = { version = "0.59.0", features = ["Win32_Foundation", "Win32_Storage"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 syre-core = { workspace = true, features = ["serde"] }
 

@@ -47,7 +47,10 @@ impl State {
     /// + If graph is present, but invalid.
     pub fn load(path: impl Into<PathBuf>) -> Self {
         use crate::state;
-        use syre_local::project::resources::{project::LoadError, Analyses, Project};
+        use syre_local::{
+            project::resources::{project::LoadError, Analyses, Project},
+            types::AnalysisKind,
+        };
 
         let path = path.into();
         let mut state = Self::new(&path);
@@ -88,7 +91,7 @@ impl State {
                 .to_vec()
                 .into_iter()
                 .map(|analysis| match analysis {
-                    syre_local::types::AnalysisKind::Script(ref script) => match &analysis_root {
+                    AnalysisKind::Script(ref script) => match &analysis_root {
                         Some(analysis_root) => {
                             if analysis_root.join(&script.path).is_file() {
                                 state::Analysis::present(analysis)
@@ -98,18 +101,16 @@ impl State {
                         }
                         None => state::Analysis::absent(analysis),
                     },
-                    syre_local::types::AnalysisKind::ExcelTemplate(ref template) => {
-                        match &analysis_root {
-                            Some(analysis_root) => {
-                                if analysis_root.join(&template.template.path).is_file() {
-                                    state::Analysis::present(analysis)
-                                } else {
-                                    state::Analysis::absent(analysis)
-                                }
+                    AnalysisKind::ExcelTemplate(ref template) => match &analysis_root {
+                        Some(analysis_root) => {
+                            if analysis_root.join(&template.template.path).is_file() {
+                                state::Analysis::present(analysis)
+                            } else {
+                                state::Analysis::absent(analysis)
                             }
-                            None => state::Analysis::absent(analysis),
                         }
-                    }
+                        None => state::Analysis::absent(analysis),
+                    },
                 })
                 .collect::<Vec<_>>()
         });
@@ -171,12 +172,12 @@ pub mod project {
         path::PathBuf,
     };
     use syre_core::project::Project as CoreProject;
-    use syre_local::{error::IoSerde, types::ProjectSettings, TryReducible};
+    use syre_local::{error::IoSerde, project::config::Settings, TryReducible};
 
     #[derive(Debug)]
     pub struct Builder {
         properties: DataResource<CoreProject>,
-        settings: DataResource<ProjectSettings>,
+        settings: DataResource<Settings>,
         analyses: DataResource<Vec<state::Analysis>>,
         graph: FolderResource<graph::State>,
     }
@@ -198,11 +199,11 @@ pub mod project {
             self.properties = DataResource::Err(properties.into());
         }
 
-        pub fn set_settings(&mut self, settings: DataResource<ProjectSettings>) {
+        pub fn set_settings(&mut self, settings: DataResource<Settings>) {
             self.settings = settings;
         }
 
-        pub fn set_settings_ok(&mut self, settings: ProjectSettings) {
+        pub fn set_settings_ok(&mut self, settings: Settings) {
             self.settings = DataResource::Ok(settings);
         }
 
@@ -262,7 +263,7 @@ pub mod project {
     #[derive(Debug)]
     pub struct State {
         properties: DataResource<CoreProject>,
-        settings: DataResource<ProjectSettings>,
+        settings: DataResource<Settings>,
         analyses: DataResource<Vec<state::Analysis>>,
         graph: FolderResource<graph::State>,
     }
@@ -272,7 +273,7 @@ pub mod project {
             self.properties.as_ref().map_err(|err| err.clone())
         }
 
-        pub fn settings(&self) -> DataResource<&ProjectSettings> {
+        pub fn settings(&self) -> DataResource<&Settings> {
             self.settings.as_ref().map_err(|err| err.clone())
         }
 
@@ -1106,7 +1107,7 @@ pub(crate) mod action {
     use crate::state;
     use std::{ffi::OsString, path::PathBuf};
     use syre_core::{project::Project as CoreProject, types::ResourceId};
-    use syre_local::types::{ContainerSettings, ProjectSettings, StoredContainerProperties};
+    use syre_local::project::config::{ContainerSettings, Settings, StoredContainerProperties};
 
     #[derive(Debug, derive_more::From)]
     pub enum Action {
@@ -1123,7 +1124,7 @@ pub(crate) mod action {
         RemoveConfig,
 
         SetProperties(DataResource<CoreProject>),
-        SetSettings(DataResource<ProjectSettings>),
+        SetSettings(DataResource<Settings>),
         SetAnalyses(DataResource<Vec<state::Analysis>>),
 
         /// Sets all analyses' file system resource to be absent.

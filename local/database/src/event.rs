@@ -9,8 +9,8 @@ use std::{ffi::OsString, path::PathBuf};
 use syre_core::{project::Project as CoreProject, system::User, types::ResourceId};
 use syre_local::{
     error::IoSerde,
+    project::config::{ContainerSettings, Settings, StoredContainerProperties},
     system::resources::Config as ConfigData,
-    types::{ContainerSettings, ProjectSettings, StoredContainerProperties},
 };
 use uuid::Uuid;
 
@@ -179,7 +179,7 @@ pub enum Project {
     FolderRemoved,
     Moved(PathBuf),
     Properties(DataResource<CoreProject>),
-    Settings(DataResource<ProjectSettings>),
+    Settings(DataResource<Settings>),
     Analyses(DataResource<Vec<state::Analysis>>),
 
     #[from]

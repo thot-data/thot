@@ -1514,9 +1514,7 @@ impl Database {
 mod analyses {
     use crate::state;
     use std::path::Path;
-    use syre_local::{
-        file_resource::LocalResource, project::resources::Analyses, types::AnalysisKind,
-    };
+    use syre_local::types::AnalysisKind;
 
     /// Create analysis states from list of analyses by checking if paths
     /// are present in the file system.
@@ -1528,14 +1526,14 @@ mod analyses {
         analyses
             .into_iter()
             .map(|analysis| match analysis {
-                syre_local::types::AnalysisKind::Script(ref script) => {
+                AnalysisKind::Script(ref script) => {
                     if analysis_root.join(&script.path).is_file() {
                         state::Analysis::present(analysis)
                     } else {
                         state::Analysis::absent(analysis)
                     }
                 }
-                syre_local::types::AnalysisKind::ExcelTemplate(ref template) => {
+                AnalysisKind::ExcelTemplate(ref template) => {
                     if analysis_root.join(&template.template.path).is_file() {
                         state::Analysis::present(analysis)
                     } else {

@@ -11,7 +11,8 @@ use syre_core::{
 };
 use syre_local::{
     error::IoSerde,
-    types::{AnalysisKind, ContainerSettings, ProjectSettings, StoredContainerProperties},
+    project::config::{ContainerSettings, Settings, StoredContainerProperties},
+    types::AnalysisKind,
 };
 
 pub type ManifestState<T> = Result<Vec<T>, IoSerde>;
@@ -36,7 +37,7 @@ impl Project {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProjectData {
     pub(crate) properties: DataResource<CoreProject>,
-    pub(crate) settings: DataResource<ProjectSettings>,
+    pub(crate) settings: DataResource<Settings>,
     pub(crate) analyses: DataResource<Vec<Analysis>>,
 }
 
@@ -45,7 +46,7 @@ impl ProjectData {
         self.properties.as_ref().map_err(|err| err.clone())
     }
 
-    pub fn settings(&self) -> DataResource<&ProjectSettings> {
+    pub fn settings(&self) -> DataResource<&Settings> {
         self.settings.as_ref().map_err(|err| err.clone())
     }
 
@@ -153,7 +154,7 @@ impl Container {
             .into_iter()
             .map(|asset| asset.properties.clone())
             .collect();
-        
+
         Some(CoreContainer::from_parts(
             rid.clone(),
             properties.clone(),

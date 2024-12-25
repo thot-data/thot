@@ -2,7 +2,7 @@ use crate::{settings, state};
 use std::{
     fs, io,
     path::{self, PathBuf},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 use syre_core::{
     self as core,
@@ -296,15 +296,35 @@ pub async fn trigger_analysis(
     }
     let root = root.rid().clone();
 
-    let runner_settings = state
+    let mut runner_settings = state
         .user()
         .lock()
         .unwrap()
         .as_ref()
-        .map(|user| settings::Runner::load(user.rid()).ok())
-        .flatten();
+        .map(|user| settings::user::Runner::load(user.rid()).ok())
+        .flatten()
+        .unwrap_or_default();
 
-    let runner_hooks = runner::Builder::new(&project_path, &project_data, runner_settings.as_ref());
+    if let Ok(runner_settings_project) = settings::project::Runner::load(&project_path) {
+        let local::project::config::RunnerSettings {
+            python_path,
+            r_path,
+            continue_on_error,
+        } = runner_settings_project;
+
+        if let Some(python_path) = python_path {
+            let _ = runner_settings.python_path.insert(python_path);
+        }
+        if let Some(r_path) = r_path {
+            let _ = runner_settings.r_path.insert(r_path);
+        }
+        if let Some(continue_on_error) = continue_on_error {
+            runner_settings.continue_on_error = continue_on_error;
+        }
+    }
+
+    let mut runner_hooks = runner::Builder::new(&project_path, &project_data);
+    runner_hooks.settings(&runner_settings);
     let runner_hooks = match runner_hooks.build() {
         Ok(hooks) => hooks,
         Err(err) => return Err(err.into()),

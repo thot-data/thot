@@ -1,9 +1,9 @@
 //! Functionality and resources related to Syre Projects.
+pub mod config;
+pub mod container;
 
 #[cfg(feature = "fs")]
 pub mod asset;
-
-pub mod container;
 
 #[cfg(feature = "fs")]
 pub mod project;

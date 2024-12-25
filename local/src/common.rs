@@ -194,6 +194,18 @@ pub fn project_settings_file_of(path: impl AsRef<Path>) -> PathBuf {
     app_dir_of(path).join(PROJECT_SETTINGS_FILE)
 }
 
+
+/// Path to the project runner settings file relative to a base path.
+pub fn project_runner_settings_file() -> PathBuf {
+    app_dir().join(PROJECT_RUNNER_SETTINGS_FILE)
+}
+
+/// Path to the project runner settings file for a given path.
+/// app_dir_of(path)/\<PROJECT_RUNNER_SETTINGS_FILE\>
+pub fn project_runner_settings_file_of(path: impl AsRef<Path>) -> PathBuf {
+    app_dir_of(path).join(PROJECT_RUNNER_SETTINGS_FILE)
+}
+
 /// Path to the Container file from a base path.
 pub fn container_file() -> PathBuf {
     app_dir().join(CONTAINER_FILE)
