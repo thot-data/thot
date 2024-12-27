@@ -1,7 +1,8 @@
 use super::state::{self, workspace_graph};
 use crate::types;
 use leptos::{either::EitherOf7, html, prelude::*};
-use std::{assert_matches::assert_matches, fmt};
+use reactive_stores::Store;
+use std::fmt;
 use syre_desktop_lib as lib;
 
 mod analyses;
@@ -49,7 +50,7 @@ pub struct InputDebounce(Signal<f64>);
 
 #[component]
 pub fn PropertiesBar() -> impl IntoView {
-    let user_settings = expect_context::<types::settings::User>();
+    let user_settings = expect_context::<Store<types::settings::User>>();
     let graph = expect_context::<state::Graph>();
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
     let active_editor = expect_context::<RwSignal<EditorKind>>();

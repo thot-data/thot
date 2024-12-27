@@ -60,7 +60,7 @@ fn NoSettings() -> impl IntoView {
 #[component]
 fn HomeView(user_settings: lib::settings::user::Settings) -> impl IntoView {
     let messages = expect_context::<types::Messages>();
-    provide_context(types::settings::User::new(user_settings.clone()));
+    provide_context(types::settings::User::new_store(user_settings.clone()));
     let show_settings = ShowSettings::new();
     provide_context(show_settings);
 

@@ -28,6 +28,7 @@ leptos_icons = { git = "https://github.com/carloskiki/leptos-icons" }
 leptos_meta = { version = "0.7" }
 leptos_router = { version = "0.7", features = ["nightly"] }
 leptos-use = { git = "https://github.com/Synphonyte/leptos-use.git", features = ["storage"]}
+reactive_stores = "0.1.2"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde-wasm-bindgen = "0.6"

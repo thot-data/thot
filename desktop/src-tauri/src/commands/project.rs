@@ -265,7 +265,6 @@ pub async fn trigger_analysis(
     rx: tauri::ipc::Channel<lib::event::analysis::Update>,
     project: ResourceId,
     root: PathBuf,
-    max_tasks: Option<usize>,
 ) -> Result<(), lib::command::project::error::TriggerAnalysis> {
     use crate::state;
     use lib::command::project::error;
@@ -305,12 +304,15 @@ pub async fn trigger_analysis(
         .flatten()
         .unwrap_or_default();
 
+    let mut max_tasks = None;
     if let Ok(runner_settings_project) = settings::project::Runner::load(&project_path) {
         let local::project::config::RunnerSettings {
             python_path,
             r_path,
             continue_on_error,
+            max_tasks: max_tasks_setting,
         } = runner_settings_project;
+        max_tasks = max_tasks_setting;
 
         if let Some(python_path) = python_path {
             let _ = runner_settings.python_path.insert(python_path);

@@ -2,9 +2,7 @@
 use crate::{error, file_resource::UserResource, system::common::config_dir_path};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
-    io::{self, BufReader},
-    path::{Path, PathBuf},
+    fs, io::{self, BufReader}, num::NonZeroUsize, path::{Path, PathBuf}
 };
 use syre_core::types::ResourceId;
 
@@ -73,4 +71,7 @@ pub struct Settings {
 
     /// Continue or halt analysis when an error occurs.
     pub continue_on_error: bool,
+
+    /// Maximum number of tasks to allow during analysis.
+    pub max_tasks: Option<NonZeroUsize>,
 }

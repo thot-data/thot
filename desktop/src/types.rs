@@ -143,22 +143,205 @@ pub mod message {
 }
 
 pub mod settings {
-    use leptos::prelude::*;
-    use syre_desktop_lib as lib;
+    pub use project::Settings as Project;
+    pub use user::Settings as User;
 
-    #[derive(derive_more::Deref, Clone, Copy)]
-    pub struct User(RwSignal<lib::settings::User>);
-    impl User {
-        pub fn new(settings: lib::settings::User) -> Self {
-            Self(RwSignal::new(settings))
+    pub mod user {
+        use reactive_stores::Store;
+        use std::{num::NonZeroUsize, path::PathBuf};
+        use syre_desktop_lib as lib;
+        use syre_local as local;
+
+        /// # Notes
+        /// If using as a [`Store`] must scope the `*StoreFields` trait.
+        #[derive(Store, Clone)]
+        pub struct Settings {
+            pub desktop: Result<Desktop, local::error::IoSerde>,
+            pub runner: Result<Runner, local::error::IoSerde>,
+        }
+
+        impl Settings {
+            pub fn new_store(settings: lib::settings::User) -> Store<Self> {
+                Store::new(settings.into())
+            }
+        }
+
+        impl From<lib::settings::User> for Settings {
+            fn from(value: lib::settings::User) -> Self {
+                let lib::settings::User { desktop, runner } = value;
+                Self {
+                    desktop: desktop.map(|desktop| desktop.into()),
+                    runner: runner.map(|runner| runner.into()),
+                }
+            }
+        }
+
+        impl Into<lib::settings::User> for Settings {
+            fn into(self) -> lib::settings::User {
+                let Self { desktop, runner } = self;
+                lib::settings::User {
+                    desktop: desktop.map(|desktop| desktop.into()),
+                    runner: runner.map(|runner| runner.into()),
+                }
+            }
+        }
+
+        /// # Notes
+        /// If using as a [`Store`] must scope the `*StoreFields` trait.
+        #[derive(Store, Clone, Debug)]
+        pub struct Desktop {
+            /// Form input debounce in milliseconds.
+            pub input_debounce_ms: usize,
+        }
+
+        impl Default for Desktop {
+            fn default() -> Self {
+                lib::settings::user::Desktop::default().into()
+            }
+        }
+
+        impl From<lib::settings::user::Desktop> for Desktop {
+            fn from(value: lib::settings::user::Desktop) -> Self {
+                let lib::settings::user::Desktop { input_debounce_ms } = value;
+                Self { input_debounce_ms }
+            }
+        }
+
+        impl Into<lib::settings::user::Desktop> for Desktop {
+            fn into(self) -> lib::settings::user::Desktop {
+                let Self { input_debounce_ms } = self;
+                lib::settings::user::Desktop { input_debounce_ms }
+            }
+        }
+
+        /// # Notes
+        /// If using as a [`Store`] must scope the `*StoreFields` trait.
+        #[derive(Store, Clone, Debug)]
+        pub struct Runner {
+            pub python_path: Option<PathBuf>,
+            pub r_path: Option<PathBuf>,
+            pub continue_on_error: bool,
+            pub max_tasks: Option<NonZeroUsize>,
+        }
+
+        impl From<lib::settings::user::Runner> for Runner {
+            fn from(value: lib::settings::user::Runner) -> Self {
+                let lib::settings::user::Runner {
+                    python_path,
+                    r_path,
+                    continue_on_error,
+                    max_tasks,
+                } = value;
+
+                Self {
+                    python_path,
+                    r_path,
+                    continue_on_error,
+                    max_tasks,
+                }
+            }
+        }
+
+        impl Into<lib::settings::user::Runner> for Runner {
+            fn into(self) -> lib::settings::user::Runner {
+                let Self {
+                    python_path,
+                    r_path,
+                    continue_on_error,
+                    max_tasks,
+                } = self;
+
+                lib::settings::user::Runner {
+                    python_path,
+                    r_path,
+                    continue_on_error,
+                    max_tasks,
+                }
+            }
         }
     }
 
-    #[derive(derive_more::Deref, Clone, Copy)]
-    pub struct Project(RwSignal<lib::settings::Project>);
-    impl Project {
-        pub fn new(settings: lib::settings::Project) -> Self {
-            Self(RwSignal::new(settings))
+    pub mod project {
+        use reactive_stores::Store;
+        use std::{num::NonZeroUsize, path::PathBuf};
+        use syre_desktop_lib as lib;
+        use syre_local as local;
+
+        /// # Notes
+        /// If using as a [`Store`] must scope the `*StoreFields` trait.
+        #[derive(Store, Clone)]
+        pub struct Settings {
+            pub runner: Result<Runner, local::error::IoSerde>,
+        }
+
+        impl Settings {
+            pub fn new_store(settings: lib::settings::Project) -> Store<Self> {
+                Store::new(settings.into())
+            }
+        }
+
+        impl From<lib::settings::Project> for Settings {
+            fn from(value: lib::settings::Project) -> Self {
+                let lib::settings::Project { runner } = value;
+                Self {
+                    runner: runner.map(|runner| runner.into()),
+                }
+            }
+        }
+
+        impl Into<lib::settings::Project> for Settings {
+            fn into(self) -> lib::settings::Project {
+                let Self { runner } = self;
+                lib::settings::Project {
+                    runner: runner.map(|runner| runner.into()),
+                }
+            }
+        }
+
+        /// # Notes
+        /// If using as a [`Store`] must scope the `*StoreFields` trait.
+        #[derive(Store, Clone, Debug)]
+        pub struct Runner {
+            pub python_path: Option<PathBuf>,
+            pub r_path: Option<PathBuf>,
+            pub continue_on_error: Option<bool>,
+            pub max_tasks: Option<NonZeroUsize>,
+        }
+
+        impl From<lib::settings::project::Runner> for Runner {
+            fn from(value: lib::settings::project::Runner) -> Self {
+                let lib::settings::project::Runner {
+                    python_path,
+                    r_path,
+                    continue_on_error,
+                    max_tasks,
+                } = value;
+
+                Self {
+                    python_path,
+                    r_path,
+                    continue_on_error,
+                    max_tasks,
+                }
+            }
+        }
+
+        impl Into<lib::settings::project::Runner> for Runner {
+            fn into(self) -> lib::settings::project::Runner {
+                let Self {
+                    python_path,
+                    r_path,
+                    continue_on_error,
+                    max_tasks,
+                } = self;
+
+                lib::settings::project::Runner {
+                    python_path,
+                    r_path,
+                    continue_on_error,
+                    max_tasks,
+                }
+            }
         }
     }
 }

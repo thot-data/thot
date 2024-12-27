@@ -32,20 +32,21 @@ pub fn Settings(
     }
 }
 
-mod user {
+pub mod user {
     use crate::types;
     use leptos::prelude::*;
+    use reactive_stores::Store;
     use syre_desktop_lib as lib;
 
     #[component]
     pub fn Settings() -> impl IntoView {
-        let user_settings = expect_context::<types::settings::User>();
+        let user_settings = expect_context::<Store<types::settings::User>>();
         let settings = LocalResource::new(fetch_user_settings);
         view! {
             <Suspense fallback=Loading>
                 {move || Suspend::new(async move {
                     if let Some(settings) = settings.await {
-                        user_settings.set(settings);
+                        user_settings.set(settings.into());
                     }
                     view! { <SettingsView /> }
                 })}
@@ -84,6 +85,7 @@ mod user {
             task::spawn_local,
         };
         use leptos_icons::*;
+        use reactive_stores::Store;
         use serde::Serialize;
         use std::io;
         use syre_core::{self as core, types::ResourceId};
@@ -95,15 +97,15 @@ mod user {
             let user = expect_context::<core::system::User>();
             let messages = expect_context::<types::Messages>();
             let prefers_dark_theme = expect_context::<PrefersDarkTheme>();
-            let user_settings = expect_context::<types::settings::User>();
-            let (input_debounce, set_input_debounce) =
-                signal(user_settings.with_untracked(|settings| {
-                    settings
-                        .desktop
-                        .clone()
-                        .unwrap_or_default()
-                        .input_debounce_ms
-                }));
+            let user_settings = expect_context::<Store<types::settings::User>>();
+            let (input_debounce, set_input_debounce) = signal(
+                user_settings
+                    .read_untracked()
+                    .desktop
+                    .clone()
+                    .unwrap_or_default()
+                    .input_debounce_ms,
+            );
             let input_debounce = leptos_use::signal_debounced(
                 input_debounce,
                 Signal::derive(move || input_debounce.with(|ms| *ms as f64)),
@@ -118,7 +120,7 @@ mod user {
                             user_settings.with_untracked(|settings| match &settings.desktop {
                                 Ok(settings) => Ok(settings.clone()),
                                 Err(err) if matches!(err, IoSerde::Io(io::ErrorKind::NotFound)) => {
-                                    Ok(lib::settings::user::Desktop::default())
+                                    Ok(lib::settings::user::Desktop::default().into())
                                 }
                                 Err(err) => Err(err.clone()),
                             });
@@ -141,7 +143,7 @@ mod user {
 
                         let user = user.clone();
                         spawn_local(async move {
-                            if let Err(err) = update_settings(user, update).await {
+                            if let Err(err) = update_settings(user, update.into()).await {
                                 let mut msg =
                                     types::message::Builder::error("Could not update settings.");
                                 msg.body(format!("{err:?}"));
@@ -237,15 +239,20 @@ mod user {
     }
 
     mod runner {
-        use crate::{commands, types};
+        use crate::{
+            commands,
+            types::{self, settings::user::SettingsStoreFields},
+        };
         use leptos::{
+            either::Either,
             ev::{Event, MouseEvent},
             prelude::*,
             task::spawn_local,
         };
         use leptos_icons::*;
+        use reactive_stores::Store;
         use serde::Serialize;
-        use std::{io, path::PathBuf};
+        use std::{io, num::NonZeroUsize, path::PathBuf};
         use syre_core::{self as core, types::ResourceId};
         use syre_desktop_lib as lib;
         use syre_local::error::IoSerde;
@@ -254,68 +261,79 @@ mod user {
         pub fn Settings() -> impl IntoView {
             let user = expect_context::<core::system::User>();
             let messages = expect_context::<types::Messages>();
-            let user_settings = expect_context::<types::settings::User>();
+            let user_settings = expect_context::<Store<types::settings::User>>();
+            let settings = user_settings.runner();
             let input_debounce = Signal::derive(move || {
-                user_settings.with(|settings| {
-                    let debounce = match &settings.desktop {
-                        Ok(settings) => settings.input_debounce_ms,
-                        Err(_) => lib::settings::user::Desktop::default().input_debounce_ms,
-                    };
+                let debounce = match user_settings.desktop().get() {
+                    Ok(settings) => settings.input_debounce_ms,
+                    Err(_) => lib::settings::user::Desktop::default().input_debounce_ms,
+                };
 
-                    debounce as f64
-                })
+                debounce as f64
             });
 
-            let (python_path, set_python_path) = signal(user_settings.with_untracked(|settings| {
+            let (python_path, set_python_path) = signal(
                 settings
-                    .runner
+                    .read_untracked()
                     .as_ref()
-                    .map(|settings| settings.python_path.as_ref())
+                    .map(|settings| settings.python_path.clone())
                     .ok()
-                    .flatten()
-                    .cloned()
-            }));
+                    .flatten(),
+            );
             let python_path: Signal<Option<PathBuf>> =
                 leptos_use::signal_debounced(python_path, input_debounce);
 
-            let (r_path, set_r_path) = signal(user_settings.with_untracked(|settings| {
+            let (r_path, set_r_path) = signal(
                 settings
-                    .runner
+                    .read_untracked()
                     .as_ref()
-                    .map(|settings| settings.r_path.as_ref())
+                    .map(|settings| settings.r_path.clone())
                     .ok()
-                    .flatten()
-                    .cloned()
-            }));
+                    .flatten(),
+            );
             let r_path: Signal<Option<PathBuf>> =
                 leptos_use::signal_debounced(r_path, input_debounce);
 
-            let (continue_on_error, set_continue_on_error) =
-                signal(user_settings.with_untracked(|settings| {
-                    settings
-                        .runner
-                        .as_ref()
-                        .map(|settings| settings.continue_on_error)
-                        .unwrap_or(false)
-                }));
-            let continue_on_error = leptos_use::signal_debounced(
-                continue_on_error,
-                Signal::derive(input_debounce.clone()),
+            let (max_tasks, set_max_tasks) = signal(
+                settings
+                    .read_untracked()
+                    .as_ref()
+                    .map(|settings| settings.max_tasks.clone())
+                    .ok()
+                    .flatten(),
             );
+            let max_tasks: Signal<Option<NonZeroUsize>> =
+                leptos_use::signal_debounced(max_tasks, input_debounce);
+
+            let (continue_on_error, set_continue_on_error) = signal(
+                settings
+                    .read_untracked()
+                    .as_ref()
+                    .map(|settings| settings.continue_on_error.clone())
+                    .unwrap_or(false),
+            );
+            let continue_on_error: Signal<bool> =
+                leptos_use::signal_debounced(continue_on_error, input_debounce);
 
             let _ = {
                 let user = user.rid().clone();
                 Effect::watch(
-                    move || (python_path.get(), r_path.get(), continue_on_error.get()),
-                    move |(python_path, r_path, continue_on_error), _, _| {
-                        let update =
-                            user_settings.with_untracked(|settings| match &settings.runner {
-                                Ok(settings) => Ok(settings.clone()),
-                                Err(err) if matches!(err, IoSerde::Io(io::ErrorKind::NotFound)) => {
-                                    Ok(lib::settings::user::Runner::default())
-                                }
-                                Err(err) => Err(err.clone()),
-                            });
+                    move || {
+                        (
+                            python_path.get(),
+                            r_path.get(),
+                            max_tasks.get(),
+                            continue_on_error.get(),
+                        )
+                    },
+                    move |(python_path, r_path, max_tasks, continue_on_error), _, _| {
+                        let update = match settings.get_untracked() {
+                            Ok(settings) => Ok(settings),
+                            Err(err) if matches!(err, IoSerde::Io(io::ErrorKind::NotFound)) => {
+                                Ok(lib::settings::user::Runner::default().into())
+                            }
+                            Err(err) => Err(err.clone()),
+                        };
 
                         let mut update = match update {
                             Ok(update) => update,
@@ -330,13 +348,14 @@ mod user {
 
                         update.python_path = python_path.clone();
                         update.r_path = r_path.clone();
+                        update.max_tasks = max_tasks.clone();
                         update.continue_on_error = *continue_on_error;
                         user_settings.update(|settings| {
                             settings.runner = Ok(update.clone());
                         });
                         let user = user.clone();
                         spawn_local(async move {
-                            if let Err(err) = update_settings(user, update).await {
+                            if let Err(err) = update_settings(user, update.into()).await {
                                 let mut msg =
                                     types::message::Builder::error("Could not update settings.");
                                 msg.body(format!("{err:?}"));
@@ -355,6 +374,9 @@ mod user {
                     </div>
                     <div class="pb-2">
                         <RPath value=r_path set_value=set_r_path />
+                    </div>
+                    <div class="pb-2">
+                        <MaxTasks value=max_tasks set_value=set_max_tasks />
                     </div>
                     <div class="pb-2">
                         <ContinueOnError value=continue_on_error set_value=set_continue_on_error />
@@ -506,6 +528,67 @@ mod user {
                         class="input-simple grow"
                         placeholder="R executable path"
                     />
+                </label>
+            }
+        }
+
+        #[component]
+        fn MaxTasks(
+            value: Signal<Option<NonZeroUsize>>,
+            set_value: WriteSignal<Option<NonZeroUsize>>,
+        ) -> impl IntoView {
+            let (error, set_error) = signal(None);
+            let update_tasks = move |e: Event| {
+                set_error(None);
+                let value = event_target_value(&e);
+                let value = value.trim();
+                if value.is_empty() {
+                    set_value.update(|tasks| {
+                        let _ = tasks.take();
+                    });
+                } else {
+                    match value.parse::<NonZeroUsize>() {
+                        Ok(value) => set_value.update(|tasks| {
+                            let _ = tasks.insert(value);
+                        }),
+                        Err(_) => set_error.update(|error| {
+                            let _ = error.insert("Invalid number");
+                        }),
+                    }
+                }
+            };
+
+            view! {
+                <label
+                    title="Maximum number of tasks to run in parallel during analysis."
+                    class="flex gap-2 items-center"
+                >
+                    <span class="text-nowrap">"Max tasks"</span>
+                    <div class="grow flex gap-2 items-center">
+                        <input
+                            type="number"
+                            prop:value=move || value.get().map(|value| value.to_string())
+                            on:input=update_tasks
+                            class=(
+                                ["border-syre-red-600", "focus:ring-syre-red-600"],
+                                move || error.read().is_some(),
+                            )
+                            class="input-simple grow"
+                            placeholder="Max tasks"
+                            min="1"
+                        />
+                        {move || {
+                            if let Some(error) = error.get() {
+                                Either::Left(
+                                    view! {
+                                        <small class="text-nowrap text-syre-red-600">{error}</small>
+                                    },
+                                )
+                            } else {
+                                Either::Right(())
+                            }
+                        }}
+                    </div>
                 </label>
             }
         }

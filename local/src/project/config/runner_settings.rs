@@ -3,7 +3,7 @@ use crate::common;
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf},num::NonZeroUsize, 
 };
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
@@ -17,6 +17,9 @@ pub struct Settings {
     /// Continue or halt analysis when an error occurs.
     /// If `None`, defer setting.
     pub continue_on_error: Option<bool>,
+
+    /// Maximum number of tasks to use during analysis.
+    pub max_tasks: Option<NonZeroUsize>,
 }
 
 impl Settings {

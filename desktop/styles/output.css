@@ -1791,6 +1791,11 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   color: rgb(36 46 15 / var(--tw-text-opacity));
 }
 
+.text-syre-red-600 {
+  --tw-text-opacity: 1;
+  color: rgb(179 48 0 / var(--tw-text-opacity));
+}
+
 .text-syre-red-700 {
   --tw-text-opacity: 1;
   color: rgb(135 19 25 / var(--tw-text-opacity));

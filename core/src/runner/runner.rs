@@ -5,6 +5,7 @@ use core::time;
 use rayon::prelude::*;
 use std::{
     collections::HashMap,
+    num::NonZeroUsize,
     path::PathBuf,
     process, str,
     sync::{Arc, Mutex},
@@ -74,7 +75,7 @@ pub trait RunnerHooks {
 
 pub struct Builder {
     hooks: Arc<dyn RunnerHooks + Send + Sync>,
-    num_threads: Option<usize>,
+    num_threads: Option<NonZeroUsize>,
 }
 
 impl Builder {
@@ -86,7 +87,7 @@ impl Builder {
     }
 
     /// Set the number of threads the runner should use.
-    pub fn num_threads(&mut self, num_threads: usize) -> &mut Self {
+    pub fn num_threads(&mut self, num_threads: NonZeroUsize) -> &mut Self {
         let _ = self.num_threads.insert(num_threads);
         self
     }
@@ -95,7 +96,7 @@ impl Builder {
         let mut thread_pool =
             rayon::ThreadPoolBuilder::new().thread_name(|_id| format!("syre runner thread"));
         if let Some(max_tasks) = self.num_threads {
-            thread_pool = thread_pool.num_threads(max_tasks);
+            thread_pool = thread_pool.num_threads(max_tasks.get());
         }
 
         Runner {

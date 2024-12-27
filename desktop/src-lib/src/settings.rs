@@ -3,7 +3,7 @@ pub use user::Settings as User;
 
 pub mod user {
     use serde::{Deserialize, Serialize};
-    use std::{io, path::PathBuf};
+    use std::{io, num::NonZeroUsize, path::PathBuf};
     use syre_local as local;
 
     #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -56,6 +56,7 @@ pub mod user {
         pub python_path: Option<PathBuf>,
         pub r_path: Option<PathBuf>,
         pub continue_on_error: bool,
+        pub max_tasks: Option<NonZeroUsize>,
     }
 
     impl From<local::system::config::runner_settings::Settings> for Runner {
@@ -64,6 +65,7 @@ pub mod user {
                 python_path: value.python_path,
                 r_path: value.r_path,
                 continue_on_error: value.continue_on_error,
+                max_tasks: value.max_tasks,
             }
         }
     }
@@ -74,6 +76,7 @@ pub mod user {
                 python_path: self.python_path,
                 r_path: self.r_path,
                 continue_on_error: self.continue_on_error,
+                max_tasks: self.max_tasks,
             }
         }
     }
@@ -81,7 +84,7 @@ pub mod user {
 
 pub mod project {
     use serde::{Deserialize, Serialize};
-    use std::{io, path::PathBuf};
+    use std::{io, num::NonZeroUsize, path::PathBuf};
     use syre_local as local;
 
     #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -111,7 +114,8 @@ pub mod project {
     pub struct Runner {
         pub python_path: Option<PathBuf>,
         pub r_path: Option<PathBuf>,
-        pub continue_on_error:Option<bool>,
+        pub continue_on_error: Option<bool>,
+        pub max_tasks: Option<NonZeroUsize>,
     }
 
     impl From<local::project::config::runner_settings::Settings> for Runner {
@@ -120,6 +124,7 @@ pub mod project {
                 python_path: value.python_path,
                 r_path: value.r_path,
                 continue_on_error: value.continue_on_error,
+                max_tasks: value.max_tasks,
             }
         }
     }
@@ -130,6 +135,7 @@ pub mod project {
                 python_path: self.python_path,
                 r_path: self.r_path,
                 continue_on_error: self.continue_on_error,
+                max_tasks: self.max_tasks,
             }
         }
     }

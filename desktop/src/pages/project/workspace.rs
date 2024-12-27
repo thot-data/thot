@@ -160,8 +160,8 @@ fn WorkspaceView(
     provide_context(project.clone());
     provide_context(DragOverWorkspaceResource::new());
     provide_context(RwSignal::new(properties::EditorKind::default()));
-    let user_settings = types::settings::User::new(lib::settings::User::default());
-    let project_settings = types::settings::Project::new(lib::settings::Project::default());
+    let user_settings = types::settings::User::new_store(lib::settings::User::default());
+    let project_settings = types::settings::Project::new_store(lib::settings::Project::default());
     provide_context(user_settings);
     provide_context(project_settings);
 
@@ -883,7 +883,6 @@ mod analyze {
             rx: &'a tauri_sys::core::Channel<lib::event::analysis::Update>,
             project: ResourceId,
             root: PathBuf,
-            max_tasks: Option<usize>,
         }
 
         let rx = tauri_sys::core::Channel::new();
@@ -893,7 +892,6 @@ mod analyze {
                 rx: &rx,
                 project,
                 root: root.into(),
-                max_tasks: None,
             },
         )
         .await?;
