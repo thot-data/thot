@@ -285,7 +285,12 @@ fn Controls() -> impl IntoView {
     };
 
     view! {
-        <button on:mousedown=refresh type="button" class="btn-secondary p-1 rounded-sm">
+        <button
+            on:mousedown=refresh
+            type="button"
+            class="btn-secondary p-1 rounded-sm"
+            title="Refresh"
+        >
             <Icon icon=components::icon::Refresh />
         </button>
     }

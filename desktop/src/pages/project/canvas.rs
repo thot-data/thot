@@ -1324,7 +1324,7 @@ fn ContainerOk(
                         Either::Left(
                             view! {
                                 <Portal mount>
-                                    <Flags
+                                    <ContainerFlags
                                         container=container.clone()
                                         expanded=flags_display_state.expanded
                                     />
@@ -1592,7 +1592,8 @@ fn Asset(asset: state::Asset) -> impl IntoView {
                     {title}
                 </TruncateLeft>
             </div>
-            <div>
+            <div class="flex gap-2 items-center">
+                <AssetFlags asset=asset.path().read_only() container=(*container).clone() />
                 <button
                     on:mousedown=remove_asset
                     class="align-middle rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-800"
@@ -1847,7 +1848,7 @@ fn NoMetadata() -> impl IntoView {
 }
 
 #[component]
-fn Flags(container: state::graph::Node, expanded: RwSignal<bool>) -> impl IntoView {
+fn ContainerFlags(container: state::graph::Node, expanded: RwSignal<bool>) -> impl IntoView {
     let graph = expect_context::<state::Graph>();
     let flags_state = expect_context::<state::Flags>();
     let flags = flags_state.find(graph.path(&container).unwrap());
@@ -1879,14 +1880,23 @@ fn Flags(container: state::graph::Node, expanded: RwSignal<bool>) -> impl IntoVi
         {
             EitherOf3::A(())
         } else if !expanded() {
+            let title = {
+                let flags = flags.clone();
+                move || {
+                    let flags_data = flags.read();
+                    format!("{} flag(s)", flags_data.as_ref().unwrap().read().len())
+                }
+            };
+
             EitherOf3::B(view! {
-                <div>
+                <div title=title>
                     <button on:mousedown=expand_flags class="block">
                         <Icon
                             icon=icondata::BsCircleFill
                             width=(FLAGS_INDICATOR_RADIUS * 2).to_string()
                             height=(FLAGS_INDICATOR_RADIUS * 2).to_string()
-                            attr:class="text-syre-yellow-500 text-syre-yellow-600 dark:text-syre-yellow-600 hover:text-syre-yellow-700"
+                            attr:class="text-syre-yellow-500 hover:text-syre-yellow-600 \
+                            dark:text-syre-yellow-600 dark:hover:text-syre-yellow-700"
                         />
                     </button>
                 </div>
@@ -1925,6 +1935,52 @@ fn Flags(container: state::graph::Node, expanded: RwSignal<bool>) -> impl IntoVi
                             </For>
                         </ul>
                     </div>
+                </div>
+            })
+        }
+    }
+}
+
+#[component]
+fn AssetFlags(asset: ReadSignal<PathBuf>, container: state::graph::Node) -> impl IntoView {
+    let graph = expect_context::<state::Graph>();
+    let flags_state = expect_context::<state::Flags>();
+
+    let asset_path = {
+        let graph = graph.clone();
+        let container = container.clone();
+        move || {
+            let container_path = graph.path(&container).unwrap();
+            container_path.join(&*asset.read())
+        }
+    };
+    let flags = move || flags_state.find(asset_path());
+
+    move || {
+        if flags()
+            .read()
+            .as_ref()
+            .map(|flags| flags.read().is_empty())
+            .unwrap_or(true)
+        {
+            Either::Left(())
+        } else {
+            let title = {
+                let flags = flags.clone();
+                move || {
+                    let flags_data = flags().read();
+                    format!("{} flag(s)", flags_data.as_ref().unwrap().read().len())
+                }
+            };
+
+            Either::Right(view! {
+                <div title=title>
+                    <Icon
+                        icon=icondata::BsCircleFill
+                        width=(FLAGS_INDICATOR_RADIUS * 2).to_string()
+                        height=(FLAGS_INDICATOR_RADIUS * 2).to_string()
+                        attr:class="text-syre-yellow-500 dark:text-syre-yellow-600"
+                    />
                 </div>
             })
         }

@@ -11,11 +11,13 @@ use crate::{
 use futures::StreamExt;
 use leptos::{either::Either, ev::MouseEvent, prelude::*, task::spawn_local};
 use leptos_icons::Icon;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use syre_core::types::ResourceId;
 use syre_desktop_lib as lib;
 use syre_local_database as db;
 use tauri_sys::{core::Channel, menu};
+
+const FLAGS_INDICATOR_RADIUS: usize = 4;
 
 /// Context menu for containers that are `Ok`.
 #[derive(derive_more::Deref, Clone)]
@@ -247,33 +249,6 @@ fn ContainerLayerTitleOk(
             .unwrap()
     });
 
-    let container_visibility = workspace_graph_state
-        .container_visibility_get(&container)
-        .unwrap();
-
-    let toggle_container_visibility = {
-        let container_visibility = container_visibility.clone();
-        move |e: MouseEvent| {
-            if e.button() != types::MouseButton::Primary {
-                return;
-            }
-            e.stop_propagation();
-
-            container_visibility.set(!container_visibility());
-        }
-    };
-
-    let num_children = {
-        let graph = graph.clone();
-        let container = container.clone();
-        move || {
-            graph
-                .children(&container)
-                .map(|children| children.with(|children| children.len()))
-                .unwrap_or(0)
-        }
-    };
-
     let title = {
         let properties = properties.clone();
         move || properties().name().get()
@@ -443,43 +418,85 @@ fn ContainerLayerTitleOk(
                 <div class="grow inline-flex gap-1">
                     <TruncateLeft>{title}</TruncateLeft>
                 </div>
-                <div>
-                    {
-                        let container_visibility = container_visibility.clone();
-                        let toggle_container_visibility = toggle_container_visibility.clone();
-                        move || {
-                            if num_children() > 0 {
-                                let visibility_icon = Signal::derive({
-                                    let container_visibility = container_visibility.clone();
-                                    move || {
-                                        container_visibility
-                                            .with(|visible| {
-                                                if *visible {
-                                                    components::icon::Eye
-                                                } else {
-                                                    components::icon::EyeClosed
-                                                }
-                                            })
-                                    }
-                                });
-                                Either::Left(
-                                    view! {
-                                        <button
-                                            type="button"
-                                            on:mousedown=toggle_container_visibility.clone()
-                                            class="align-middle"
-                                        >
-                                            <Icon icon=visibility_icon />
-                                        </button>
-                                    },
-                                )
-                            } else {
-                                Either::Right(())
-                            }
-                        }
-                    }
+                <div class="flex gap-2 items-center">
+                    <ContainerLayerTitleVisibilityToggle container=container.clone() />
+                    <div>
+                        <ContainerFlags container=container.clone() />
+                    </div>
                 </div>
             </div>
+        </div>
+    }
+}
+
+#[component]
+fn ContainerLayerTitleVisibilityToggle(container: state::graph::Node) -> impl IntoView {
+    let graph = expect_context::<state::Graph>();
+    let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
+
+    let num_children = {
+        let graph = graph.clone();
+        let container = container.clone();
+        move || {
+            graph
+                .children(&container)
+                .map(|children| children.read().len())
+                .unwrap_or(0)
+        }
+    };
+
+    let container_visibility = workspace_graph_state
+        .container_visibility_get(&container)
+        .unwrap();
+
+    let toggle_container_visibility = {
+        let container_visibility = container_visibility.clone();
+        move |e: MouseEvent| {
+            if e.button() != types::MouseButton::Primary {
+                return;
+            }
+            e.stop_propagation();
+
+            container_visibility.set(!container_visibility());
+        }
+    };
+
+    view! {
+        <div>
+            {
+                let container_visibility = container_visibility.clone();
+                let toggle_container_visibility = toggle_container_visibility.clone();
+                move || {
+                    if num_children() > 0 {
+                        let visibility_icon = Signal::derive({
+                            let container_visibility = container_visibility.clone();
+                            move || {
+                                container_visibility
+                                    .with(|visible| {
+                                        if *visible {
+                                            components::icon::Eye
+                                        } else {
+                                            components::icon::EyeClosed
+                                        }
+                                    })
+                            }
+                        });
+                        Either::Left(
+                            view! {
+                                <button
+                                    type="button"
+                                    on:mousedown=toggle_container_visibility.clone()
+                                    class="align-middle"
+                                >
+                                    <Icon icon=visibility_icon />
+                                </button>
+                            },
+                        )
+                    } else {
+                        Either::Right(())
+                    }
+                }
+            }
         </div>
     }
 }
@@ -499,7 +516,45 @@ fn ContainerLayerTitleErr(container: state::graph::Node, depth: usize) -> impl I
 }
 
 #[component]
+fn ContainerFlags(container: state::graph::Node) -> impl IntoView {
+    let graph = expect_context::<state::Graph>();
+    let flags_state = expect_context::<state::Flags>();
+    let flags = flags_state.find(graph.path(&container).unwrap());
+
+    move || {
+        if flags
+            .read()
+            .as_ref()
+            .map(|flags| flags.read().is_empty())
+            .unwrap_or(true)
+        {
+            Either::Left(())
+        } else {
+            let title = {
+                let flags = flags.clone();
+                move || {
+                    let flags_data = flags.read();
+                    format!("{} flag(s)", flags_data.as_ref().unwrap().read().len())
+                }
+            };
+
+            Either::Right(view! {
+                <div title=title>
+                    <Icon
+                        icon=icondata::BsCircleFill
+                        width=(FLAGS_INDICATOR_RADIUS * 2).to_string()
+                        height=(FLAGS_INDICATOR_RADIUS * 2).to_string()
+                        attr:class="text-syre-yellow-500 dark:text-syre-yellow-600"
+                    />
+                </div>
+            })
+        }
+    }
+}
+
+#[component]
 fn AssetsLayer(container: state::graph::Node, depth: usize) -> impl IntoView {
+    provide_context(container.clone());
     move || {
         container.assets().with(|assets| {
             if let db::state::DataResource::Ok(assets) = assets {
@@ -513,6 +568,7 @@ fn AssetsLayer(container: state::graph::Node, depth: usize) -> impl IntoView {
 
 #[component]
 fn AssetsLayerOk(assets: ReadSignal<Vec<state::Asset>>, depth: usize) -> impl IntoView {
+    let container = expect_context::<state::graph::Node>();
     let expanded = RwSignal::new(false);
     let assets_sorted = move || {
         let mut assets = assets.get();
@@ -543,6 +599,9 @@ fn AssetsLayerOk(assets: ReadSignal<Vec<state::Asset>>, depth: usize) -> impl In
                             <Icon icon=icondata::BsFiles />
                         </span>
                         <span class="grow">"Assets"</span>
+                        <span>
+                            <AssetsFlags container=container.clone() />
+                        </span>
                     </div>
                 </div>
                 <div class:hidden=move || !expanded()>
@@ -558,6 +617,7 @@ fn AssetsLayerOk(assets: ReadSignal<Vec<state::Asset>>, depth: usize) -> impl In
 #[component]
 fn AssetLayer(asset: state::Asset, depth: usize) -> impl IntoView {
     let workspace_graph_state = expect_context::<state::WorkspaceGraph>();
+    let container = expect_context::<state::graph::Node>();
     let context_menu = expect_context::<ContextMenuAsset>();
     let context_menu_active_asset = expect_context::<RwSignal<Option<ContextMenuActiveAsset>>>();
 
@@ -636,15 +696,19 @@ fn AssetLayer(asset: state::Asset, depth: usize) -> impl IntoView {
         >
             <div
                 style:padding-left=move || { depth_to_padding(1) }
-                class="flex gap-1 border-l border-transparent group-hover/assets:border-secondary-200 dark:group-hover/assets:border-secondary-600"
+                class="flex gap-1 items-center border-l border-transparent \
+                group-hover/assets:border-secondary-200 dark:group-hover/assets:border-secondary-600"
             >
                 <div class=icon_class>
                     <Icon icon />
                 </div>
-                <div>
+                <div class="grow">
                     <TruncateLeft class="align-center" inner_class="align-middle">
                         {title}
                     </TruncateLeft>
+                </div>
+                <div>
+                    <AssetFlags asset=asset.path().read_only() container />
                 </div>
             </div>
         </div>
@@ -654,6 +718,103 @@ fn AssetLayer(asset: state::Asset, depth: usize) -> impl IntoView {
 #[component]
 fn AssetsLayerErr(depth: usize) -> impl IntoView {
     view! { <div style:padding-left=move || { depth_to_padding(depth + 1) }>"(assets error)"</div> }
+}
+
+#[component]
+fn AssetsFlags(container: state::graph::Node) -> impl IntoView {
+    let graph = expect_context::<state::Graph>();
+    let flags_state = expect_context::<state::Flags>();
+
+    let asset_paths = {
+        let graph = graph.clone();
+        let container = container.clone();
+        move || {
+            let container_path = graph.path(&container).unwrap();
+            container
+                .assets()
+                .read()
+                .as_ref()
+                .unwrap()
+                .read()
+                .iter()
+                .map(|asset| container_path.join(&*asset.path().read()))
+                .collect::<Vec<_>>()
+        }
+    };
+    let num_assets_with_flags = move || {
+        let paths = asset_paths();
+        let flags = flags_state.read();
+        flags
+            .iter()
+            .filter(|(path, _)| paths.contains(path))
+            .count()
+    };
+
+    move || {
+        let assets_with_flags = num_assets_with_flags();
+        if assets_with_flags == 0 {
+            Either::Left(())
+        } else {
+            let title = { move || format!("{} flagged asset(s)", assets_with_flags) };
+
+            Either::Right(view! {
+                <div title=title>
+                    <Icon
+                        icon=icondata::BsCircleFill
+                        width=(FLAGS_INDICATOR_RADIUS * 2).to_string()
+                        height=(FLAGS_INDICATOR_RADIUS * 2).to_string()
+                        attr:class="text-syre-yellow-500 dark:text-syre-yellow-600"
+                    />
+                </div>
+            })
+        }
+    }
+}
+
+#[component]
+fn AssetFlags(asset: ReadSignal<PathBuf>, container: state::graph::Node) -> impl IntoView {
+    let graph = expect_context::<state::Graph>();
+    let flags_state = expect_context::<state::Flags>();
+
+    let asset_path = {
+        let graph = graph.clone();
+        let container = container.clone();
+        move || {
+            let container_path = graph.path(&container).unwrap();
+            container_path.join(&*asset.read())
+        }
+    };
+    let flags = move || flags_state.find(asset_path());
+
+    move || {
+        if flags()
+            .read()
+            .as_ref()
+            .map(|flags| flags.read().is_empty())
+            .unwrap_or(true)
+        {
+            Either::Left(())
+        } else {
+            let title = {
+                let flags = flags.clone();
+                move || {
+                    let flags_data = flags().read();
+                    format!("{} flag(s)", flags_data.as_ref().unwrap().read().len())
+                }
+            };
+
+            Either::Right(view! {
+                <div title=title>
+                    <Icon
+                        icon=icondata::BsCircleFill
+                        width=(FLAGS_INDICATOR_RADIUS * 2).to_string()
+                        height=(FLAGS_INDICATOR_RADIUS * 2).to_string()
+                        attr:class="text-syre-yellow-500 dark:text-syre-yellow-600"
+                    />
+                </div>
+            })
+        }
+    }
 }
 
 fn depth_to_padding(depth: usize) -> String {

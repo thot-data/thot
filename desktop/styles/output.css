@@ -1819,11 +1819,6 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   color: rgb(255 184 0 / var(--tw-text-opacity));
 }
 
-.text-syre-yellow-600 {
-  --tw-text-opacity: 1;
-  color: rgb(217 151 23 / var(--tw-text-opacity));
-}
-
 .text-syre-yellow-700 {
   --tw-text-opacity: 1;
   color: rgb(153 102 0 / var(--tw-text-opacity));
@@ -2069,9 +2064,9 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   background-color: rgb(196 199 204 / var(--tw-bg-opacity));
 }
 
-.hover\:text-syre-yellow-700:hover {
+.hover\:text-syre-yellow-600:hover {
   --tw-text-opacity: 1;
-  color: rgb(153 102 0 / var(--tw-text-opacity));
+  color: rgb(217 151 23 / var(--tw-text-opacity));
 }
 
 .hover\:opacity-0:hover {
@@ -2327,6 +2322,11 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
 .dark\:hover\:bg-secondary-900:hover:where(.dark, .dark *) {
   --tw-bg-opacity: 1;
   background-color: rgb(24 26 30 / var(--tw-bg-opacity));
+}
+
+.dark\:hover\:text-syre-yellow-700:hover:where(.dark, .dark *) {
+  --tw-text-opacity: 1;
+  color: rgb(153 102 0 / var(--tw-text-opacity));
 }
 
 .dark\:disabled\:bg-primary-400:disabled:where(.dark, .dark *) {

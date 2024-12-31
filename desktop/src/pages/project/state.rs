@@ -2092,10 +2092,19 @@ mod flags {
                             assert!(num_components > 0);
                             let resource_path = if num_components == 1 {
                                 let segment = resource_path.components().next().unwrap();
-                                assert_matches!(segment, std::path::Component::RootDir);
-                                container_path.clone()
+                                match segment {
+                                    std::path::Component::RootDir => container_path.clone(),
+                                    std::path::Component::Normal(resource_path) => {
+                                        container_path.join(resource_path)
+                                    }
+                                    _ => panic!("invalid path"),
+                                }
                             } else {
-                                assert!(resource_path.is_relative());
+                                assert!(resource_path.components().all(|segment| matches!(
+                                    segment,
+                                    std::path::Component::Normal(_)
+                                )));
+
                                 container_path.join(resource_path)
                             };
 
