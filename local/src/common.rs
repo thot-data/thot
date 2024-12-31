@@ -178,7 +178,7 @@ pub fn project_file() -> PathBuf {
 }
 
 /// Path to the project file for a given path.
-/// app_dir_of(path)/\<PROJECT_FILE\>
+/// `app_dir_of(path)/\<PROJECT_FILE\>`
 pub fn project_file_of(path: impl AsRef<Path>) -> PathBuf {
     app_dir_of(path).join(PROJECT_FILE)
 }
@@ -189,11 +189,10 @@ pub fn project_settings_file() -> PathBuf {
 }
 
 /// Path to the project settings file for a given path.
-/// app_dir_of(path)/\<PROJECT_SETTINGS_FILE\>
+/// `app_dir_of(path)/\<PROJECT_SETTINGS_FILE\>`
 pub fn project_settings_file_of(path: impl AsRef<Path>) -> PathBuf {
     app_dir_of(path).join(PROJECT_SETTINGS_FILE)
 }
-
 
 /// Path to the project runner settings file relative to a base path.
 pub fn project_runner_settings_file() -> PathBuf {
@@ -201,7 +200,7 @@ pub fn project_runner_settings_file() -> PathBuf {
 }
 
 /// Path to the project runner settings file for a given path.
-/// app_dir_of(path)/\<PROJECT_RUNNER_SETTINGS_FILE\>
+/// `app_dir_of(path)/\<PROJECT_RUNNER_SETTINGS_FILE\>`
 pub fn project_runner_settings_file_of(path: impl AsRef<Path>) -> PathBuf {
     app_dir_of(path).join(PROJECT_RUNNER_SETTINGS_FILE)
 }
@@ -212,7 +211,7 @@ pub fn container_file() -> PathBuf {
 }
 
 /// Path to the Container file for a given path.
-/// app_dir_of(path)/\<CONTAINER_FILE\>
+/// `app_dir_of(path)/\<CONTAINER_FILE\>`
 pub fn container_file_of(path: impl AsRef<Path>) -> PathBuf {
     app_dir_of(path).join(CONTAINER_FILE)
 }
@@ -223,7 +222,7 @@ pub fn container_settings_file() -> PathBuf {
 }
 
 /// Path to the Container settings file for a given path.
-/// app_dir_of(path)/\<CONTAINER_SETTINGS_FILE\>
+/// `app_dir_of(path)/\<CONTAINER_SETTINGS_FILE\>`
 pub fn container_settings_file_of(path: impl AsRef<Path>) -> PathBuf {
     app_dir_of(path).join(CONTAINER_SETTINGS_FILE)
 }
@@ -234,9 +233,20 @@ pub fn assets_file() -> PathBuf {
 }
 
 /// Path to the Assets file for a given path.
-/// app_dir_of(path)/\<ASSETS_FILE\>
+/// `app_dir_of(path)/\<ASSETS_FILE\>`
 pub fn assets_file_of(path: impl AsRef<Path>) -> PathBuf {
     app_dir_of(path).join(ASSETS_FILE)
+}
+
+/// Path to the flags file relative to a base path.
+pub fn flags_file() -> PathBuf {
+    app_dir().join(FLAGS_FILE)
+}
+
+/// Path to the flags file for a given path.
+/// `app_dir_of(path)/\<FLAGS_FILE\>`
+pub fn flags_file_of(path: impl AsRef<Path>) -> PathBuf {
+    app_dir_of(path).join(FLAGS_FILE)
 }
 
 /// Path to the Assets file from a base path.
@@ -245,7 +255,7 @@ pub fn analyses_file() -> PathBuf {
 }
 
 /// Path to the analyses file for a given path.
-/// app_dir_of(path)/\<ANALYSES_FILE\>
+/// `app_dir_of(path)/\<ANALYSES_FILE\>`
 pub fn analyses_file_of(path: impl AsRef<Path>) -> PathBuf {
     app_dir_of(path).join(ANALYSES_FILE)
 }

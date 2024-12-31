@@ -352,3 +352,32 @@ fn container_analysis_associations_update_bulk_perform(
 
     Ok(())
 }
+
+#[tauri::command]
+pub fn remove_flag(
+    db: tauri::State<db::Client>,
+    project: PathBuf,
+    container: PathBuf,
+    resource: PathBuf,
+    flag: local::project::resources::flag::Id,
+) -> Result<(), local::error::IoSerde> {
+    let project_data = db.project().get(project.clone()).unwrap().unwrap();
+    let project_data = project_data.fs_resource().as_ref().unwrap();
+    let properties = project_data.properties().unwrap();
+    let data_root = project.join(&properties.data_root);
+    let container_path = db::common::container_system_path(data_root, container);
+
+    let mut flags = local::loader::container::flags::Loader::load(&container_path)?;
+    let resource_flags = flags
+        .iter_mut()
+        .find_map(|(path, flags)| (*path == resource).then_some(flags))
+        .unwrap();
+    resource_flags.retain(|resource_flag| *resource_flag.id() != flag);
+
+    fs::write(
+        local::common::flags_file_of(&container_path),
+        serde_json::to_string_pretty(&flags)?,
+    )?;
+
+    Ok(())
+}

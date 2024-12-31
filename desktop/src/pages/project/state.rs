@@ -1,5 +1,6 @@
 pub use container::{AnalysisAssociation, Asset, State as Container};
 pub use display::State as Display;
+pub use flags::State as Flags;
 pub use graph::State as Graph;
 pub use metadata::Metadata;
 pub use project::{Analysis, State as Project};
@@ -2049,4 +2050,83 @@ mod metadata {
     }
 
     pub type Metadatum = (String, RwSignal<Value>);
+}
+
+mod flags {
+    use crate::common;
+    use leptos::prelude::*;
+    use std::{
+        assert_matches::assert_matches,
+        path::{Path, PathBuf},
+    };
+    use syre_local::project::resources::Flag;
+    use syre_local_database as db;
+
+    pub type Flags = Vec<(PathBuf, ArcRwSignal<Vec<Flag>>)>;
+
+    /// Flags keyed by full resource graph path.
+    #[derive(derive_more::Deref, Clone, Copy)]
+    pub struct State(RwSignal<Flags>);
+    impl State {
+        pub fn new(graph: &db::state::Graph) -> Self {
+            fn inner(
+                flags: &mut Flags,
+                parent_path: impl AsRef<Path>,
+                container_idx: usize,
+                graph: &db::state::Graph,
+            ) {
+                let db::state::Graph { nodes, children } = graph;
+                let container = &nodes[container_idx];
+
+                let container_path = if container_idx == 0 {
+                    parent_path.as_ref().join(std::path::Component::RootDir)
+                } else {
+                    parent_path.as_ref().join(container.name())
+                };
+
+                if let Ok(container_flags) = container.flags() {
+                    container_flags
+                        .iter()
+                        .for_each(|(resource_path, resource_flags)| {
+                            let num_components = resource_path.components().count();
+                            assert!(num_components > 0);
+                            let resource_path = if num_components == 1 {
+                                let segment = resource_path.components().next().unwrap();
+                                assert_matches!(segment, std::path::Component::RootDir);
+                                container_path.clone()
+                            } else {
+                                assert!(resource_path.is_relative());
+                                container_path.join(resource_path)
+                            };
+
+                            flags.push((
+                                common::normalize_path_sep(resource_path),
+                                ArcRwSignal::new(resource_flags.clone()),
+                            ));
+                        });
+                };
+
+                for &child in &children[container_idx] {
+                    inner(flags, &container_path, child, graph);
+                }
+            }
+
+            let mut flags = vec![];
+            inner(&mut flags, PathBuf::new(), 0, graph);
+
+            Self(RwSignal::new(flags))
+        }
+
+        pub fn find(&self, path: impl Into<PathBuf>) -> ArcSignal<Option<ArcRwSignal<Vec<Flag>>>> {
+            let path = path.into();
+            ArcSignal::derive({
+                let flags = self.0;
+                move || {
+                    flags.read().iter().find_map(|(flags_path, flags)| {
+                        (*flags_path == path).then_some(flags.clone())
+                    })
+                }
+            })
+        }
+    }
 }

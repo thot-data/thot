@@ -8,7 +8,9 @@ mod graph;
 mod project;
 
 use crate::{Database, Update};
+use std::path::Path;
 use syre_fs_watcher::EventKind;
+use syre_local as local;
 
 impl Database {
     pub fn process_file_system_events(
@@ -38,4 +40,18 @@ impl Database {
             EventKind::OutOfSync => todo!(),
         }
     }
+}
+
+/// # Returns
+/// Number of occurances of [`app dir`](syre_local::constants::APP_DIR) in the path.
+fn path_app_dir_count(path: impl AsRef<Path>) -> usize {
+    path.as_ref()
+        .components()
+        .filter(|segment| match segment {
+            std::path::Component::Normal(segment) => {
+                segment.to_str().unwrap() == local::constants::APP_DIR
+            }
+            _ => false,
+        })
+        .count()
 }

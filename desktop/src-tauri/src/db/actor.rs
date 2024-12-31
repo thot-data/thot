@@ -490,8 +490,7 @@ impl Actor {
             | db::event::Project::Container { .. }
             | db::event::Project::Asset { .. }
             | db::event::Project::AssetFile(_)
-            | db::event::Project::AnalysisFile(_)
-            | db::event::Project::Flag { .. } => {
+            | db::event::Project::AnalysisFile(_) => {
                 vec![(
                     lib::event::topic::graph(project.as_ref().unwrap()),
                     lib::Event::new(update.clone().into(), event.id().clone()),

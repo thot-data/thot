@@ -66,6 +66,14 @@ impl Database {
             unreachable!("invalid paths");
         };
 
+        let path_app_dirs = super::path_app_dir_count(path);
+        if path_app_dirs > 0 {
+            if path_app_dirs == 1 {
+                assert!(!path.ends_with(local::constants::APP_DIR));
+            }
+            return vec![];
+        }
+
         // TODO: May want to return errors if project state is not valid.
         let project = self.state.find_resource_project_by_path(path).unwrap();
         let state::FolderResource::Present(project_data) = project.fs_resource().as_ref() else {
@@ -128,120 +136,6 @@ impl Database {
             .into(),
             event.id().clone(),
         )]
-
-        // let container_graph_path =
-        //     common::container_graph_path(project.path().join(&project_properties.data_root), path)
-        //         .unwrap();
-
-        // let mut updates = vec![];
-        // let project_path = project.path().clone();
-        // let project_id = project_properties.rid().clone();
-        // if !matches!(properties, Err(IoSerde::Io(io::ErrorKind::NotFound))) {
-        //     self.state
-        //         .try_reduce(server::state::Action::Project {
-        //             path: project_path.clone(),
-        //             action: server::state::project::Action::Container {
-        //                 path: container_graph_path.clone(),
-        //                 action: server::state::project::action::Container::SetProperties(
-        //                     properties.clone(),
-        //                 ),
-        //             },
-        //         })
-        //         .unwrap();
-
-        //     updates.push(Update::project_with_id(
-        //         project_id.clone(),
-        //         project_path.clone(),
-        //         update::Project::Container {
-        //             path: container_graph_path.clone(),
-        //             update: update::Container::Properties(update::DataResource::Created(
-        //                 properties,
-        //             )),
-        //         },
-        //         event.id().clone(),
-        //     ));
-        // }
-
-        // if !matches!(settings, Err(IoSerde::Io(io::ErrorKind::NotFound))) {
-        //     self.state
-        //         .try_reduce(server::state::Action::Project {
-        //             path: project_path.clone(),
-        //             action: server::state::project::Action::Container {
-        //                 path: container_graph_path.clone(),
-        //                 action: server::state::project::action::Container::SetSettings(
-        //                     settings.clone(),
-        //                 ),
-        //             },
-        //         })
-        //         .unwrap();
-
-        //     updates.push(Update::project_with_id(
-        //         project_id.clone(),
-        //         project_path.clone(),
-        //         update::Project::Container {
-        //             path: container_graph_path.clone(),
-        //             update: update::Container::Settings(update::DataResource::Created(settings)),
-        //         },
-        //         event.id().clone(),
-        //     ));
-        // }
-
-        // match assets {
-        //     Ok(assets) => {
-        //         let assets = super::container::assets::from_assets(path, assets);
-        //         self.state
-        //             .try_reduce(server::state::Action::Project {
-        //                 path: project_path.clone(),
-        //                 action: server::state::project::Action::Container {
-        //                     path: container_graph_path.clone(),
-        //                     action: server::state::project::action::Container::SetAssets(
-        //                         state::DataResource::Ok(assets.clone()),
-        //                     ),
-        //                 },
-        //             })
-        //             .unwrap();
-
-        //         updates.push(Update::project_with_id(
-        //             project_id.clone(),
-        //             project_path.clone(),
-        //             update::Project::Container {
-        //                 path: container_graph_path.clone(),
-        //                 update: update::Container::Assets(update::DataResource::Created(
-        //                     state::DataResource::Ok(assets),
-        //                 )),
-        //             },
-        //             event.id().clone(),
-        //         ));
-        //     }
-        //     Err(IoSerde::Io(io::ErrorKind::NotFound)) => {}
-        //     Err(err) => {
-        //         self.state
-        //             .try_reduce(server::state::Action::Project {
-        //                 path: project_path.clone(),
-        //                 action: server::state::project::Action::Container {
-        //                     path: container_graph_path.clone(),
-        //                     action: server::state::project::action::Container::SetAssets(
-        //                         state::DataResource::Err(err.clone()),
-        //                     ),
-        //                 },
-        //             })
-        //             .unwrap();
-
-        //         updates.push(Update::project_with_id(
-        //             project_id.clone(),
-        //             path,
-        //             update::Project::Container {
-        //                 path: container_graph_path.clone(),
-        //                 update: update::Container::Assets(update::DataResource::Created(
-        //                     state::DataResource::Err(err),
-        //                 )),
-        //             },
-        //             event.id().clone(),
-        //         ));
-        //     }
-        // }
-
-        // updates
     }
 
     fn handle_fs_event_folder_modified(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {

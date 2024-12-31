@@ -12,7 +12,7 @@ syre-local.workspace = true
 syre-local-database.workspace = true
 syre-local-runner.workspace = true
 trash = { workspace = true, optional = true }
-uuid = { workspace = true, features = ["v7"] }
+uuid = { workspace = true, features = ["v7", "serde"] }
 
 [features]
 server = ["dep:trash"]

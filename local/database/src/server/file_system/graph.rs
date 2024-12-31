@@ -294,6 +294,14 @@ impl Database {
             panic!("invalid paths");
         };
 
+        let path_app_dirs = super::path_app_dir_count(path);
+        if path_app_dirs > 0 {
+            if path_app_dirs == 1 {
+                assert!(!path.ends_with(local::constants::APP_DIR));
+            }
+            return vec![];
+        }
+
         let project = self.state.find_resource_project_by_path(path).unwrap();
         let state::FolderResource::Present(project_state) = project.fs_resource() else {
             panic!("invalid state");

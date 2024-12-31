@@ -8,8 +8,12 @@ use serde::{Deserialize, Serialize};
 use std::{ffi::OsString, path::PathBuf};
 use syre_core::{project::Project as CoreProject, system::User, types::ResourceId};
 use syre_local::{
+    self as local,
     error::IoSerde,
-    project::config::{ContainerSettings, Settings, StoredContainerProperties},
+    project::{
+        config::{ContainerSettings, Settings, StoredContainerProperties},
+        resources::flag,
+    },
     system::resources::Config as ConfigData,
 };
 use uuid::Uuid;
@@ -212,11 +216,6 @@ pub enum Project {
 
     #[from]
     AnalysisFile(AnalysisFile),
-
-    Flag {
-        resource: ResourceId,
-        message: String,
-    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -268,6 +267,7 @@ pub enum Container {
     Properties(DataResource<StoredContainerProperties>),
     Settings(DataResource<ContainerSettings>),
     Assets(DataResource<Vec<state::Asset>>),
+    Flags(DataResource<Vec<(PathBuf, Vec<local::project::resources::Flag>)>>),
 }
 
 /// Asset state updates.

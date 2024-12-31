@@ -12,7 +12,7 @@ use crate::{
 use futures::StreamExt;
 use has_id::HasId;
 use leptos::{
-    either::Either,
+    either::{Either, EitherOf3},
     ev::{DragEvent, MouseEvent, WheelEvent},
     html,
     portal::Portal,
@@ -40,6 +40,7 @@ const CANVAS_BUTTON_RADIUS: usize = 10;
 const CANVAS_BUTTON_STROKE: usize = 2; // ensure this aligns with the actual stroke width defined in svg elements
 const TOGGLE_VIEW_INDICATOR_RADIUS: usize = 3;
 const ICON_SCALE: f64 = 0.9;
+const FLAGS_INDICATOR_RADIUS: usize = 4;
 const VB_SCALE_ENLARGE: f32 = 0.9; // zoom in should reduce viewport.
 const VB_SCALE_REDUCE: f32 = 1.1;
 pub const VB_BASE: usize = 1000;
@@ -99,6 +100,43 @@ struct ContainerPreviewHeight(ReadSignal<usize>);
 
 #[derive(derive_more::Deref, derive_more::From, Clone)]
 struct Container(state::graph::Node);
+
+#[derive(Clone)]
+struct FlagsDisplayState {
+    expanded: RwSignal<bool>,
+    portal_ref: NodeRef<svg::ForeignObject>,
+}
+
+impl FlagsDisplayState {
+    pub fn new() -> Self {
+        Self {
+            expanded: RwSignal::new(false),
+            portal_ref: NodeRef::new(),
+        }
+    }
+
+    pub fn width(&self) -> ArcSignal<usize> {
+        let expanded = self.expanded.read_only();
+        ArcSignal::derive(move || {
+            if expanded() {
+                CONTAINER_WIDTH
+            } else {
+                FLAGS_INDICATOR_RADIUS * 2
+            }
+        })
+    }
+
+    pub fn height(&self) -> ArcSignal<usize> {
+        let expanded = self.expanded.read_only();
+        ArcSignal::derive(move || {
+            if expanded() {
+                100
+            } else {
+                FLAGS_INDICATOR_RADIUS * 2
+            }
+        })
+    }
+}
 
 /// Node ref to the modal portal.
 #[derive(Clone, derive_more::Deref)]
@@ -537,6 +575,7 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
     let create_child_ref = NodeRef::<html::Dialog>::new();
     let wrapper_node = NodeRef::<svg::Svg>::new();
     let container_node = NodeRef::<html::Div>::new();
+    let flags_display_state = FlagsDisplayState::new();
 
     fn child_key(child: &state::graph::Node, graph: &state::Graph) -> String {
         child.properties().with_untracked(|properties| {
@@ -573,31 +612,25 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
 
     let display_data = display_state.find(&root).unwrap();
 
-    let container_height = Signal::derive(move || {
-        container_preview_height.with(|preview_height| CONTAINER_HEADER_HEIGHT + preview_height)
-    });
+    let container_height =
+        Signal::derive(move || container_preview_height() + CONTAINER_HEADER_HEIGHT);
 
     let width = Signal::derive({
         let width = display_data.width();
-        move || {
-            width.with(|width| {
-                width.get() * (CONTAINER_WIDTH + PADDING_X_SIBLING) - PADDING_X_SIBLING
-            })
-        }
+        move || width.read().get() * (CONTAINER_WIDTH + PADDING_X_SIBLING) - PADDING_X_SIBLING
     });
 
     let height = {
-        let root = root.clone();
         let root_height = display_data.height();
         let container_visibility = container_visibility.read_only();
         move || {
             let height = if container_visibility() {
-                let height = root_height.with(|height| height.get());
-                height * (container_height.get() + PADDING_Y_CHILDREN) - PADDING_Y_CHILDREN
+                root_height.read().get() * (container_height() + PADDING_Y_CHILDREN)
+                    - PADDING_Y_CHILDREN
                     + CANVAS_BUTTON_RADIUS
                     + CANVAS_BUTTON_STROKE
             } else {
-                container_height.get() + PADDING_Y_CHILDREN - PADDING_Y_CHILDREN / 2
+                container_height() + PADDING_Y_CHILDREN - PADDING_Y_CHILDREN / 2
                     + CANVAS_BUTTON_RADIUS
                     + CANVAS_BUTTON_STROKE
             };
@@ -675,11 +708,15 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
     };
 
     view! {
-        <svg node_ref=wrapper_node width=width height=height x=x y=y>
+        <svg node_ref=wrapper_node width=width height=height x=x y=y class="overflow-visible">
             <GraphEdges x_node children_widths container_visibility=container_visibility.clone() />
             <g class="group">
                 <foreignObject width=CONTAINER_WIDTH height=container_height x=x_node y=0>
-                    <ContainerView node_ref=container_node container=root.clone() />
+                    <ContainerView
+                        node_ref=container_node
+                        container=root.clone()
+                        flags_display_state=flags_display_state.clone()
+                    />
                 </foreignObject>
                 <svg
                     x=move || {
@@ -717,6 +754,14 @@ fn GraphView(root: state::graph::Node) -> impl IntoView {
                         />
                     </svg>
                 </svg>
+                <foreignObject
+                    node_ref=flags_display_state.portal_ref
+                    width=flags_display_state.width()
+                    height=flags_display_state.height()
+                    x=move || x_node() + (0.95 * CONTAINER_WIDTH as f64) as usize
+                    y=7
+                    class="transition-size"
+                ></foreignObject>
             </g>
             <g class:hidden={
                 let container_visibility = container_visibility.clone();
@@ -1053,11 +1098,18 @@ fn CreateChildContainer(
 fn ContainerView(
     #[prop(optional)] node_ref: NodeRef<html::Div>,
     container: state::graph::Node,
+    flags_display_state: FlagsDisplayState,
 ) -> impl IntoView {
     move || {
         container.properties().with(|properties| {
             if properties.is_ok() {
-                Either::Left(view! { <ContainerOk node_ref container=container.clone() /> })
+                Either::Left(view! {
+                    <ContainerOk
+                        node_ref
+                        container=container.clone()
+                        flags_display_state=flags_display_state.clone()
+                    />
+                })
             } else {
                 Either::Right(view! { <ContainerErr node_ref container=container.clone() /> })
             }
@@ -1071,6 +1123,7 @@ fn ContainerView(
 fn ContainerOk(
     #[prop(optional)] node_ref: NodeRef<html::Div>,
     container: state::graph::Node,
+    flags_display_state: FlagsDisplayState,
 ) -> impl IntoView {
     assert!(container
         .properties()
@@ -1240,7 +1293,7 @@ fn ContainerOk(
                 },
             )
             class=(["border-4", "border-primary-700"], highlight.clone())
-            class="h-full cursor-pointer rounded bg-white dark:bg-secondary-700"
+            class="relative h-full cursor-pointer rounded bg-white dark:bg-secondary-700"
             data-resource=DATA_KEY_CONTAINER
             data-rid=rid
             data-path=path
@@ -1261,6 +1314,28 @@ fn ContainerOk(
                     />
                 </div>
             </div>
+
+            {
+                let container = container.clone();
+                move || {
+                    if let Some(mount) = flags_display_state.portal_ref.get() {
+                        let mount = (*mount).clone();
+                        let container = container.clone();
+                        Either::Left(
+                            view! {
+                                <Portal mount>
+                                    <Flags
+                                        container=container.clone()
+                                        expanded=flags_display_state.expanded
+                                    />
+                                </Portal>
+                            },
+                        )
+                    } else {
+                        Either::Right(())
+                    }
+                }
+            }
         </div>
     }
 }
@@ -1769,6 +1844,140 @@ fn Metadata(metadata: ReadSignal<state::Metadata>) -> impl IntoView {
 #[component]
 fn NoMetadata() -> impl IntoView {
     view! { <div class="px-2">"(no metadata)"</div> }
+}
+
+#[component]
+fn Flags(container: state::graph::Node, expanded: RwSignal<bool>) -> impl IntoView {
+    let graph = expect_context::<state::Graph>();
+    let flags_state = expect_context::<state::Flags>();
+    let flags = flags_state.find(graph.path(&container).unwrap());
+
+    let expand_flags = move |e: MouseEvent| {
+        if e.button() != types::MouseButton::Primary {
+            return;
+        }
+        e.stop_propagation();
+
+        expanded.set(true);
+    };
+
+    let contract_flags = move |e: MouseEvent| {
+        if e.button() != types::MouseButton::Primary {
+            return;
+        }
+        e.stop_propagation();
+
+        expanded.set(false);
+    };
+
+    move || {
+        if flags
+            .read()
+            .as_ref()
+            .map(|flags| flags.read().is_empty())
+            .unwrap_or(true)
+        {
+            EitherOf3::A(())
+        } else if !expanded() {
+            EitherOf3::B(view! {
+                <div>
+                    <button on:mousedown=expand_flags class="block">
+                        <Icon
+                            icon=icondata::BsCircleFill
+                            width=(FLAGS_INDICATOR_RADIUS * 2).to_string()
+                            height=(FLAGS_INDICATOR_RADIUS * 2).to_string()
+                            attr:class="text-syre-yellow-500 text-syre-yellow-600 dark:text-syre-yellow-600 hover:text-syre-yellow-700"
+                        />
+                    </button>
+                </div>
+            })
+        } else {
+            let flags_data = flags.read().as_ref().unwrap().clone();
+            let container_path = {
+                let graph = graph.clone();
+                let container = container.clone();
+                move || graph.path(&container).unwrap()
+            };
+
+            let resource_path = move || PathBuf::from("/");
+
+            EitherOf3::C(view! {
+                <div class="w-full h-full border-2 border-black dark:border-secondary-400 rounded \
+                bg-white dark:bg-secondary-800">
+                    <div class="relative pb-2">
+                        <h3 class="px-2 text-lg">"Flags"</h3>
+                        <div class="absolute top-0 right-2">
+                            <button on:mousedown=contract_flags>
+                                <Icon icon=components::icon::Close />
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <ul class="list-disc">
+                            <For each=flags_data key=|flag| flag.id().clone() let:flag>
+                                <li class="px-2 pb-2">
+                                    <Flag
+                                        container_path=container_path.clone()
+                                        resource_path=resource_path.clone()
+                                        flag
+                                    />
+                                </li>
+                            </For>
+                        </ul>
+                    </div>
+                </div>
+            })
+        }
+    }
+}
+
+#[component]
+fn Flag(
+    container_path: impl Fn() -> PathBuf + 'static,
+    resource_path: impl Fn() -> PathBuf + 'static,
+    flag: local::project::resources::Flag,
+) -> impl IntoView {
+    let project = expect_context::<state::Project>();
+    let messages = expect_context::<types::Messages>();
+
+    let remove_flag_action = Action::new_local({
+        let project = project.path();
+        let flag = flag.clone();
+        move |_| {
+            let container_path = container_path();
+            let resource_path = resource_path();
+            let flag = flag.id().clone();
+            async move {
+                if let Err(err) =
+                    remove_flag(project.get_untracked(), container_path, resource_path, flag).await
+                {
+                    let mut msg = types::message::Builder::error("Could not remove flag.");
+                    msg.body(format!("{err:?}"));
+                    messages.write().push(msg.build());
+                }
+            }
+        }
+    });
+
+    let trigger_remove_flag = move |e: MouseEvent| {
+        if e.button() != types::MouseButton::Primary {
+            return;
+        }
+        e.stop_propagation();
+
+        remove_flag_action.dispatch(());
+    };
+
+    view! {
+        <div class="flex">
+            <div class="grow">{flag.message().clone()}</div>
+            <div>
+                <button on:mousedown=trigger_remove_flag disabled=remove_flag_action.pending()>
+                    <Icon icon=components::icon::Remove />
+                </button>
+            </div>
+        </div>
+    }
 }
 
 #[component]
@@ -2304,6 +2513,33 @@ async fn remove_asset(
     )
     .await
     .map_err(|err| err.into())
+}
+
+/// Remove a flag from a resource.
+async fn remove_flag(
+    project: impl Into<PathBuf>,
+    container: impl Into<PathBuf>,
+    resource: impl Into<PathBuf>,
+    flag: local::project::resources::flag::Id,
+) -> Result<(), local::error::IoSerde> {
+    #[derive(Serialize)]
+    struct Args {
+        project: PathBuf,
+        container: PathBuf,
+        resource: PathBuf,
+        flag: local::project::resources::flag::Id,
+    }
+
+    tauri_sys::core::invoke_result(
+        "remove_flag",
+        Args {
+            project: project.into(),
+            container: container.into(),
+            resource: resource.into(),
+            flag,
+        },
+    )
+    .await
 }
 
 mod display {

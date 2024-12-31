@@ -1,9 +1,6 @@
 //! Project state.
 use super::Error;
-use crate::{
-    common,
-    state::{DataResource, FileResource, FolderResource},
-};
+use crate::state::{DataResource, FileResource, FolderResource};
 pub use action::Action;
 use std::path::PathBuf;
 use syre_local::{file_resource::LocalResource, TryReducible};
@@ -454,6 +451,9 @@ pub mod project {
                 action::Container::SetAssets(assets) => {
                     container.assets = assets;
                 }
+                action::Container::SetFlags(flags) => {
+                    container.flags = flags;
+                }
                 action::Container::RemoveConfig => {
                     container.properties = DataResource::Err(IoSerde::Io(io::ErrorKind::NotFound));
                     container.settings = DataResource::Err(IoSerde::Io(io::ErrorKind::NotFound));
@@ -557,7 +557,7 @@ mod container {
     use crate::state::{Asset, Container};
     use std::{io, path::Path};
     use syre_core::project::Asset as CoreAsset;
-    use syre_local::loader::container::Loader;
+    use syre_local::loader;
 
     impl Container {
         /// # Errors
@@ -568,11 +568,11 @@ mod container {
                 return Err(io::ErrorKind::InvalidFilename);
             };
 
-            let syre_local::loader::container::State {
+            let loader::container::State {
                 properties,
                 settings,
                 assets,
-            } = Loader::load_resources(path);
+            } = loader::container::Loader::load_resources(path);
 
             let assets = assets.map(|assets| {
                 assets
@@ -591,11 +591,14 @@ mod container {
                     .collect()
             });
 
+            let flags = loader::container::flags::Loader::load(path);
+
             Ok(Self {
                 name: name.to_os_string(),
                 properties,
                 settings,
                 assets,
+                flags,
             })
         }
     }
@@ -624,7 +627,7 @@ pub mod graph {
     };
     use rayon::prelude::*;
     use std::{
-        fs, io,
+        io,
         path::{Path, PathBuf},
         sync::{Arc, Mutex},
     };
@@ -1107,7 +1110,10 @@ pub(crate) mod action {
     use crate::state;
     use std::{ffi::OsString, path::PathBuf};
     use syre_core::{project::Project as CoreProject, types::ResourceId};
-    use syre_local::project::config::{ContainerSettings, Settings, StoredContainerProperties};
+    use syre_local::project::{
+        config::{ContainerSettings, Settings, StoredContainerProperties},
+        resources::Flag,
+    };
 
     #[derive(Debug, derive_more::From)]
     pub enum Action {
@@ -1179,6 +1185,7 @@ pub(crate) mod action {
         SetProperties(DataResource<StoredContainerProperties>),
         SetSettings(DataResource<ContainerSettings>),
         SetAssets(DataResource<Vec<state::Asset>>),
+        SetFlags(DataResource<Vec<(PathBuf, Vec<Flag>)>>),
 
         /// Sets all config resources to be absent.
         RemoveConfig,

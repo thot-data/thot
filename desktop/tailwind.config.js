@@ -12,6 +12,7 @@ module.exports = {
 			fontFamily,
 			transitionProperty: {
 				"width": "width",
+				"size": "width, height",
 				"absolute-position": "top, bottom, left, right"
 			}
 		},

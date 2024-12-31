@@ -211,7 +211,6 @@ impl FsWatcher {
                 assert!(!path.exists());
                 let maybe_file_kind = resources::resource_kind(path, &self.app_config);
                 let maybe_folder_kind = resources::dir_kind(path);
-
                 let event = match (maybe_file_kind, maybe_folder_kind) {
                     (
                         Ok(Some(resources::ResourceEvent::Analysis {
@@ -229,6 +228,35 @@ impl FsWatcher {
                             event.id().clone(),
                         )
                         .add_path(path.clone())
+                    }
+
+                    (
+                        Ok(Some(resources::ResourceEvent::Container {
+                            project: project_file,
+                            kind,
+                        })),
+                        Ok(resources::DirKind::None {
+                            project: project_dir,
+                        }),
+                    ) => {
+                        assert_eq!(project_file, project_dir);
+                        let kind = match kind {
+                            resources::Container::Properties => app::EventKind::Container(
+                                app::Container::Properties(app::StaticResourceEvent::Removed),
+                            ),
+                            resources::Container::Settings => app::EventKind::Container(
+                                app::Container::Settings(app::StaticResourceEvent::Removed),
+                            ),
+                            resources::Container::Assets => app::EventKind::Container(
+                                app::Container::Assets(app::StaticResourceEvent::Removed),
+                            ),
+                            resources::Container::Flags => app::EventKind::Container(
+                                app::Container::Flags(app::StaticResourceEvent::Removed),
+                            ),
+                        };
+
+                        Event::with_time(kind, event.time, event.id().clone())
+                            .add_path(path.clone())
                     }
 
                     (Ok(_), Ok(_)) => Event::with_time(
@@ -982,6 +1010,10 @@ impl FsWatcher {
                 resources::Container::Assets => {
                     app::Container::Assets(app::StaticResourceEvent::Created).into()
                 }
+
+                resources::Container::Flags => {
+                    app::Container::Flags(app::StaticResourceEvent::Created).into()
+                }
             },
 
             resources::ResourceEvent::Analysis { .. } => {
@@ -1034,6 +1066,10 @@ impl FsWatcher {
                 resources::Container::Assets => {
                     app::Container::Assets(app::StaticResourceEvent::Removed).into()
                 }
+
+                resources::Container::Flags => {
+                    app::Container::Flags(app::StaticResourceEvent::Removed).into()
+                }
             },
 
             resources::ResourceEvent::Analysis { .. } => {
@@ -1085,6 +1121,10 @@ impl FsWatcher {
 
                 resources::Container::Assets => {
                     app::Container::Assets(app::StaticResourceEvent::Removed).into()
+                }
+
+                resources::Container::Flags => {
+                    app::Container::Flags(app::StaticResourceEvent::Removed).into()
                 }
             },
 
@@ -1144,6 +1184,11 @@ impl FsWatcher {
                 .into(),
 
                 resources::Container::Assets => app::Container::Assets(
+                    app::StaticResourceEvent::Modified(app::ModifiedKind::Other),
+                )
+                .into(),
+
+                resources::Container::Flags => app::Container::Flags(
                     app::StaticResourceEvent::Modified(app::ModifiedKind::Other),
                 )
                 .into(),
@@ -1261,6 +1306,10 @@ impl FsWatcher {
                 resources::Container::Assets => {
                     app::Container::Assets(app::StaticResourceEvent::Removed).into()
                 }
+
+                resources::Container::Flags => {
+                    app::Container::Flags(app::StaticResourceEvent::Removed).into()
+                }
             },
 
             resources::ResourceEvent::Analysis { .. } => {
@@ -1314,6 +1363,10 @@ impl FsWatcher {
 
                 resources::Container::Assets => {
                     app::Container::Assets(app::StaticResourceEvent::Created).into()
+                }
+
+                resources::Container::Flags => {
+                    app::Container::Flags(app::StaticResourceEvent::Created).into()
                 }
             },
 
@@ -1443,6 +1496,11 @@ impl FsWatcher {
                     app::StaticResourceEvent::Modified(app::ModifiedKind::Data),
                 )
                 .into(),
+
+                resources::Container::Flags => app::Container::Flags(
+                    app::StaticResourceEvent::Modified(app::ModifiedKind::Data),
+                )
+                .into(),
             },
 
             resources::ResourceEvent::Analysis { .. } => {
@@ -1503,6 +1561,11 @@ impl FsWatcher {
                 .into(),
 
                 resources::Container::Assets => app::Container::Assets(
+                    app::StaticResourceEvent::Modified(app::ModifiedKind::Other),
+                )
+                .into(),
+
+                resources::Container::Flags => app::Container::Flags(
                     app::StaticResourceEvent::Modified(app::ModifiedKind::Other),
                 )
                 .into(),
@@ -2109,6 +2172,7 @@ mod resources {
         Properties,
         Settings,
         Assets,
+        Flags,
     }
 
     #[derive(Debug)]
@@ -2427,6 +2491,11 @@ mod resources {
                     Some(ResourceEvent::Container {
                         project: project.rid().clone(),
                         kind: Container::Assets,
+                    })
+                } else if path.ends_with(common::flags_file()) {
+                    Some(ResourceEvent::Container {
+                        project: project.rid().clone(),
+                        kind: Container::Flags,
                     })
                 } else {
                     None

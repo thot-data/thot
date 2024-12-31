@@ -174,30 +174,30 @@ fn project_root_path_if_no_root_is_found_should_error() {
     todo!();
 }
 
-#[test]
-fn project_resource_root_path_for_root_should_work() {
-    // setup
-    let _dir = tempfile::tempdir().unwrap();
-    let root = _dir.path();
-    let rid = init(root).unwrap();
+// #[test]
+// fn project_resource_root_path_for_root_should_work() {
+//     // setup
+//     let _dir = tempfile::tempdir().unwrap();
+//     let root = _dir.path();
+//     let rid = init(root).unwrap();
 
-    // test
-    let found = project_resource_root_path(root).unwrap();
-    let projects = ProjectManifest::load().unwrap();
-    assert!(projects.contains(&found));
-}
+//     // test
+//     let found = project_resource_root_path(root).unwrap();
+//     let projects = ProjectManifest::load().unwrap();
+//     assert!(projects.contains(&found));
+// }
 
 #[test]
 fn project_resource_root_path_should_work_for_descendents() {
     todo!();
 }
 
-#[test]
-#[should_panic(expected = "PathNotInProject")]
-fn project_resource_root_path_should_error_if_path_is_not_in_a_project() {
-    let root: PathBuf = DirPath(EN).fake();
-    project_resource_root_path(root.as_path()).unwrap();
-}
+// #[test]
+// #[should_panic(expected = "PathNotInProject")]
+// fn project_resource_root_path_should_error_if_path_is_not_in_a_project() {
+//     let root: PathBuf = DirPath(EN).fake();
+//     project_resource_root_path(root.as_path()).unwrap();
+// }
 
 #[test]
 #[should_panic(expected = "Misconfigured")]

@@ -26,7 +26,6 @@ impl Database {
         let [path] = &event.paths()[..] else {
             panic!("invalid paths");
         };
-        tracing::info!("file created {path:?}");
 
         // TODO: May want to perform additional checks on if file is a resource worth watching.
         vec![]

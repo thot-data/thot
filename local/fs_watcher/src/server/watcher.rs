@@ -209,7 +209,7 @@ pub struct FsWatcher {
     /// Application configuration.
     app_config: config::Config,
 
-    /// Flag to indicate the watcher should be set down.
+    /// Watcher should shutdown.
     shutdown: Mutex<bool>,
 }
 

@@ -16,7 +16,12 @@ use leptos::{
 use leptos_icons::*;
 use leptos_router::{components::A, hooks::use_params_map};
 use serde::Serialize;
-use std::{io, path::PathBuf, str::FromStr, sync::Arc};
+use std::{
+    io,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+};
 use syre_core::{self as core, types::ResourceId};
 use syre_desktop_lib as lib;
 use syre_local::{self as local, types::AnalysisKind};
@@ -199,8 +204,7 @@ fn WorkspaceView(
                         db::event::Project::Graph(_)
                         | db::event::Project::Container { .. }
                         | db::event::Project::Asset { .. }
-                        | db::event::Project::AssetFile(_)
-                        | db::event::Project::Flag { .. } => continue, // handled elsewhere
+                        | db::event::Project::AssetFile(_) => continue, // handled elsewhere
                     }
                 }
             }
@@ -243,6 +247,7 @@ fn NoGraph() -> impl IntoView {
 fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> impl IntoView {
     let project = expect_context::<state::Project>();
     let messages = expect_context::<types::Messages>();
+    let flags = state::Flags::new(&graph);
     let graph = state::Graph::new(graph);
     let workspace_graph_state = state::WorkspaceGraph::new(&graph);
     let display_state = state::Display::from(
@@ -251,6 +256,7 @@ fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> 
     );
     let viewbox = ViewboxState::default();
     provide_context(graph.clone());
+    provide_context(flags);
     provide_context(workspace_graph_state.clone());
     provide_context(display_state.clone());
     provide_context(viewbox.clone());
@@ -294,12 +300,13 @@ fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> 
                         db::event::Project::Graph(_)
                         | db::event::Project::Container { .. }
                         | db::event::Project::Asset { .. }
-                        | db::event::Project::AssetFile(_)
-                        | db::event::Project::Flag { .. } => handle_event_graph(
+                        | db::event::Project::AssetFile(_) => handle_event_graph(
                             event,
                             graph.clone(),
                             workspace_graph_state.clone(),
                             display_state.clone(),
+                            flags,
+                            messages,
                         ),
                     }
                 }
@@ -1379,8 +1386,7 @@ fn handle_event_project(event: lib::Event, project: state::Project) {
         db::event::Project::Graph(_)
         | db::event::Project::Container { .. }
         | db::event::Project::Asset { .. }
-        | db::event::Project::AssetFile(_)
-        | db::event::Project::Flag { .. } => unreachable!("handled elsewhere"),
+        | db::event::Project::AssetFile(_) => unreachable!("handled elsewhere"),
 
         db::event::Project::FolderRemoved => todo!(),
         db::event::Project::Moved(_) => todo!(),
@@ -1583,6 +1589,8 @@ fn handle_event_graph(
     graph: state::Graph,
     workspace_graph_state: state::WorkspaceGraph,
     display_state: state::Display,
+    flags: state::Flags,
+    messages: types::Messages,
 ) {
     let lib::EventKind::Project(update) = event.kind() else {
         panic!("invalid event kind");
@@ -1599,12 +1607,15 @@ fn handle_event_graph(
         db::event::Project::Graph(_) => {
             handle_event_graph_graph(event, graph, workspace_graph_state, display_state)
         }
-        db::event::Project::Container { .. } => {
-            handle_event_graph_container(event, graph, workspace_graph_state.selection_resources())
-        }
+        db::event::Project::Container { .. } => handle_event_graph_container(
+            event,
+            graph,
+            workspace_graph_state.selection_resources(),
+            flags,
+            messages,
+        ),
         db::event::Project::Asset { .. } => handle_event_graph_asset(event, graph),
         db::event::Project::AssetFile(_) => handle_event_graph_asset_file(event, graph),
-        db::event::Project::Flag { .. } => todo!(),
     }
 }
 
@@ -1787,6 +1798,8 @@ fn handle_event_graph_container(
     event: lib::Event,
     graph: state::Graph,
     selection_resources: &state::workspace_graph::SelectionResources,
+    flags: state::Flags,
+    messages: types::Messages,
 ) {
     let lib::EventKind::Project(db::event::Project::Container { update, .. }) = event.kind() else {
         panic!("invalid event kind");
@@ -1799,6 +1812,9 @@ fn handle_event_graph_container(
         db::event::Container::Settings(_) => handle_event_graph_container_settings(event, graph),
         db::event::Container::Assets(_) => {
             handle_event_graph_container_assets(event, graph, selection_resources)
+        }
+        db::event::Container::Flags(_) => {
+            handle_event_graph_container_flags(event, graph, flags, messages)
         }
     }
 }
@@ -2755,4 +2771,208 @@ fn update_metadata(metadata: RwSignal<state::Metadata>, update: &syre_core::proj
             }
         }
     })
+}
+
+fn handle_event_graph_container_flags(
+    event: lib::Event,
+    graph: state::Graph,
+    flags: state::Flags,
+    messages: types::Messages,
+) {
+    let lib::EventKind::Project(db::event::Project::Container {
+        path: _path,
+        update: db::event::Container::Flags(update),
+    }) = event.kind()
+    else {
+        panic!("invalid event kind");
+    };
+
+    match update {
+        db::event::DataResource::Created(_) => {
+            handle_event_graph_container_flags_created(event, flags)
+        }
+        db::event::DataResource::Removed => {
+            handle_event_graph_container_flags_removed(event, graph, flags)
+        }
+        db::event::DataResource::Corrupted(_) => {
+            handle_event_graph_container_flags_corrupted(event, graph, flags, messages)
+        }
+        db::event::DataResource::Repaired(_) => {
+            handle_event_graph_container_flags_repaired(event, flags)
+        }
+        db::event::DataResource::Modified(_) => {
+            handle_event_graph_container_flags_modified(event, flags)
+        }
+    }
+}
+
+fn handle_event_graph_container_flags_created(event: lib::Event, flags: state::Flags) {
+    let lib::EventKind::Project(db::event::Project::Container {
+        path,
+        update: db::event::Container::Flags(db::event::DataResource::Created(update)),
+    }) = event.kind()
+    else {
+        panic!("invalid event kind");
+    };
+
+    match update {
+        db::state::DataResource::Ok(update) => {
+            insert_graph_container_flags(path, update, flags);
+        }
+        Err(err) => {
+            tracing::debug!("corrupt flags file created: {err:?}");
+        }
+    }
+}
+
+fn handle_event_graph_container_flags_removed(
+    event: lib::Event,
+    graph: state::Graph,
+    flags: state::Flags,
+) {
+    let lib::EventKind::Project(db::event::Project::Container {
+        path,
+        update: db::event::Container::Flags(db::event::DataResource::Removed),
+    }) = event.kind()
+    else {
+        panic!("invalid event kind");
+    };
+
+    remove_graph_container_flags(path, graph, flags);
+}
+
+fn handle_event_graph_container_flags_corrupted(
+    event: lib::Event,
+    graph: state::Graph,
+    flags: state::Flags,
+    messages: types::Messages,
+) {
+    let lib::EventKind::Project(db::event::Project::Container {
+        path,
+        update: db::event::Container::Flags(db::event::DataResource::Corrupted(error)),
+    }) = event.kind()
+    else {
+        panic!("invalid event kind");
+    };
+
+    remove_graph_container_flags(path, graph, flags);
+    let mut msg = types::message::Builder::error("Flags file corrupted.");
+    msg.body(format!("{error:?}"));
+    messages.write().push(msg.build());
+}
+
+fn handle_event_graph_container_flags_repaired(event: lib::Event, flags: state::Flags) {
+    let lib::EventKind::Project(db::event::Project::Container {
+        path,
+        update: db::event::Container::Flags(db::event::DataResource::Repaired(update)),
+    }) = event.kind()
+    else {
+        panic!("invalid event kind");
+    };
+
+    insert_graph_container_flags(path, update, flags);
+}
+
+fn handle_event_graph_container_flags_modified(event: lib::Event, flags: state::Flags) {
+    let lib::EventKind::Project(db::event::Project::Container {
+        path: container_path,
+        update: db::event::Container::Flags(db::event::DataResource::Modified(update)),
+    }) = event.kind()
+    else {
+        panic!("invalid event kind");
+    };
+    let root_dir = PathBuf::from("/");
+
+    let update = update
+        .into_iter()
+        .map(|(path, flags)| {
+            let path = if *path == root_dir {
+                container_path.clone()
+            } else {
+                container_path.join(path)
+            };
+
+            (common::normalize_path_sep(path), flags)
+        })
+        .collect::<Vec<_>>();
+
+    let paths = update.iter().map(|(path, _)| path).collect::<Vec<_>>();
+    flags.write().retain(|(path, _)| paths.contains(&path));
+
+    update.into_iter().for_each(|(path, flags_update)| {
+        if let Some((_, state_flags)) = flags
+            .read_untracked()
+            .iter()
+            .find(|(state_path, _)| *state_path == path)
+        {
+            state_flags.set(flags_update.clone());
+        } else {
+            flags
+                .write()
+                .push((path, ArcRwSignal::new(flags_update.clone())));
+        }
+    });
+}
+
+fn insert_graph_container_flags(
+    container: &PathBuf,
+    update: &Vec<(PathBuf, Vec<local::project::resources::Flag>)>,
+    flags: state::Flags,
+) {
+    let root_dir = PathBuf::from("/");
+
+    let update = update
+        .into_iter()
+        .map(|(path, flags)| {
+            let path = if *path == root_dir {
+                container.clone()
+            } else {
+                container.join(path)
+            };
+
+            (
+                common::normalize_path_sep(path),
+                ArcRwSignal::new(flags.clone()),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert!(!update.iter().any(|(update_path, _)| flags
+        .read_untracked()
+        .iter()
+        .find(|(flag_path, _)| update_path == flag_path)
+        .is_some()));
+
+    flags.write().extend(update)
+}
+
+fn remove_graph_container_flags(
+    container: impl AsRef<Path>,
+    graph: state::Graph,
+    flags: state::Flags,
+) {
+    let container_path = container.as_ref();
+    let container = graph
+        .find(common::normalize_path_sep(container_path))
+        .unwrap()
+        .unwrap();
+    let assets = container.assets();
+    let mut paths = assets
+        .read_untracked()
+        .as_ref()
+        .map(|assets| {
+            assets
+                .read_untracked()
+                .iter()
+                .map(|asset| {
+                    common::normalize_path_sep(container_path.join(&*asset.path().read_untracked()))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or(vec![]);
+    paths.push(common::normalize_path_sep(container_path));
+
+    flags
+        .write()
+        .retain(|(path, _)| !paths.contains(&common::normalize_path_sep(path)));
 }

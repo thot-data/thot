@@ -7,10 +7,7 @@ use crate::{
     },
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{fs, io, path::Path};
 use syre_core::project::{Asset, Container as CoreContainer};
 
 /// Loads a [`Container`].
@@ -54,9 +51,9 @@ impl Loader {
         let settings_path =
             base_path.join(<Container as LocalResource<ContainerSettings>>::rel_path());
 
-        let container = Self::load_json::<StoredContainerProperties>(properties_path);
-        let assets = Self::load_json(assets_path);
-        let settings = Self::load_json(settings_path);
+        let container = load_json::<StoredContainerProperties>(properties_path);
+        let assets = load_json(assets_path);
+        let settings = load_json(settings_path);
 
         State::new(container, settings, assets)
     }
@@ -68,7 +65,7 @@ impl Loader {
         let path =
             base_path.join(<Container as LocalResource<StoredContainerProperties>>::rel_path());
 
-        Ok(Self::load_json::<StoredContainerProperties>(path)?)
+        Ok(load_json::<StoredContainerProperties>(path)?)
     }
 
     pub fn load_from_only_settings(
@@ -76,20 +73,13 @@ impl Loader {
     ) -> Result<ContainerSettings, IoSerde> {
         let base_path = base_path.as_ref();
         let path = base_path.join(<Container as LocalResource<ContainerSettings>>::rel_path());
-        Ok(Self::load_json::<ContainerSettings>(path)?)
+        Ok(load_json::<ContainerSettings>(path)?)
     }
 
     pub fn load_from_only_assets(base_path: impl AsRef<Path>) -> Result<Assets, IoSerde> {
         let base_path = base_path.as_ref();
         let path = base_path.join(<Container as LocalResource<Vec<Asset>>>::rel_path());
-        Ok(Self::load_json::<Vec<Asset>>(path)?.into())
-    }
-
-    /// Convenience function for loading data from a JSON file.
-    fn load_json<T: DeserializeOwned>(path: PathBuf) -> Result<T, IoSerde> {
-        let file = fs::File::open(&path)?;
-        let reader = io::BufReader::new(file);
-        Ok(serde_json::from_reader(reader)?)
+        Ok(load_json::<Vec<Asset>>(path)?.into())
     }
 }
 
@@ -170,4 +160,30 @@ pub mod error {
         #[serde(with = "io_error_serde::ErrorKind")]
         pub(crate) kind: io::ErrorKind,
     }
+}
+
+pub mod flags {
+    use crate::{common, error::IoSerde, project::resources::Flag};
+    use serde::de::DeserializeOwned;
+    use std::{
+        fs, io,
+        path::{Path, PathBuf},
+    };
+
+    pub type Flags = Vec<(PathBuf, Vec<Flag>)>;
+    pub struct Loader;
+    impl Loader {
+        pub fn load(base_path: impl AsRef<Path>) -> Result<Flags, IoSerde> {
+            let base_path = fs::canonicalize(base_path).map_err(|err| IoSerde::Io(err.kind()))?;
+            let path = common::flags_file_of(base_path);
+            super::load_json(path)
+        }
+    }
+}
+
+/// Convenience function for loading data from a JSON file.
+fn load_json<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<T, IoSerde> {
+    let file = fs::File::open(path)?;
+    let reader = io::BufReader::new(file);
+    Ok(serde_json::from_reader(reader)?)
 }

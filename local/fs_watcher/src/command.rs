@@ -1,5 +1,4 @@
 use crossbeam::channel::Sender;
-use file_id::FileId;
 use std::path::PathBuf;
 
 #[derive(Debug)]

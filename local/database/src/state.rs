@@ -11,7 +11,10 @@ use syre_core::{
 };
 use syre_local::{
     error::IoSerde,
-    project::config::{ContainerSettings, Settings, StoredContainerProperties},
+    project::{
+        config::{ContainerSettings, Settings, StoredContainerProperties},
+        resources::Flag,
+    },
     types::AnalysisKind,
 };
 
@@ -90,6 +93,7 @@ pub struct Container {
     pub(crate) properties: DataResource<StoredContainerProperties>,
     pub(crate) settings: DataResource<ContainerSettings>,
     pub(crate) assets: DataResource<Vec<Asset>>,
+    pub(crate) flags: DataResource<Vec<(PathBuf, Vec<Flag>)>>,
 }
 
 impl Container {
@@ -112,17 +116,11 @@ impl Container {
     }
 
     pub fn settings(&self) -> DataResource<&ContainerSettings> {
-        self.settings
-            .as_ref()
-            .map(|settings| settings)
-            .map_err(|err| err.clone())
+        self.settings.as_ref().map_err(|err| err.clone())
     }
 
     pub fn assets(&self) -> DataResource<&Vec<Asset>> {
-        self.assets
-            .as_ref()
-            .map(|assets| assets)
-            .map_err(|err| err.clone())
+        self.assets.as_ref().map_err(|err| err.clone())
     }
 
     pub fn analyses(&self) -> DataResource<&Vec<AnalysisAssociation>> {
@@ -130,6 +128,10 @@ impl Container {
             .as_ref()
             .map(|props| &props.analyses)
             .map_err(|err| err.clone())
+    }
+
+    pub fn flags(&self) -> DataResource<&Vec<(PathBuf, Vec<Flag>)>> {
+        self.flags.as_ref().map_err(|err| err.clone())
     }
 
     /// Creates a `[syre_core::project::Container]`.

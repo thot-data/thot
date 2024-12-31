@@ -1,6 +1,5 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use std::sync::Mutex;
 use syre_desktop::{
     commands::{
         analyses, asset, auth, common, container, fs, graph, mixed_bulk, project, settings, user,
@@ -39,6 +38,7 @@ fn main() {
             container::container_properties_update,
             container::container_rename_bulk,
             container::container_rename,
+            container::remove_flag,
             fs::pick_file_with_location,
             fs::pick_folder_with_location,
             fs::pick_folder,

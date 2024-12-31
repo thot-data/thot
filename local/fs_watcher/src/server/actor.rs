@@ -15,7 +15,7 @@ mod windows {
     use super::DEBOUNCE_TIMEOUT;
     use crate::command::WatcherCommand as Command;
     use crossbeam::channel::{Receiver, Sender};
-    use notify_debouncer_full::{DebounceEventResult, Debouncer, FileIdCache, FileIdMap};
+    use notify_debouncer_full::{DebounceEventResult, Debouncer, FileIdMap};
     use std::{
         io,
         path::{Path, PathBuf},

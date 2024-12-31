@@ -14,6 +14,7 @@ pub const PROJECT_RUNNER_SETTINGS_FILE: &str = "runner_settings.json";
 pub const CONTAINER_FILE: &str = "container.json";
 pub const CONTAINER_SETTINGS_FILE: &str = "container_settings.json";
 pub const ASSETS_FILE: &str = "assets.json";
+pub const FLAGS_FILE: &str = "flags.json";
 pub const ANALYSES_FILE: &str = "analyses.json";
 pub const IGNORE_FILE: &str = ".syreignore";
 

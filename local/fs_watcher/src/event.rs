@@ -282,6 +282,9 @@ pub enum Container {
 
     /// The container's assets file was modified.
     Assets(StaticResourceEvent),
+
+    /// The container's assets file was modified.
+    Flags(StaticResourceEvent),
 }
 
 #[derive(Debug)]

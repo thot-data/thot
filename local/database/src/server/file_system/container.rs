@@ -22,6 +22,7 @@ impl Database {
             event::Container::Properties(_) => self.handle_fs_event_container_properties(event),
             event::Container::Settings(_) => self.handle_fs_event_container_settings(event),
             event::Container::Assets(_) => self.handle_fs_event_container_assets(event),
+            event::Container::Flags(_) => self.handle_fs_event_container_flags(event),
         }
     }
 }
@@ -1493,5 +1494,363 @@ mod assets {
                 }
             })
             .collect()
+    }
+}
+
+impl Database {
+    fn handle_fs_event_container_flags(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {
+        let EventKind::Container(event::Container::Flags(kind)) = event.kind() else {
+            panic!("invalid event kind");
+        };
+
+        match kind {
+            event::StaticResourceEvent::Created => {
+                self.handle_fs_event_container_flags_created(event)
+            }
+            event::StaticResourceEvent::Removed => {
+                self.handle_fs_event_container_flags_removed(event)
+            }
+            event::StaticResourceEvent::Modified(_) => {
+                self.handle_fs_event_container_flags_modified(event)
+            }
+        }
+    }
+
+    fn handle_fs_event_container_flags_created(
+        &mut self,
+        event: syre_fs_watcher::Event,
+    ) -> Vec<Update> {
+        assert_matches!(
+            event.kind(),
+            EventKind::Container(event::Container::Flags(event::StaticResourceEvent::Created))
+        );
+
+        let path = match &event.paths()[..] {
+            [path] => path,
+            [_from, to] => to,
+            _ => panic!("invalid paths"),
+        };
+
+        let base_path = path.parent().unwrap().parent().unwrap();
+        let project = self.state.find_resource_project_by_path(path).unwrap();
+        let state::FolderResource::Present(project_state) = project.fs_resource() else {
+            panic!("invalid state");
+        };
+
+        let state::FolderResource::Present(graph) = project_state.graph() else {
+            panic!("invalid state");
+        };
+
+        let state::DataResource::Ok(project_properties) = project_state.properties() else {
+            panic!("invalid state");
+        };
+
+        let container_graph_path = base_path
+            .strip_prefix(project.path().join(&project_properties.data_root))
+            .unwrap();
+        let container_graph_path = common::prepend_root_dir(container_graph_path);
+        let container_state = graph.find(&container_graph_path).unwrap().unwrap();
+
+        let flags = loader::container::flags::Loader::load(base_path);
+        let project_path = project.path().clone();
+        let project_id = project_properties.rid().clone();
+        match flags {
+            Ok(flags) => {
+                self.state
+                    .try_reduce(server::state::Action::Project {
+                        path: project_path.clone(),
+                        action: server::state::project::Action::Container {
+                            path: container_graph_path.clone(),
+                            action: server::state::project::action::Container::SetFlags(
+                                state::DataResource::Ok(flags.clone()),
+                            ),
+                        },
+                    })
+                    .unwrap();
+
+                vec![Update::project_with_id(
+                    project_id,
+                    base_path,
+                    update::Project::Container {
+                        path: container_graph_path.clone(),
+                        update: update::Container::Flags(update::DataResource::Created(
+                            state::DataResource::Ok(flags),
+                        )),
+                    },
+                    event.id().clone(),
+                )]
+            }
+            Err(IoSerde::Io(io::ErrorKind::NotFound)) => {
+                vec![]
+            }
+            Err(err) => {
+                self.state
+                    .try_reduce(server::state::Action::Project {
+                        path: project_path.clone(),
+                        action: server::state::project::Action::Container {
+                            path: container_graph_path.clone(),
+                            action: server::state::project::action::Container::SetFlags(
+                                state::DataResource::Err(err.clone()),
+                            ),
+                        },
+                    })
+                    .unwrap();
+
+                vec![Update::project_with_id(
+                    project_id,
+                    project_path,
+                    update::Project::Container {
+                        path: container_graph_path.clone(),
+                        update: update::Container::Flags(update::DataResource::Created(
+                            state::DataResource::Err(err),
+                        )),
+                    },
+                    event.id().clone(),
+                )]
+            }
+        }
+    }
+
+    fn handle_fs_event_container_flags_removed(
+        &mut self,
+        event: syre_fs_watcher::Event,
+    ) -> Vec<Update> {
+        assert_matches!(
+            event.kind(),
+            EventKind::Container(event::Container::Flags(event::StaticResourceEvent::Removed))
+        );
+
+        let [path] = &event.paths()[..] else {
+            panic!("invalid paths");
+        };
+
+        let base_path = path.parent().unwrap().parent().unwrap();
+        let project = self.state.find_resource_project_by_path(path).unwrap();
+        let state::FolderResource::Present(project_state) = project.fs_resource() else {
+            panic!("invalid state");
+        };
+
+        let state::FolderResource::Present(graph) = project_state.graph() else {
+            panic!("invalid state");
+        };
+
+        let state::DataResource::Ok(project_properties) = project_state.properties() else {
+            panic!("invalid state");
+        };
+
+        let container_graph_path = base_path
+            .strip_prefix(project.path().join(&project_properties.data_root))
+            .unwrap();
+        let container_graph_path = common::prepend_root_dir(container_graph_path);
+        let container_state = graph.find(&container_graph_path).unwrap().unwrap();
+        let container_state = container_state.lock().unwrap();
+        assert!(!matches!(
+            container_state.flags(),
+            state::DataResource::Err(IoSerde::Io(io::ErrorKind::NotFound))
+        ));
+        drop(container_state);
+
+        let project_path = project.path().clone();
+        let project_id = project_properties.rid().clone();
+        self.state
+            .try_reduce(server::state::Action::Project {
+                path: project_path.clone(),
+                action: server::state::project::Action::Container {
+                    path: container_graph_path.clone(),
+                    action: server::state::project::action::Container::SetFlags(
+                        state::DataResource::Err(IoSerde::Io(io::ErrorKind::NotFound)),
+                    ),
+                },
+            })
+            .unwrap();
+
+        vec![Update::project_with_id(
+            project_id,
+            project_path,
+            update::Project::Container {
+                path: container_graph_path.clone(),
+                update: update::Container::Flags(update::DataResource::Removed),
+            },
+            event.id().clone(),
+        )]
+    }
+
+    fn handle_fs_event_container_flags_modified(
+        &mut self,
+        event: syre_fs_watcher::Event,
+    ) -> Vec<Update> {
+        let EventKind::Container(event::Container::Flags(event::StaticResourceEvent::Modified(
+            kind,
+        ))) = event.kind()
+        else {
+            panic!("invalid event kind");
+        };
+
+        match kind {
+            event::ModifiedKind::Data => self.handle_fs_event_container_flags_modified_data(event),
+            event::ModifiedKind::Other => {
+                self.handle_fs_event_container_flags_modified_other(event)
+            }
+        }
+    }
+
+    fn handle_fs_event_container_flags_modified_data(
+        &mut self,
+        event: syre_fs_watcher::Event,
+    ) -> Vec<Update> {
+        assert_matches!(
+            event.kind(),
+            EventKind::Container(event::Container::Flags(
+                event::StaticResourceEvent::Modified(event::ModifiedKind::Data),
+            )),
+        );
+
+        self.handle_container_flags_modified(event)
+    }
+
+    fn handle_fs_event_container_flags_modified_other(
+        &mut self,
+        event: syre_fs_watcher::Event,
+    ) -> Vec<Update> {
+        assert_matches!(
+            event.kind(),
+            EventKind::Container(event::Container::Flags(
+                event::StaticResourceEvent::Modified(event::ModifiedKind::Other),
+            )),
+        );
+
+        #[cfg(target_os = "windows")]
+        {
+            self.handle_container_flags_modified(event)
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            todo!();
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            todo!();
+        }
+    }
+
+    fn handle_container_flags_modified(&mut self, event: syre_fs_watcher::Event) -> Vec<Update> {
+        let [path] = &event.paths()[..] else {
+            panic!("invalid paths");
+        };
+
+        let base_path = path.parent().unwrap().parent().unwrap();
+        let project = self.state.find_resource_project_by_path(path).unwrap();
+        let state::FolderResource::Present(project_state) = project.fs_resource() else {
+            panic!("invalid state");
+        };
+
+        let state::FolderResource::Present(graph) = project_state.graph() else {
+            panic!("invalid state");
+        };
+
+        let state::DataResource::Ok(project_properties) = project_state.properties() else {
+            panic!("invalid state");
+        };
+
+        let container_graph_path = base_path
+            .strip_prefix(project.path().join(&project_properties.data_root))
+            .unwrap();
+        let container_graph_path = common::prepend_root_dir(container_graph_path);
+        let container_state = graph.find(&container_graph_path).unwrap().unwrap();
+        let container_state = container_state.lock().unwrap();
+        assert!(!matches!(
+            container_state.flags(),
+            state::DataResource::Err(IoSerde::Io(io::ErrorKind::NotFound))
+        ));
+
+        let flags = loader::container::flags::Loader::load(base_path);
+        let project_path = project.path().clone();
+        let project_id = project_properties.rid().clone();
+        let (flags, update) = match (&container_state.flags, flags.clone()) {
+            (Ok(state), Ok(flags)) => {
+                if flags == *state {
+                    // TODO: Ignore order for comparison.
+                    return vec![];
+                }
+
+                let update = Update::project_with_id(
+                    project_id,
+                    project_path.clone(),
+                    update::Project::Container {
+                        path: container_graph_path.clone(),
+                        update: update::Container::Flags(update::DataResource::Modified(
+                            flags.clone(),
+                        )),
+                    },
+                    event.id().clone(),
+                );
+
+                (state::DataResource::Ok(flags), update)
+            }
+            (Err(_state), Ok(flags)) => {
+                let update = Update::project_with_id(
+                    project_id,
+                    project_path.clone(),
+                    update::Project::Container {
+                        path: container_graph_path.clone(),
+                        update: update::Container::Flags(update::DataResource::Repaired(
+                            flags.clone(),
+                        )),
+                    },
+                    event.id().clone(),
+                );
+
+                (state::DataResource::Ok(flags), update)
+            }
+            (_, Err(IoSerde::Io(io::ErrorKind::NotFound))) => todo!(),
+            (Ok(_), Err(err)) => {
+                let update = Update::project_with_id(
+                    project_id,
+                    project_path.clone(),
+                    update::Project::Container {
+                        path: container_graph_path.clone(),
+                        update: update::Container::Flags(update::DataResource::Corrupted(
+                            err.clone(),
+                        )),
+                    },
+                    event.id().clone(),
+                );
+
+                (state::DataResource::Err(err), update)
+            }
+            (Err(state), Err(err)) => {
+                if err == *state {
+                    return vec![];
+                }
+
+                let update = Update::project_with_id(
+                    project_id,
+                    project_path.clone(),
+                    update::Project::Container {
+                        path: container_graph_path.clone(),
+                        update: update::Container::Flags(update::DataResource::Corrupted(
+                            err.clone(),
+                        )),
+                    },
+                    event.id().clone(),
+                );
+
+                (state::DataResource::Err(err), update)
+            }
+        };
+
+        drop(container_state);
+        self.state
+            .try_reduce(server::state::Action::Project {
+                path: project_path,
+                action: server::state::project::Action::Container {
+                    path: container_graph_path,
+                    action: server::state::project::action::Container::SetFlags(flags),
+                },
+            })
+            .unwrap();
+        vec![update]
     }
 }
