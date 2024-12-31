@@ -766,6 +766,7 @@ pub mod graph {
             descendants
         }
 
+        // TODO: Should return signal in case path changes.
         /// Get the absolute path to the container from the root node.
         /// i.e. The root node has path `/`.
         pub fn path(&self, target: &Node) -> Option<PathBuf> {

@@ -21,7 +21,8 @@ pub mod icon {
     pub use {
         icondata::AiCloseOutlined as Close, icondata::AiMinusOutlined as Remove,
         icondata::AiPlusOutlined as Add, icondata::AiSyncOutlined as Refresh,
-        icondata::AiUserOutlined as User, icondata::IoSettingsSharp as Settings,
+        icondata::AiUserOutlined as User, icondata::FaFlagRegular as Flag,
+        icondata::FaPenSolid as Edit, icondata::IoSettingsSharp as Settings,
         icondata::TbEye as Eye, icondata::TbEyeClosed as EyeClosed,
         icondata::VsChevronDown as ChevronDown, icondata::VsChevronRight as ChevronRight,
     };

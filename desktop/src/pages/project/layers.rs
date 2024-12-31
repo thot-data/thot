@@ -528,6 +528,7 @@ fn ContainerFlags(container: state::graph::Node) -> impl IntoView {
             .map(|flags| flags.read().is_empty())
             .unwrap_or(true)
         {
+            // TODO: Make spacer same width as if indicator is shown.
             Either::Left(())
         } else {
             let title = {

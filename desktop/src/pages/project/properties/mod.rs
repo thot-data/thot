@@ -92,7 +92,7 @@ pub fn PropertiesBar() -> impl IntoView {
                         .with_untracked(|rid| graph.find_by_id(rid).unwrap())
                 });
 
-                EitherOf7::C(view! { <Container container=(*container).clone() /> })
+                EitherOf7::C(view! { <Container container=container.clone() /> })
             }
             EditorKind::Asset => {
                 let asset = selected.with(|selected| {

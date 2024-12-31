@@ -2004,8 +2004,13 @@ fn Flag(
             let resource_path = resource_path();
             let flag = flag.id().clone();
             async move {
-                if let Err(err) =
-                    remove_flag(project.get_untracked(), container_path, resource_path, flag).await
+                if let Err(err) = commands::flag::remove(
+                    project.get_untracked(),
+                    container_path,
+                    resource_path,
+                    flag,
+                )
+                .await
                 {
                     let mut msg = types::message::Builder::error("Could not remove flag.");
                     msg.body(format!("{err:?}"));
@@ -2569,33 +2574,6 @@ async fn remove_asset(
     )
     .await
     .map_err(|err| err.into())
-}
-
-/// Remove a flag from a resource.
-async fn remove_flag(
-    project: impl Into<PathBuf>,
-    container: impl Into<PathBuf>,
-    resource: impl Into<PathBuf>,
-    flag: local::project::resources::flag::Id,
-) -> Result<(), local::error::IoSerde> {
-    #[derive(Serialize)]
-    struct Args {
-        project: PathBuf,
-        container: PathBuf,
-        resource: PathBuf,
-        flag: local::project::resources::flag::Id,
-    }
-
-    tauri_sys::core::invoke_result(
-        "remove_flag",
-        Args {
-            project: project.into(),
-            container: container.into(),
-            resource: resource.into(),
-            flag,
-        },
-    )
-    .await
 }
 
 mod display {

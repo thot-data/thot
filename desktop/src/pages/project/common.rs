@@ -1,6 +1,6 @@
 use super::state::workspace_graph;
 use crate::pages::project::state;
-use leptos::{ev::MouseEvent, prelude::*};
+use leptos::{prelude::*};
 use syre_core::types::ResourceId;
 
 /// File system resource size in bytes at which to notify user
