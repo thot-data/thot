@@ -747,7 +747,7 @@ fn AssetsFlags(container: state::graph::Node) -> impl IntoView {
         let flags = flags_state.read();
         flags
             .iter()
-            .filter(|(path, _)| paths.contains(path))
+            .filter(|(path, flags)| paths.contains(path) && !flags.read().is_empty())
             .count()
     };
 

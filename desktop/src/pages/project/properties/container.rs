@@ -3,7 +3,7 @@ use crate::{components, pages::project::state, types};
 use leptos::{either::either, ev::MouseEvent, prelude::*};
 use leptos_icons::Icon;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum EditorView {
     Properties,
     Flags,
@@ -35,7 +35,9 @@ fn Header() -> impl IntoView {
         }
         e.stop_propagation();
 
-        editor_view.set(view);
+        if view != editor_view() {
+            editor_view.set(view);
+        }
     };
 
     view! {
@@ -43,11 +45,25 @@ fn Header() -> impl IntoView {
             <div class="text-center pt-1 pb-2">
                 <h3 class="font-primary">"Container"</h3>
             </div>
-            <div class="border-y py flex gap-2 pb-2">
-                <button on:mousedown=move |e| set_editor_view(e, EditorView::Properties)>
+            <div class="border-y flex gap-1 items-center px-2">
+                <button
+                    on:mousedown=move |e| set_editor_view(e, EditorView::Properties)
+                    class=(
+                        ["bg-secondary-50", "dark:bg-secondary-600"],
+                        move || matches!(editor_view(), EditorView::Properties),
+                    )
+                    class="p-1 hover:bg-secondary-50 dark:hover:bg-secondary-600"
+                >
                     <Icon icon=components::icon::Edit />
                 </button>
-                <button on:mousedown=move |e| set_editor_view(e, EditorView::Flags)>
+                <button
+                    on:mousedown=move |e| set_editor_view(e, EditorView::Flags)
+                    class=(
+                        ["bg-secondary-50", "dark:bg-secondary-600"],
+                        move || matches!(editor_view(), EditorView::Flags),
+                    )
+                    class="p-1 hover:bg-secondary-50 dark:hover:bg-secondary-600"
+                >
                     <Icon icon=components::icon::Flag />
                 </button>
             </div>
@@ -1387,23 +1403,53 @@ mod flags {
         container: PathBuf,
         flags: ArcReadSignal<Vec<local::project::resources::Flag>>,
     ) -> impl IntoView {
-        let remove_all = move |e: MouseEvent| {
+        let project = expect_context::<state::Project>();
+        let messages = expect_context::<types::Messages>();
+
+        let remove_all_action = Action::new_local({
+            let project = project.path().read_only();
+            let container = container.clone();
+            move |_| {
+                let container = container.clone();
+                async move {
+                    if let Err(err) = commands::flag::remove_all(
+                        project.get_untracked(),
+                        container,
+                        PathBuf::from("/"),
+                    )
+                    .await
+                    {
+                        let mut msg = types::message::Builder::error("Could not remove flags.");
+                        msg.body(format!("{err:?}"));
+                        messages.write().push(msg.build());
+                    }
+                }
+            }
+        });
+
+        let trigger_remove_all = move |e: MouseEvent| {
             if e.button() != types::MouseButton::Primary {
                 return;
             }
             e.stop_propagation();
 
-            todo!();
+            remove_all_action.dispatch(());
         };
 
         view! {
             <div>
-                <div>
-                    <button on:mousedown=remove_all>"Remove all"</button>
+                <div class="text-center pb-2">
+                    <button
+                        on:mousedown=trigger_remove_all
+                        class="px-4 bg-secondary-50 dark:bg-secondary-600 rounded border"
+                        disabled=remove_all_action.pending()
+                    >
+                        "Remove all"
+                    </button>
                 </div>
                 <ul>
                     <For each=flags key=move |flag| flag.id().clone() let:flag>
-                        <li>
+                        <li class="px-2">
                             <Flag container=container.clone() flag=flag.clone() />
                         </li>
                     </For>

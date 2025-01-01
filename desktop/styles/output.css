@@ -1552,6 +1552,11 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   background-color: rgb(166 170 179 / var(--tw-bg-opacity));
 }
 
+.bg-secondary-50 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(243 244 247 / var(--tw-bg-opacity));
+}
+
 .bg-syre-green-600 {
   --tw-bg-opacity: 1;
   background-color: rgb(117 148 49 / var(--tw-bg-opacity));
@@ -2062,6 +2067,11 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
 .hover\:bg-secondary-200:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(196 199 204 / var(--tw-bg-opacity));
+}
+
+.hover\:bg-secondary-50:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(243 244 247 / var(--tw-bg-opacity));
 }
 
 .hover\:text-syre-yellow-600:hover {
