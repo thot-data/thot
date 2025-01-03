@@ -91,7 +91,7 @@ mod message {
     pub fn Messages() -> impl IntoView {
         let messages = expect_context::<types::Messages>();
         view! {
-            <div class="absolute bottom-0 right-2 w-1/2 max-w-md max-h-[75%] \
+            <div class="absolute bottom-0 right-2 w-1/3 max-h-[75%] \
             flex flex-col gap-2 scrollbar-thin z-50">
                 {move || {
                     messages

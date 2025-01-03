@@ -9,5 +9,5 @@ else:
     _LEGACY_ = False
 
 from .common import dev_mode
-from .database import Database, Asset, Container
+from .database import Database, Asset, Container, FlagSeverity
 from .filter import filter

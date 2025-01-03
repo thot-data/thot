@@ -254,7 +254,10 @@ class Asset:
         if self._db is None:
             raise RuntimeError("No database connector")
         
-        self._db._socket.send_json({"Asset": {"Parent": self._rid}})
+        self._db._socket.send_json({"Asset": {"Parent": {
+            "project": self._db._project,
+            "asset": self._rid,
+        }}})
         parent = self._db._socket.recv_json()
         if "Err" in parent:
             raise RuntimeError(f"Could not retrieve parent: {parent['Err']}")

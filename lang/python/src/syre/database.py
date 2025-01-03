@@ -542,8 +542,11 @@ class Database:
             container_rid = resource._rid
             resource_container_path = "/"
         elif resource_type == Asset:
-            container_rid = resource.parent()._rid
+            container = resource.parent()
+            container_rid = container._rid
             resource_container_path = resource.file
+        else:
+            raise TypeError(f"`resource` must be a `Container` or `Asset`, found {resource_type}")
             
         self._socket.send_json(
             {
@@ -559,6 +562,9 @@ class Database:
         if container_path is None:
             raise RuntimeError(f"Error setting flag: Could not get container path.")
         assert os.path.commonpath([container_path, self._data_root]) == self._data_root
+        
+        if resource_type == Asset:
+            resource_container_path = os.path.relpath(resource_container_path, container_path)
 
         flags_path = flags_file_of(container_path)
         if (not os.path.exists(flags_path)) or (os.stat(flags_path).st_size == 0):

@@ -2801,7 +2801,7 @@ fn handle_event_graph_container_flags(
             handle_event_graph_container_flags_repaired(event, flags)
         }
         db::event::DataResource::Modified(_) => {
-            handle_event_graph_container_flags_modified(event, flags)
+            handle_event_graph_container_flags_modified(event, graph, flags)
         }
     }
 }
@@ -2873,7 +2873,11 @@ fn handle_event_graph_container_flags_repaired(event: lib::Event, flags: state::
     insert_graph_container_flags(path, update, flags);
 }
 
-fn handle_event_graph_container_flags_modified(event: lib::Event, flags: state::Flags) {
+fn handle_event_graph_container_flags_modified(
+    event: lib::Event,
+    graph: state::Graph,
+    flags: state::Flags,
+) {
     let lib::EventKind::Project(db::event::Project::Container {
         path: container_path,
         update: db::event::Container::Flags(db::event::DataResource::Modified(update)),
@@ -2896,8 +2900,31 @@ fn handle_event_graph_container_flags_modified(event: lib::Event, flags: state::
         })
         .collect::<Vec<_>>();
 
-    let paths = update.iter().map(|(path, _)| path).collect::<Vec<_>>();
-    flags.write().retain(|(path, _)| paths.contains(&path));
+    let container_path = common::normalize_path_sep(container_path);
+    let container = graph.find(&container_path).unwrap().unwrap();
+    let asset_paths = container
+        .assets()
+        .read_untracked()
+        .as_ref()
+        .map(|assets| {
+            assets
+                .read_untracked()
+                .iter()
+                .map(|asset| {
+                    common::normalize_path_sep(container_path.join(asset.path().get_untracked()))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or(vec![]);
+    let all_paths = asset_paths
+        .into_iter()
+        .chain(std::iter::once(common::normalize_path_sep(container_path)))
+        .collect::<Vec<_>>();
+
+    let update_paths = update.iter().map(|(path, _)| path).collect::<Vec<_>>();
+    flags
+        .write()
+        .retain(|(path, _)| !all_paths.contains(&path) || update_paths.contains(&path));
 
     update.into_iter().for_each(|(path, flags_update)| {
         let _flags = flags.read_untracked();

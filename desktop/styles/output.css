@@ -1183,10 +1183,6 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   max-width: 50%;
 }
 
-.max-w-md {
-  max-width: 28rem;
-}
-
 .grow {
   flex-grow: 1;
 }
