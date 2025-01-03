@@ -378,6 +378,7 @@ impl Database {
             Query::State(query) => self.handle_query_state(query),
             Query::User(query) => self.handle_query_user(query),
             Query::Project(query) => self.handle_query_project(query),
+            Query::Graph(query) => self.handle_query_graph(query),
             Query::Container(query) => self.handle_query_container(query),
             Query::Asset(query) => self.handle_query_asset(query),
         }

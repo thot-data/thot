@@ -111,25 +111,15 @@ class Container:
         Returns:
             ContainerList: Container's children.
         """
-        self._db._socket.send_json({"Graph": {"Children": self._rid}})
-        child_ids = self._db._socket.recv_json()
-        children = []
-        for cid in child_ids:
-            self._db._socket.send_json({"Container": {"GetWithMetadata": cid}})
-            child = self._db._socket.recv_json()
-            if child is None:
-                raise RuntimeError("Could not get child Container")
-            
-            children.append(child)
-            
-        children = list(map(
-            lambda child: dict_to_container(child, db = self._db),
-            children
-        ))
+        self._db._socket.send_json({"Graph": {"Children": {
+            "project": self._db._project, 
+            "parent": self._rid,
+        }}})
+        children = self._db._socket.recv_json()
+        if "Err" in children:
+            raise RuntimeError(f"Could not retrieve children: {children['Err']}")
         
-        for child in children:
-            child._set_parent(self)
-        
+        children = [dict_to_container(child, db = self._db) for child in children["Ok"]]
         return children
     
     def parent(self) -> OptContainer:
@@ -144,20 +134,23 @@ class Container:
         if self._parent_set and not dev_mode():
             return self._parent
         
-        if self._rid == self._db._root:
+        if self._rid == self._db._root_id:
             self._set_parent(None)
             return None
             
-        self._db._socket.send_json({"Graph": {"Parent": self._rid}})
+        self._db._socket.send_json({"Graph": {"Parent": {
+            "project": self._db._project, 
+            "root": self._db._root, 
+            "container": self._rid,
+        }}}) 
         parent = self._db._socket.recv_json()
+        if "Err" in parent:
+            raise RuntimeError(f"Could not retrieve parent: {parent['Err']}")
+
+        parent = parent["Ok"]
         if parent is None:
             self._set_parent(None)
             return None
-        
-        self._db._socket.send_json({"Container": {"GetWithMetadata": parent}})
-        parent = self._db._socket.recv_json()
-        if parent is None:
-            raise RuntimeError("Could not get container parent")
         
         parent = dict_to_container(parent, db = self._db)
         self._set_parent(parent)
@@ -263,15 +256,9 @@ class Asset:
         
         self._db._socket.send_json({"Asset": {"Parent": self._rid}})
         parent = self._db._socket.recv_json()
-        if parent is None:
-            return None
-        
-        self._db._socket.send_json({"Container": {"GetWithMetadata": parent["rid"]}})
-        parent = self._db._socket.recv_json()
-        if parent is None:
-            raise RuntimeError("Parent Container could not be retrieved")
-        
-        return dict_to_container(parent, db = self._db)            
+        if "Err" in parent:
+            raise RuntimeError(f"Could not retrieve parent: {parent['Err']}")
+        return dict_to_container(parent["Ok"], db = self._db)            
 
 def dict_to_container(d: Properties, db: OptDatabase = None) -> Container:
     """

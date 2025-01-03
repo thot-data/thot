@@ -251,7 +251,7 @@ mod properties {
             <div
                 node_ref=wrapper_node
                 on:scroll=scroll
-                class="overflow-y-auto pr-2 h-full scrollbar-thin"
+                class="overflow-y-auto h-full scrollbar-thin"
             >
                 <super::Header />
                 <form on:submit=|e| e.prevent_default()>

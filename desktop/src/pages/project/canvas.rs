@@ -41,6 +41,7 @@ const CANVAS_BUTTON_STROKE: usize = 2; // ensure this aligns with the actual str
 const TOGGLE_VIEW_INDICATOR_RADIUS: usize = 3;
 const ICON_SCALE: f64 = 0.9;
 const FLAGS_INDICATOR_RADIUS: usize = 4;
+const CONTAINER_FLAGS_HEIGHT: usize = 200;
 const VB_SCALE_ENLARGE: f32 = 0.9; // zoom in should reduce viewport.
 const VB_SCALE_REDUCE: f32 = 1.1;
 pub const VB_BASE: usize = 1000;
@@ -130,7 +131,7 @@ impl FlagsDisplayState {
         let expanded = self.expanded.read_only();
         ArcSignal::derive(move || {
             if expanded() {
-                100
+                CONTAINER_FLAGS_HEIGHT
             } else {
                 FLAGS_INDICATOR_RADIUS * 2
             }
@@ -1916,14 +1917,14 @@ fn ContainerFlags(container: state::graph::Node, expanded: RwSignal<bool>) -> im
                 bg-white dark:bg-secondary-800">
                     <div class="relative pb-2">
                         <h3 class="px-2 text-lg">"Flags"</h3>
-                        <div class="absolute top-0 right-2">
+                        <div class="absolute top-0 right-1">
                             <button on:mousedown=contract_flags>
                                 <Icon icon=components::icon::Close />
                             </button>
                         </div>
                     </div>
                     <div>
-                        <ul class="list-disc">
+                        <ul class="list-disc overlfow-y-auto scrollbar-thin">
                             <For each=flags_data key=|flag| flag.id().clone() let:flag>
                                 <li class="px-2 pb-2">
                                     <Flag

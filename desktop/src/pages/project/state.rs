@@ -2056,10 +2056,7 @@ mod metadata {
 mod flags {
     use crate::common;
     use leptos::prelude::*;
-    use std::{
-        assert_matches::assert_matches,
-        path::{Path, PathBuf},
-    };
+    use std::path::{Path, PathBuf};
     use syre_local::project::resources::Flag;
     use syre_local_database as db;
 

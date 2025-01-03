@@ -164,9 +164,9 @@ pub mod error {
 
 pub mod flags {
     use crate::{common, error::IoSerde, project::resources::Flag};
-    use serde::de::DeserializeOwned;
     use std::{
-        fs, io,
+        collections::HashMap,
+        fs,
         path::{Path, PathBuf},
     };
 
@@ -176,7 +176,8 @@ pub mod flags {
         pub fn load(base_path: impl AsRef<Path>) -> Result<Flags, IoSerde> {
             let base_path = fs::canonicalize(base_path).map_err(|err| IoSerde::Io(err.kind()))?;
             let path = common::flags_file_of(base_path);
-            super::load_json(path)
+            let flags = super::load_json::<HashMap<PathBuf, Vec<Flag>>>(path)?;
+            Ok(flags.into_iter().collect())
         }
     }
 }

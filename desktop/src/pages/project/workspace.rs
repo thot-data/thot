@@ -2900,13 +2900,11 @@ fn handle_event_graph_container_flags_modified(event: lib::Event, flags: state::
     flags.write().retain(|(path, _)| paths.contains(&path));
 
     update.into_iter().for_each(|(path, flags_update)| {
-        if let Some((_, state_flags)) = flags
-            .read_untracked()
-            .iter()
-            .find(|(state_path, _)| *state_path == path)
-        {
+        let _flags = flags.read_untracked();
+        if let Some((_, state_flags)) = _flags.iter().find(|(state_path, _)| *state_path == path) {
             state_flags.set(flags_update.clone());
         } else {
+            drop(_flags);
             flags
                 .write()
                 .push((path, ArcRwSignal::new(flags_update.clone())));

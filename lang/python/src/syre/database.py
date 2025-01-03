@@ -2,6 +2,7 @@ from typing import Union, Any
 import io
 import subprocess
 import importlib.resources as pkg_resources
+from enum import StrEnum
 import inspect
 import socket
 import os
@@ -14,7 +15,7 @@ import zmq
 
 from syre import _LEGACY_
 from .types import OptStr, Tags, Metadata
-from .common import CONTAINER_ID_KEY, PROJECT_ID_KEY, assets_file_of
+from .common import CONTAINER_ID_KEY, PROJECT_ID_KEY, assets_file_of, flags_file_of
 from .resources import Container, Asset, dict_to_container, dict_to_asset
 
 OptTags = Union[Tags, None]
@@ -36,6 +37,13 @@ if platform.system() == "Windows":
     ROOT_DIR = "\\"
 else:
     ROOT_DIR = "/"
+
+
+class FlagSeverity(StrEnum):
+    Info = "Info"
+    Warning = "Warning"
+    Error = "Error"
+        
 
 class Database:
     """
@@ -95,29 +103,30 @@ class Database:
         elif project_id is not None and root_path is not None:
             self._init_prod(project_id, root_path, chdir)
         else:
-            raise RuntimeError(f"`{PROJECT_ID_KEY}` and `{CONTAINER_ID_KEY}` must both be either set or not set")
+            raise RuntimeError(
+                f"`{PROJECT_ID_KEY}` and `{CONTAINER_ID_KEY}` must both be either set or not set"
+            )
 
     def _init_dev(self, dev_root: str, chdir: bool):
-        """Initialize the database in a dev environment.
-        """
+        """Initialize the database in a dev environment."""
         # TODO: Allow relative paths
         # See `inspect.stack`
         if not os.path.isabs(dev_root):
             raise ValueError("`dev_root` must be an absolute path")
-            
+
         os_name = platform.system()
         if os_name == "Windows":
             dev_root = windows_ensure_unc_path(dev_root)
-                
+
         self._root_path: str = os.path.normpath(dev_root)
         if not os.path.exists(self._root_path):
             raise RuntimeError("Root path does not exist")
-        
+
         self._socket.send_json({"State": "ProjectManifest"})
         project_manifest = self._socket.recv_json()
         if "Ok" not in project_manifest:
             raise RuntimeError("Could not get projects")
-        
+
         project_manifest = project_manifest["Ok"]
         project_path = None
         for path in project_manifest:
@@ -125,11 +134,11 @@ class Database:
                 common = os.path.commonpath([path, self._root_path])
             except ValueError:
                 continue
-            
+
             if common == path:
                 project_path = path
                 break
-            
+
         if project_path is None:
             raise RuntimeError("Path is not in a project")
 
@@ -142,16 +151,18 @@ class Database:
         project = project["fs_resource"]
         if "Present" not in project:
             raise RuntimeError("Project folder is missing")
-        
+
         project_properties = project["Present"]["properties"]
         if "Ok" not in project_properties:
             raise RuntimeError("Project properties are not valid")
         project_properties = project_properties["Ok"]
         self._project = project_properties["rid"]
-        
-        data_root = os.path.join(project_path, project_properties["data_root"])
-        self._root = ensure_root_path(os.path.relpath(self._root_path, data_root))
-        self._socket.send_json({"Container": {"Get": {"project": self._project, "container": self._root}}})
+
+        self._data_root = os.path.join(project_path, project_properties["data_root"])
+        self._root = ensure_root_path(os.path.relpath(self._root_path, self._data_root))
+        self._socket.send_json(
+            {"Container": {"Get": {"project": self._project, "container": self._root}}}
+        )
         root = self._socket.recv_json()
         root = root["Ok"]
         if root is None:
@@ -159,18 +170,20 @@ class Database:
 
         root_properties = root["properties"]
         if "Err" in root_properties:
-            raise RuntimeError(f"Root container properties file is corrupt: {root_properties['Err']}")
+            raise RuntimeError(
+                f"Root container properties file is corrupt: {root_properties['Err']}"
+            )
         root_properties = root_properties["Ok"]
         self._root_id: str = root_properties["rid"]
-        
+
         if chdir:
             analysis_root = project_properties["analysis_root"]
             if analysis_root is None:
                 raise RuntimeError("Analysis root is not set, can not change directory")
 
             analysis_path = os.path.join(project_path, analysis_root)
-            os.chdir(analysis_path)        
-            
+            os.chdir(analysis_path)
+
     def _init_prod(self, project: str, root: str, chdir: bool):
         """Initialize the database in a production environment.
         i.e. When being run by a runner.
@@ -188,23 +201,27 @@ class Database:
         project = self._socket.recv_json()
         if project is None:
             raise RuntimeError("Could not get project")
-        
-        [project_path, project] = project        
+
+        [project_path, project] = project
         project_properties = project["properties"]
         if "Ok" not in project_properties:
             raise RuntimeError("Project properties are not valid")
         project_properties = project_properties["Ok"]
-        
+
         if platform.system() == "Windows":
             if self._root.startswith(ROOT_DIR):
-                container_graph_path = self._root[len(ROOT_DIR):]
+                container_graph_path = self._root[len(ROOT_DIR) :]
             else:
                 raise RuntimeError(f"Invalid path for {CONTAINER_ID_KEY}")
         else:
             container_graph_path = os.path.relpath(self._root, ROOT_DIR)
-        self._root_path: str = os.path.join(project_path, project_properties["data_root"], container_graph_path)
-        
-        self._socket.send_json({"Container": {"Get": {"project": self._project, "container": self._root}}})
+            
+        self._data_root = os.path.join(project_path, project_properties["data_root"])
+        self._root_path: str = os.path.join(self._data_root, container_graph_path)
+
+        self._socket.send_json(
+            {"Container": {"Get": {"project": self._project, "container": self._root}}}
+        )
         root = self._socket.recv_json()
         root = root["Ok"]
         if root is None:
@@ -212,14 +229,14 @@ class Database:
 
         root_properties = root["properties"]["Ok"]
         self._root_id: str = root_properties["rid"]
-        
+
         if chdir:
             analysis_root = project_properties["analysis_root"]
             if analysis_root is None:
                 raise RuntimeError("Analysis root is not set, can not change directory")
 
             analysis_path = os.path.join(project_path, analysis_root)
-            os.chdir(analysis_path)        
+            os.chdir(analysis_path)
 
     def _is_database_available(self) -> bool:
         """
@@ -262,7 +279,16 @@ class Database:
         Returns:
             Container: Root Container.
         """
-        self._socket.send_json({"Container": {"GetForAnalysis": {"project": self._project, "container": self._root}}})
+        self._socket.send_json(
+            {
+                "Container": {
+                    "GetForAnalysis": {
+                        "project": self._project,
+                        "container": self._root,
+                    }
+                }
+            }
+        )
         root = self._socket.recv_json()
         root = root["Ok"]
         if root is None:
@@ -309,21 +335,22 @@ class Database:
         else:
             f["metadata"] = []
 
-        self._socket.send_json({
-            "Container": {
-                "Search": {
-                    "project": self._project, 
-                    "root": self._root, 
-                    "query": f
+        self._socket.send_json(
+            {
+                "Container": {
+                    "Search": {"project": self._project, "root": self._root, "query": f}
                 }
             }
-        })
+        )
         containers = self._socket.recv_json()
         if "Err" in containers:
             raise RuntimeError(f"Error getting containers: {containers['Err']}")
 
         return list(
-            map(lambda container: dict_to_container(container, db=self), containers["Ok"])
+            map(
+                lambda container: dict_to_container(container, db=self),
+                containers["Ok"],
+            )
         )
 
     def find_container(
@@ -386,15 +413,13 @@ class Database:
         else:
             f["metadata"] = []
 
-        self._socket.send_json({
-            "Asset": {
-                "Search": {
-                    "project": self._project, 
-                    "root": self._root, 
-                    "query": f
+        self._socket.send_json(
+            {
+                "Asset": {
+                    "Search": {"project": self._project, "root": self._root, "query": f}
                 }
             }
-        })
+        )
         assets = self._socket.recv_json()
         if "Err" in assets:
             raise RuntimeError(f"Error getting assets: {assets['Err']}")
@@ -447,9 +472,9 @@ class Database:
 
         Returns:
             str: Path to save the Asset's file to.
-            
+
         Example::
-        
+
             >>> import syre
             >>> db = syre.Database()
             >>> path = db.add_asset("new_data.txt")
@@ -485,31 +510,77 @@ class Database:
                         dirty = True
                     updated = True
                     break
-            
+
             if not updated:
                 assets.append(asset)
                 dirty = True
-                
+
             if dirty:
                 json_overwrite(assets, f)
-            
+
         path = os.path.join(self._root_path, os.path.normpath(file))
         os.makedirs(
             os.path.dirname(path), exist_ok=True
         )  # ensure bucket directory exists
         return path
 
-    def flag(self, resource: Union[Container, Asset], message: str):
+    def flag(
+        self,
+        resource: Union[Container, Asset],
+        message: str,
+        severity: FlagSeverity = FlagSeverity.Warning,
+    ):
         """Add a flag to the resource.
 
         Args:
             resource (Union[Container, Asset]): Resource to flag.
             message (str): Message to display.
+            severity (FlagSeverity): Flag's severity. Defaults to `FlagSeverity.Warning`.
         """
+        resource_type = type(resource)
+        if  resource_type == Container:
+            container_rid = resource._rid
+            resource_container_path = "/"
+        elif resource_type == Asset:
+            container_rid = resource.parent()._rid
+            resource_container_path = resource.file
+            
         self._socket.send_json(
-            {"Runner": {"Flag": {"resource": resource._rid, "message": message}}}
+            {
+                "Container": {
+                    "SystemPathById": {
+                        "project": self._project,
+                        "container": container_rid,
+                    }
+                }
+            }
         )
-        res = self._socket.recv_json()
+        container_path = self._socket.recv_json()
+        if container_path is None:
+            raise RuntimeError(f"Error setting flag: Could not get container path.")
+        assert os.path.commonpath([container_path, self._data_root]) == self._data_root
+
+        flags_path = flags_file_of(container_path)
+        if (not os.path.exists(flags_path)) or (os.stat(flags_path).st_size == 0):
+            flags = {}
+        else:
+            with open(flags_path) as f:
+                flags = json.load(f)
+                if type(flags) != dict:
+                    raise RuntimeError("Invalid flags file.")
+        
+        flag = {
+            "id": str(uuid()),
+            "message": message,
+            "severity": severity,
+        }
+        if resource_container_path in flags:
+            flags[resource_container_path].append(flag)
+        else:
+            flags[resource_container_path] = [flag]
+                
+        with open(flags_path, "w+") as f:
+            json_overwrite(flags, f)
 
     def clone(self) -> "Database":
         """Clones the Database.
@@ -520,7 +591,7 @@ class Database:
         """
         clone = Database.__new__(Database)
         clone._ctx = self._ctx
-        clone._socket: zmq.Socket = self._ctx.socket(zmq.REQ)
+        clone._socket = self._ctx.socket(zmq.REQ)  # zmq.Socket
         clone._root_path = self._root_path
         clone._root = self._root
 
@@ -541,8 +612,9 @@ class Database:
         if "Err" in config:
             raise RuntimeError(f"Could not get loca config: {config['Err']}")
         config = config["Ok"]
-        
+
         return config["user"]
+
 
 def windows_ensure_unc_path(path: str) -> str:
     """Ensures the path begins with the windows UNC identifier (\\\\?\\)
@@ -558,7 +630,8 @@ def windows_ensure_unc_path(path: str) -> str:
         return path
     else:
         return UNC_PREFIX + path
-    
+
+
 def ensure_root_path(path: str) -> str:
     """Ensures the path begins with the root directory (`/` on unix, `\\\\` on Windows).
 
@@ -567,7 +640,7 @@ def ensure_root_path(path: str) -> str:
 
     Returns:
         str: Path beginning with root directory.
-        
+
     Notes:
         If the path equals the current dir (`.`), the root path is returned.
     """
@@ -577,10 +650,10 @@ def ensure_root_path(path: str) -> str:
         return ROOT_DIR
     else:
         return ROOT_DIR + path
-    
+
+
 def json_overwrite(obj: Any, f: io.TextIOWrapper):
-    """Overwrite a file's contents with the JSON serialization of the object.
-    """
+    """Overwrite a file's contents with the JSON serialization of the object."""
     f.seek(0)
     json.dump(obj, f, indent=4)
     f.truncate()

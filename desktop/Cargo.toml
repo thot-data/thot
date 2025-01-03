@@ -42,6 +42,7 @@ time = { version = "0.3", features = ["wasm-bindgen"] }
 tracing-subscriber = { workspace = true, features = ["time"] }
 tracing-web = "0.1.3"
 tracing.workspace = true
+uuid.workspace = true
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 

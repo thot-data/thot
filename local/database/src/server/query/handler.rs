@@ -1,6 +1,10 @@
 use crate::{common, constants, error, query, server, state, Database};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde_json::Value as JsValue;
-use std::path::{Path, PathBuf};
+use std::{
+    iter,
+    path::{Path, PathBuf},
+};
 use syre_core::{db::SearchFilter, system::User, types::ResourceId};
 use syre_local as local;
 
@@ -300,6 +304,153 @@ impl Database {
 }
 
 impl Database {
+    pub fn handle_query_graph(&self, query: query::Graph) -> JsValue {
+        match query {
+            query::Graph::Parent {
+                project,
+                root,
+                container,
+            } => {
+                let parent = self.handle_query_graph_parent(&project, &root, &container);
+                serde_json::to_value(parent).unwrap()
+            }
+
+            query::Graph::Children { project, parent } => {
+                let children = self.handle_query_graph_children(&project, &parent);
+                serde_json::to_value(children).unwrap()
+            }
+        }
+    }
+
+    /// # Returns
+    /// Parent of the given container.
+    fn handle_query_graph_parent(
+        &self,
+        project: &ResourceId,
+        root: impl AsRef<Path>,
+        container: &ResourceId,
+    ) -> Result<Option<ContainerForAnalysis>, crate::query::error::Parent> {
+        use crate::server::state::project::graph::Node;
+
+        let Some(project) = self.state.find_project_by_id(project) else {
+            return Err(crate::query::error::Parent::ProjectDoesNotExist);
+        };
+
+        let state::FolderResource::Present(project_data) = project.fs_resource() else {
+            return Err(crate::query::error::Parent::ProjectDoesNotExist);
+        };
+
+        let state::FolderResource::Present(graph) = project_data.graph() else {
+            return Err(crate::query::error::Parent::GraphDoesNotExist);
+        };
+
+        let Some(container) = graph.find_by_id(container) else {
+            return Err(crate::query::error::Parent::ResourceDoesNotExist);
+        };
+
+        let Some(parent) = graph.parent(container) else {
+            return Ok(None);
+        };
+
+        let Some(root) = graph
+            .find(root)
+            .map_err(|_| crate::query::error::Parent::InvalidRootPath)?
+        else {
+            return Err(crate::query::error::Parent::GraphRootDoesNotExist);
+        };
+
+        let root_ancestors = &graph.ancestors(root);
+        if root_ancestors
+            .iter()
+            .skip(1)
+            .any(|ancestor| Node::ptr_eq(ancestor, parent))
+        {
+            return Ok(None);
+        }
+
+        let ancestors = &graph.ancestors(parent);
+        assert!(!ancestors.is_empty());
+        assert!(ancestors
+            .iter()
+            .any(|ancestor| Node::ptr_eq(ancestor, root)));
+        let parent = self
+            .container_for_analysis(&ancestors)
+            .unwrap()
+            .map_err(|errors| {
+                let errors = iter::zip(ancestors, errors)
+                    .filter_map(|(ancestor, err)| {
+                        err.map(|err| crate::query::error::CorruptState {
+                            path: graph.path(ancestor).unwrap(),
+                            err,
+                        })
+                    })
+                    .collect();
+                crate::query::error::Parent::Inheritance(errors)
+            })?;
+        Ok(Some(parent))
+    }
+
+    /// # Returns
+    /// Parent of the given container.
+    fn handle_query_graph_children(
+        &self,
+        project: &ResourceId,
+        container: &ResourceId,
+    ) -> Result<Vec<ContainerForAnalysis>, crate::query::error::Children> {
+        let Some(project) = self.state.find_project_by_id(project) else {
+            return Err(crate::query::error::Children::ProjectDoesNotExist);
+        };
+
+        let state::FolderResource::Present(project_data) = project.fs_resource() else {
+            return Err(crate::query::error::Children::ProjectDoesNotExist);
+        };
+
+        let state::FolderResource::Present(graph) = project_data.graph() else {
+            return Err(crate::query::error::Children::GraphDoesNotExist);
+        };
+
+        let Some(container) = graph.find_by_id(container) else {
+            return Err(crate::query::error::Children::ResourceDoesNotExist);
+        };
+
+        let (children, errors) = graph
+            .children(container)
+            .unwrap()
+            .into_iter()
+            .map(|child| {
+                let ancestors = graph.ancestors(child);
+                assert!(!ancestors.is_empty());
+                self.container_for_analysis(&ancestors)
+                    .unwrap()
+                    .map_err(|errors| {
+                        iter::zip(ancestors, errors)
+                            .filter_map(|(ancestor, err)| {
+                                err.map(|err| crate::query::error::CorruptState {
+                                    path: graph.path(&ancestor).unwrap(),
+                                    err,
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+            })
+            .partition::<Vec<_>, _>(|child| child.is_ok());
+
+        if errors.is_empty() {
+            let children = children.into_iter().map(|child| child.unwrap()).collect();
+            Ok(children)
+        } else {
+            let mut errors = errors
+                .into_iter()
+                .flat_map(|err| err.err().unwrap())
+                .collect::<Vec<_>>();
+            errors.sort_by_key(|err| err.path.clone());
+            errors.dedup_by_key(|err| err.path.clone());
+            Err(query::error::Children::Inheritance(errors))
+        }
+    }
+}
+
+impl Database {
     pub fn handle_query_container(&self, query: query::Container) -> JsValue {
         match query {
             query::Container::Get { project, container } => {
@@ -336,6 +487,11 @@ impl Database {
                 let state =
                     self.handle_query_container_get_by_id_for_analysis(&project, &container);
                 serde_json::to_value(state).unwrap()
+            }
+
+            query::Container::SystemPathById { project, container } => {
+                let path = self.handle_query_container_system_path_by_id(&project, &container);
+                serde_json::to_value(path).unwrap()
             }
 
             query::Container::Search {
@@ -462,6 +618,33 @@ impl Database {
             self.container_for_analysis(&graph.ancestors(container))
                 .unwrap()
         })
+    }
+
+    /// # Returns
+    /// Absolute system path of the container.
+    fn handle_query_container_system_path_by_id(
+        &self,
+        project: &ResourceId,
+        container: &ResourceId,
+    ) -> Option<PathBuf> {
+        let Some(project) = self.state.find_project_by_id(&project) else {
+            return None;
+        };
+
+        let state::FolderResource::Present(project_data) = project.fs_resource() else {
+            return None;
+        };
+
+        let state::FolderResource::Present(graph) = project_data.graph() else {
+            return None;
+        };
+
+        let container = graph.find_by_id(container)?.clone();
+        let container_path = graph.path(&container).unwrap();
+        let data_root = project
+            .path()
+            .join(&project_data.properties().unwrap().data_root);
+        Some(common::container_system_path(&data_root, &container_path))
     }
 
     /// # Returns
@@ -616,6 +799,11 @@ impl Database {
 impl Database {
     pub fn handle_query_asset(&self, query: query::Asset) -> JsValue {
         match query {
+            query::Asset::Parent { project, asset } => {
+                let container = self.handle_query_asset_parent(&project, &asset);
+                serde_json::to_value(container).unwrap()
+            }
+
             query::Asset::Search {
                 project,
                 root,
@@ -627,8 +815,54 @@ impl Database {
         }
     }
 
+    fn handle_query_asset_parent(
+        &self,
+        project: &ResourceId,
+        asset: &ResourceId,
+    ) -> Result<ContainerForAnalysis, crate::query::error::Parent> {
+        let Some(project) = self.state.find_project_by_id(project) else {
+            return Err(crate::query::error::Parent::ProjectDoesNotExist);
+        };
+
+        let state::FolderResource::Present(project_data) = project.fs_resource() else {
+            return Err(crate::query::error::Parent::ProjectDoesNotExist);
+        };
+
+        let state::FolderResource::Present(graph) = project_data.graph() else {
+            return Err(crate::query::error::Parent::GraphDoesNotExist);
+        };
+
+        let Some(parent) = graph.nodes().par_iter().find_any(|node| {
+            let container = node.lock().unwrap();
+            let Ok(assets) = container.assets() else {
+                return false;
+            };
+            assets
+                .par_iter()
+                .any(|container_asset| container_asset.rid() == asset)
+        }) else {
+            return Err(crate::query::error::Parent::ResourceDoesNotExist);
+        };
+
+        let ancestors = &graph.ancestors(parent);
+        assert!(!ancestors.is_empty());
+        self.container_for_analysis(&ancestors)
+            .unwrap()
+            .map_err(|errors| {
+                let errors = iter::zip(ancestors, errors)
+                    .filter_map(|(ancestor, err)| {
+                        err.map(|err| crate::query::error::CorruptState {
+                            path: graph.path(ancestor).unwrap(),
+                            err,
+                        })
+                    })
+                    .collect();
+                crate::query::error::Parent::Inheritance(errors)
+            })
+    }
+
     /// # Returns
-    /// Containers shaped for use in an analysis script with folded metadata.
+    /// Assets shaped for use in an analysis script with folded metadata.
     /// Error is a tuple of (assets, ancestors) where `assets`` is the state of the container's assets,
     /// and ancestors is a list of ancestor property states.
     fn handle_query_asset_search(
@@ -637,7 +871,7 @@ impl Database {
         root: impl AsRef<Path>,
         query: &crate::query::AssetQuery,
     ) -> Result<Vec<AssetForAnalysis>, crate::query::error::Search> {
-        let Some(project) = self.state.find_project_by_id(&project) else {
+        let Some(project) = self.state.find_project_by_id(project) else {
             return Err(crate::query::error::Search::ProjectDoesNotExist);
         };
 

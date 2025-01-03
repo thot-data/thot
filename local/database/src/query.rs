@@ -8,6 +8,7 @@ pub enum Query {
     State(State),
     User(User),
     Project(Project),
+    Graph(Graph),
     Container(Container),
     Asset(Asset),
 }
@@ -82,6 +83,30 @@ pub enum Project {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub enum Graph {
+    /// Retrieve a container's parent up to the given root.
+    /// If the parent is above the root, or the given container is the
+    /// graph's root `None` is returned.
+    ///
+    /// # Returns
+    /// Result<Option<Container>, error::Parent>
+    Parent {
+        project: ResourceId,
+        root: PathBuf,
+        container: ResourceId,
+    },
+
+    /// Retrieve a container's children.
+    ///
+    /// # Returns
+    /// Result<Vec<Container>, >
+    Children {
+        project: ResourceId,
+        parent: ResourceId,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub enum Container {
     /// Retrieve the state of a container.
     ///
@@ -130,6 +155,16 @@ pub enum Container {
         container: ResourceId,
     },
 
+    /// Retrieve the system path of the container.
+    ///
+    /// # Returns
+    /// The abosulte system path to the container.
+    /// `Option<Pathbuf>`
+    SystemPathById {
+        project: ResourceId,
+        container: ResourceId,
+    },
+
     /// Find containers from `root` matching `query` with inherited metadata shaped for use in an analysis script.
     ///
     /// # Returns
@@ -146,6 +181,15 @@ pub enum Container {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Asset {
+    /// Retrieve the assets parent container.
+    ///
+    /// # Returns
+    /// Result<Container, error::Parent>
+    Parent {
+        project: ResourceId,
+        asset: ResourceId,
+    },
+
     /// Find assets from `root` matching `query` with inherited metadata shaped for use in an analysis script.
     ///
     /// # Returns
@@ -194,6 +238,50 @@ pub mod error {
     use serde::{Deserialize, Serialize};
     use std::path::PathBuf;
     use syre_local as local;
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub enum Parent {
+        ProjectDoesNotExist,
+
+        /// Project's graph does not exist.
+        GraphDoesNotExist,
+
+        /// Child resource does not exist.
+        ResourceDoesNotExist,
+
+        /// Graph root path is not valid.
+        ///
+        /// # Notes
+        /// Only occurs for `Container::Parent`.
+        InvalidRootPath,
+
+        /// Graph root was not found.
+        ///
+        /// # Notes
+        /// Only occurs for `Container::Parent`.
+        GraphRootDoesNotExist,
+
+        /// States within the inheritance graph are corrupt.
+        /// Values are ancestor errors starting with the asset's direct parent,
+        /// and ending with the graph's root node.
+        Inheritance(Vec<CorruptState>),
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub enum Children {
+        ProjectDoesNotExist,
+
+        /// Project's graph does not exist.
+        GraphDoesNotExist,
+
+        /// Parent resource does not exist.
+        ResourceDoesNotExist,
+
+        /// States within the inheritance graph are corrupt.
+        /// Values are ancestor errors starting with the asset's direct parent,
+        /// and ending with the graph's root node.
+        Inheritance(Vec<CorruptState>),
+    }
 
     #[derive(Serialize, Deserialize, Debug, Clone)]
     pub enum Search {

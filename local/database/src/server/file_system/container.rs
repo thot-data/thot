@@ -1549,7 +1549,6 @@ impl Database {
             .strip_prefix(project.path().join(&project_properties.data_root))
             .unwrap();
         let container_graph_path = common::prepend_root_dir(container_graph_path);
-        let container_state = graph.find(&container_graph_path).unwrap().unwrap();
 
         let flags = loader::container::flags::Loader::load(base_path);
         let project_path = project.path().clone();
@@ -1768,7 +1767,7 @@ impl Database {
         let flags = loader::container::flags::Loader::load(base_path);
         let project_path = project.path().clone();
         let project_id = project_properties.rid().clone();
-        let (flags, update) = match (&container_state.flags, flags.clone()) {
+        let (flags, update) = match (&container_state.flags, flags) {
             (Ok(state), Ok(flags)) => {
                 if flags == *state {
                     // TODO: Ignore order for comparison.

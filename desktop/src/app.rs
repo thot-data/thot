@@ -92,7 +92,7 @@ mod message {
         let messages = expect_context::<types::Messages>();
         view! {
             <div class="absolute bottom-0 right-2 w-1/2 max-w-md max-h-[75%] \
-            overflow-auto flex flex-col gap-2 scrollbar-thin z-50">
+            flex flex-col gap-2 scrollbar-thin z-50">
                 {move || {
                     messages
                         .with(|messages| {

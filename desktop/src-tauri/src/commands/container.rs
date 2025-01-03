@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -375,14 +376,14 @@ pub fn remove_flag(
     resource_flags.retain(|resource_flag| *resource_flag.id() != flag);
     flags.retain(|(_, flags)| !flags.is_empty());
 
+    let flags_map = flags.into_iter().collect::<HashMap<_, _>>();
     fs::write(
         local::common::flags_file_of(&container_path),
-        serde_json::to_string_pretty(&flags)?,
+        serde_json::to_string_pretty(&flags_map)?,
     )?;
 
     Ok(())
 }
-
 
 #[tauri::command]
 pub fn remove_all_flags(
@@ -398,11 +399,12 @@ pub fn remove_all_flags(
     let container_path = db::common::container_system_path(data_root, container);
 
     let mut flags = local::loader::container::flags::Loader::load(&container_path)?;
-    flags.retain(|(path, flags)| *path!=resource && !flags.is_empty());
+    flags.retain(|(path, flags)| *path != resource && !flags.is_empty());
 
+    let flags_map = flags.into_iter().collect::<HashMap<_, _>>();
     fs::write(
         local::common::flags_file_of(&container_path),
-        serde_json::to_string_pretty(&flags)?,
+        serde_json::to_string_pretty(&flags_map)?,
     )?;
 
     Ok(())
