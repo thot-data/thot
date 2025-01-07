@@ -10,7 +10,7 @@ use syre_core::{
 };
 use syre_desktop_lib as lib;
 use syre_local::{
-    self as local,
+    self as local, common,
     file_resource::SystemResource,
     project::{
         project,
@@ -153,6 +153,69 @@ pub fn import_project(
 #[tauri::command]
 pub fn deregister_project(project: PathBuf) -> Result<(), local::error::IoSerde> {
     local::system::project_manifest::deregister_project(&project)
+}
+
+#[tauri::command]
+pub async fn duplicate_project(
+    state: tauri::State<'_, crate::State>,
+    project: PathBuf,
+) -> Result<(), lib::command::project::error::Duplicate> {
+    use lib::command::project::error;
+
+    let src = project;
+    let dst = local::common::unique_file_name(&src).map_err(|err| {
+        error::Duplicate::Duplicate(
+            local::project::project::duplicate::error::Error::CreateDestinationFolder(err),
+        )
+    })?;
+
+    if let Err(err) = local::project::project::duplicate(&src, dst.clone()) {
+        if let Err(err) = fs::remove_dir_all(&dst) {
+            tracing::error!(?err);
+        };
+
+        return Err(error::Duplicate::Duplicate(err));
+    }
+
+    let user_state = state.user();
+    let user = user_state.lock().unwrap();
+    if let Some(ref user) = *user {
+        let mut settings = local::project::resources::Project::load_from_settings_only(&dst)
+            .map_err(|error| error::Duplicate::DuplicateDesktop {
+                path: common::project_settings_file_of(&dst),
+                error,
+            })?;
+
+        settings.creator = Some(core::types::UserId::Id(user.rid().clone()));
+        settings
+            .permissions
+            .insert(user.rid().clone(), core::types::UserPermissions::all());
+        settings
+            .save(&dst)
+            .map_err(|err| error::Duplicate::DuplicateDesktop {
+                path: common::project_settings_file_of(&dst),
+                error: err.into(),
+            })?;
+    }
+    drop(user);
+
+    let runner_settings = settings::project::Runner::load(&src).map_err(|error| {
+        error::Duplicate::DuplicateDesktop {
+            path: common::project_runner_settings_file_of(&src),
+            error,
+        }
+    })?;
+    runner_settings
+        .save(&dst)
+        .map_err(|err| error::Duplicate::DuplicateDesktop {
+            path: common::project_runner_settings_file_of(&dst),
+            error: err.into(),
+        })?;
+
+    local::system::project_manifest::register_project(&dst)
+        .map_err(|err| error::Duplicate::Register(err))?;
+
+    Ok(())
 }
 
 /// # Returns

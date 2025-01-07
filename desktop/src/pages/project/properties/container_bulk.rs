@@ -347,7 +347,7 @@ pub fn Editor(containers: Signal<Vec<ResourceId>>) -> impl IntoView {
             widget.map(|widget| match widget {
                 Widget::AddTags => tags_node,
                 Widget::AddMetadatum => metadata_node,
-                Widget::AddAnalysisAssociation => todo!(),
+                Widget::AddAnalysisAssociation => analyses_node,
             })
         }) else {
             return;

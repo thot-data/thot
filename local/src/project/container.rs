@@ -262,8 +262,8 @@ pub mod builder {
 
                     if new_ids {
                         let mut container = Container::new(&path);
-                        container.container.properties = container_state.properties.clone();
-                        container.container.assets = container_state
+                        container.inner.properties = container_state.properties.clone();
+                        container.inner.assets = container_state
                             .assets
                             .clone()
                             .into_iter()

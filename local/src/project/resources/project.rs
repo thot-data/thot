@@ -1,10 +1,6 @@
 //! Project and project settings.
 use super::super::config::Settings;
-use crate::{
-    common::{self, project_file, project_settings_file},
-    error::IoSerde as IoSerdeError,
-    file_resource::LocalResource,
-};
+use crate::{common, error::IoSerde as IoSerdeError, file_resource::LocalResource};
 use std::{
     fs,
     io::{self, BufReader, Write},
@@ -119,6 +115,12 @@ impl Project {
         };
 
         fs::create_dir_all(parent)?;
+
+        #[cfg(target_os = "windows")]
+        if let Err(err) = common::fs::hide_folder(parent) {
+            tracing::error!(?err);
+        };
+
         fs::write(
             project_path,
             serde_json::to_string_pretty(&self.inner).unwrap(),
@@ -127,11 +129,16 @@ impl Project {
             settings_path,
             serde_json::to_string_pretty(&self.settings).unwrap(),
         )?;
+
         Ok(())
     }
 
     pub fn properties(&self) -> &CoreProject {
         &self.inner
+    }
+
+    pub fn properties_mut(&mut self) -> &mut CoreProject {
+        &mut self.inner
     }
 
     pub fn settings(&self) -> &Settings {
@@ -235,7 +242,7 @@ impl Into<CoreProject> for Project {
 
 impl LocalResource<CoreProject> for Project {
     fn rel_path() -> PathBuf {
-        project_file()
+        common::project_file()
     }
 
     fn base_path(&self) -> &Path {
@@ -245,11 +252,59 @@ impl LocalResource<CoreProject> for Project {
 
 impl LocalResource<Settings> for Project {
     fn rel_path() -> PathBuf {
-        project_settings_file()
+        common::project_settings_file()
     }
 
     fn base_path(&self) -> &Path {
         &self.base_path
+    }
+}
+
+pub struct Builder {
+    base_path: PathBuf,
+    properties: Option<CoreProject>,
+    settings: Option<Settings>,
+}
+
+impl Builder {
+    pub fn new(base_path: impl Into<PathBuf>) -> Self {
+        Self {
+            base_path: base_path.into(),
+            properties: None,
+            settings: None,
+        }
+    }
+
+    pub fn with_properties(&mut self, properties: CoreProject) {
+        let _ = self.properties.insert(properties);
+    }
+
+    pub fn build(self) -> Result<Project, io::Error> {
+        let Self {
+            base_path,
+            properties,
+            settings,
+        } = self;
+
+        let mut project = Project::new(base_path)?;
+        if let Some(CoreProject {
+            name,
+            description,
+            data_root,
+            analysis_root,
+            meta_level,
+            ..
+        }) = properties
+        {
+            project.properties_mut().name = name;
+            project.properties_mut().description = description;
+            project.properties_mut().data_root = data_root;
+            project.properties_mut().analysis_root = analysis_root;
+            project.properties_mut().meta_level = meta_level;
+        }
+
+     
+        Ok(project)
     }
 }
 

@@ -26,6 +26,7 @@ fastrand = "2.1"
 glob = { workspace = true, optional = true }
 has_id = { workspace = true, features = ["derive", "serde"] }
 ignore = { workspace = true, optional = true }
+indexmap.workspace = true
 io_error_serde.workspace = true
 rayon.workspace = true
 regex.workspace = true
@@ -34,7 +35,7 @@ serde_json = { workspace = true }
 tempfile.workspace = true
 thiserror = { workspace = true }
 tracing = { workspace = true }
-uuid = { workspace = true, features = ["serde", "v4"] }
+uuid = { workspace = true, features = ["serde", "v4", "v7"] }
 validator = "0.19"
 walkdir.workspace = true
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
@@ -46,6 +47,7 @@ fake = { workspace = true }
 lazy_static = "1.4.0"
 rand = { workspace = true }
 tempfile.workspace = true
+test-log = { version = "0.2.16", features = ["trace"] }
 
 [features]
 fs = ["dep:directories", "dep:glob", "dep:ignore"]

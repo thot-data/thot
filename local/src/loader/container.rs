@@ -33,7 +33,7 @@ impl Loader {
 
                 Ok(Container {
                     base_path,
-                    container,
+                    inner: container,
                     settings,
                 })
             }

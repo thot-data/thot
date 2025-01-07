@@ -28,12 +28,12 @@ syre-local = { workspace = true, features = ["fs"] }
 syre-local-database = { workspace = true, features = ["client"] }
 syre-local-runner = { workspace = true }
 syre-desktop-lib = { path = "../src-lib", features = ["server"] }
-tauri = { version = "2.0", features = [] }
-tauri-plugin-dialog = "2.0"
+tauri = { version = "2.2", features = [] }
+tauri-plugin-dialog = "2.2"
 tauri-plugin-devtools = { git = "https://github.com/crabnebula-dev/devtools" }
-tauri-plugin-shell = "2.0"
+tauri-plugin-shell = "2.2"
 tempfile.workspace = true
-tokio = { version = "1.40", features = ["full"] }
+tokio = { version = "1.42", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["full"] }
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["json", "time"] }

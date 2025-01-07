@@ -48,21 +48,26 @@ pub fn Dashboard() -> impl IntoView {
         move || {
             let messages = messages.clone();
             async move {
+                let mut project_duplicate =
+                    tauri_sys::menu::item::MenuItemOptions::new("Duplicate");
+                project_duplicate.set_id("dashboard:project-duplicate");
                 let mut project_remove = tauri_sys::menu::item::MenuItemOptions::new("Remove");
                 project_remove.set_id("dashboard:project-remove");
 
                 let (menu, mut listeners) = menu::Menu::with_id_and_items(
                     "dashboard:project-ok-context_menu",
-                    vec![project_remove.into()],
+                    vec![project_duplicate.into(), project_remove.into()],
                 )
                 .await;
 
                 spawn_local({
                     // pop from end to beginning
                     let project_remove = listeners.pop().unwrap().unwrap();
+                    let project_duplicate = listeners.pop().unwrap().unwrap();
                     handle_context_menu_project_ok_events(
                         messages,
                         context_menu_active_project_ok.read_only(),
+                        project_duplicate,
                         project_remove,
                     )
                 });
@@ -94,10 +99,11 @@ fn DashboardView(
     context_menu_project_ok: Arc<menu::Menu>,
 ) -> impl IntoView {
     provide_context(ContextMenuProjectOk::new(context_menu_project_ok));
+    let state = projects;
     let (projects, set_projects) = signal(
-        projects
+        state
             .into_iter()
-            .map(|project| RwSignal::new(project))
+            .map(|project_data| ArcRwSignal::new(project_data))
             .collect::<Vec<_>>(),
     );
 
@@ -109,31 +115,7 @@ fn DashboardView(
 
         while let Some(events) = listener.next().await {
             for event in events.payload {
-                let lib::EventKind::ProjectManifest(update) = event.kind() else {
-                    panic!("invalid event kind");
-                };
-
-                match update {
-                    lib::event::ProjectManifest::Added(states) => {
-                        set_projects.update(|projects| {
-                            projects.extend(
-                                states
-                                    .iter()
-                                    .map(|state| RwSignal::new(state.clone()))
-                                    .collect::<Vec<_>>(),
-                            )
-                        });
-                    }
-                    lib::event::ProjectManifest::Removed(removed) => {
-                        set_projects.update(|projects| {
-                            projects.retain(|project| {
-                                project.with_untracked(|(path, _)| !removed.contains(path))
-                            });
-                        });
-                    }
-                    lib::event::ProjectManifest::Corrupted => todo!(),
-                    lib::event::ProjectManifest::Repaired => todo!(),
-                }
+                handle_project_manifest_event(event, set_projects);
             }
         }
     });
@@ -188,7 +170,7 @@ fn DashboardNoProjects() -> impl IntoView {
 
 #[component]
 fn DashboardProjects(
-    projects: ReadSignal<Vec<RwSignal<(PathBuf, db::state::ProjectData)>>>,
+    projects: ReadSignal<Vec<ArcRwSignal<(PathBuf, db::state::ProjectData)>>>,
 ) -> impl IntoView {
     view! {
         <div class="pb-4">
@@ -206,8 +188,17 @@ fn DashboardProjects(
 
 #[component]
 fn ProjectDeck(
-    projects: ReadSignal<Vec<RwSignal<(PathBuf, db::state::ProjectData)>>>,
+    projects: ReadSignal<Vec<ArcRwSignal<(PathBuf, db::state::ProjectData)>>>,
 ) -> impl IntoView {
+    Effect::new(move |_| {
+        let p = projects
+            .read()
+            .iter()
+            .map(|data| data.with(|(p, _)| p.clone()))
+            .collect::<Vec<_>>();
+        tracing::debug!(?p)
+    });
+
     view! {
         <div class="flex flex-wrap gap-4">
             <For
@@ -222,7 +213,6 @@ fn ProjectDeck(
                             }
                         })
                 }
-
                 let:project
             >
                 <ProjectCard project=project.read_only() />
@@ -232,7 +222,7 @@ fn ProjectDeck(
 }
 
 #[component]
-fn ProjectCard(project: ReadSignal<(PathBuf, db::state::ProjectData)>) -> impl IntoView {
+fn ProjectCard(project: ArcReadSignal<(PathBuf, db::state::ProjectData)>) -> impl IntoView {
     move || {
         project.with(|(path, project)| {
             if let db::state::DataResource::Ok(project) = project.properties() {
@@ -536,6 +526,31 @@ struct UserProjectsArgs {
     user: ResourceId,
 }
 
+fn handle_project_manifest_event(
+    event: lib::Event,
+    set_projects: WriteSignal<Vec<ArcRwSignal<(PathBuf, db::state::ProjectData)>>>,
+) {
+    tracing::debug!(?event);
+    let lib::EventKind::ProjectManifest(update) = event.kind() else {
+        panic!("invalid event kind");
+    };
+
+    match update {
+        lib::event::ProjectManifest::Added(states) => {
+            set_projects
+                .write()
+                .extend(states.iter().map(|state| ArcRwSignal::new(state.clone())));
+        }
+        lib::event::ProjectManifest::Removed(removed) => {
+            set_projects
+                .write()
+                .retain(|project| project.with_untracked(|(path, _)| !removed.contains(path)));
+        }
+        lib::event::ProjectManifest::Corrupted => todo!(),
+        lib::event::ProjectManifest::Repaired => todo!(),
+    }
+}
+
 async fn create_project(
     user: ResourceId,
     path: PathBuf,
@@ -578,11 +593,30 @@ async fn import_project(
 async fn handle_context_menu_project_ok_events(
     messages: types::Messages,
     context_menu_active_project: ReadSignal<Option<ContextMenuActiveProject>>,
+    project_duplicate: Channel<String>,
     project_remove: Channel<String>,
 ) {
+    let mut project_duplicate = project_duplicate.fuse();
     let mut project_remove = project_remove.fuse();
     loop {
         futures::select! {
+            event = project_duplicate.next() => match event {
+                None => continue,
+                Some(_id) => {
+                    let project = context_menu_active_project.get_untracked().unwrap();
+                    let project_path =(*project).clone();
+                    let msg = types::message::Builder::info(format!("Duplicating project {project_path:?}"));
+                    messages.write().push(msg.build());
+                    if let Err(err) =  duplicate_project(project_path).await {
+                        messages.update(|messages|{
+                            let mut msg = types::message::Builder::error("Could not duplicate project.");
+                            msg.body(format!("{err:?}"));
+                            messages.push(msg.build());
+                        });
+                    }
+                }
+            },
+
             event = project_remove.next() => match event {
                 None => continue,
                 Some(_id) => {
@@ -596,8 +630,23 @@ async fn handle_context_menu_project_ok_events(
                     }
                 }
             },
+
         }
     }
+}
+
+async fn duplicate_project(project: PathBuf) -> Result<(), error::Duplicate> {
+    #[derive(Serialize)]
+    struct Args {
+        project: PathBuf,
+    }
+
+    tauri_sys::core::invoke_result::<(), local::project::project::duplicate::Error>(
+        "duplicate_project",
+        Args { project },
+    )
+    .await
+    .map_err(|err| error::Duplicate::Duplicate(err))
 }
 
 async fn remove_project(project: PathBuf) -> Result<(), local::error::IoSerde> {
@@ -607,4 +656,15 @@ async fn remove_project(project: PathBuf) -> Result<(), local::error::IoSerde> {
     }
 
     tauri_sys::core::invoke_result("deregister_project", Args { project }).await
+}
+
+mod error {
+    use std::io;
+    use syre_local::project::project::duplicate;
+
+    #[derive(Debug)]
+    pub enum Duplicate {
+        Filename(io::ErrorKind),
+        Duplicate(duplicate::Error),
+    }
 }

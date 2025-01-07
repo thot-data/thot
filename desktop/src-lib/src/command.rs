@@ -2,9 +2,9 @@
 pub mod project {
     pub mod error {
         use serde::{Deserialize, Serialize};
-        use std::io;
+        use std::{io, path::PathBuf};
         use syre_core as core;
-        use syre_local::error::IoSerde;
+        use syre_local::{self as local, error::IoSerde};
         use syre_local_runner as runner;
 
         #[derive(Serialize, Deserialize, Debug)]
@@ -27,6 +27,18 @@ pub mod project {
 
             /// Could not register the project in the project manifest.
             ProjectManifest(IoSerde),
+        }
+
+        #[derive(Serialize, Deserialize, Debug)]
+        pub enum Duplicate {
+            Duplicate(local::project::project::duplicate::Error),
+
+            /// Error duplicating desktop specific resources.
+            DuplicateDesktop {
+                path: PathBuf,
+                error: IoSerde,
+            },
+            Register(IoSerde),
         }
 
         #[derive(Serialize, Deserialize, Debug)]

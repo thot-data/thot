@@ -24,6 +24,7 @@ impl State {
     }
 }
 
+#[derive(Debug)]
 pub struct User {
     rid: ResourceId,
 

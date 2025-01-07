@@ -1,5 +1,8 @@
 //! Container and container settings.
-use super::super::config::{ContainerSettings, StoredContainerProperties};
+use super::{
+    super::config::{ContainerSettings, StoredContainerProperties},
+    Analyses,
+};
 use crate::{
     common,
     error::{Error, Result},
@@ -16,14 +19,14 @@ use std::{
 };
 use syre_core::{
     error::{Error as CoreError, Resource as ResourceError},
-    project::{AnalysisAssociation, Asset, Container as CoreContainer},
+    project::{AnalysisAssociation, Asset, Container as CoreContainer, ContainerProperties},
     types::ResourceId,
 };
 
 #[derive(Debug)]
 pub struct Container {
     pub(crate) base_path: PathBuf,
-    pub container: CoreContainer,
+    pub inner: CoreContainer,
     pub settings: ContainerSettings,
 }
 
@@ -43,7 +46,7 @@ impl Container {
 
         Self {
             base_path: path,
-            container: CoreContainer::new(name),
+            inner: CoreContainer::new(name),
             settings: ContainerSettings::new(),
         }
     }
@@ -62,7 +65,7 @@ impl Container {
             tracing::error!("could not hide folder {app_folder:?}: {err:?}");
         }
 
-        let properties: StoredContainerProperties = self.container.clone().into();
+        let properties: StoredContainerProperties = self.inner.clone().into();
 
         let save_properties = fs::write(
             properties_path,
@@ -159,7 +162,7 @@ impl Container {
     /// Tuple of (properties, settings, base path).
     pub fn into_parts(self) -> (CoreContainer, ContainerSettings, PathBuf) {
         let Self {
-            container,
+            inner: container,
             base_path,
             settings,
         } = self;
@@ -170,7 +173,7 @@ impl Container {
 
 impl PartialEq for Container {
     fn eq(&self, other: &Container) -> bool {
-        self.container == other.container
+        self.inner == other.inner
     }
 }
 
@@ -180,13 +183,13 @@ impl Deref for Container {
     type Target = CoreContainer;
 
     fn deref(&self) -> &Self::Target {
-        &self.container
+        &self.inner
     }
 }
 
 impl DerefMut for Container {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.container
+        &mut self.inner
     }
 }
 
@@ -200,7 +203,7 @@ impl HasId for Container {
     type Id = ResourceId;
 
     fn id(&self) -> &Self::Id {
-        &self.container.id()
+        &self.inner.id()
     }
 }
 
@@ -242,6 +245,68 @@ impl LocalResource<ContainerSettings> for Container {
 
     fn base_path(&self) -> &Path {
         &self.base_path
+    }
+}
+
+pub struct Builder {
+    base_path: PathBuf,
+    properties: Option<ContainerProperties>,
+    analyses: Option<Vec<AnalysisAssociation>>,
+    settings: Option<ContainerSettings>,
+}
+
+impl Builder {
+    pub fn new(base_path: impl Into<PathBuf>) -> Self {
+        Self {
+            base_path: base_path.into(),
+            properties: None,
+            analyses: None,
+            settings: None,
+        }
+    }
+
+    pub fn with_properties(&mut self, properties: ContainerProperties) {
+        let _ = self.properties.insert(properties);
+    }
+
+    pub fn with_analyses(&mut self, associations: Vec<AnalysisAssociation>) {
+        let _ = self.analyses.insert(associations);
+    }
+
+    pub fn with_settings(&mut self, settings: ContainerSettings) {
+        let _ = self.settings.insert(settings);
+    }
+
+    pub fn build(self) -> Container {
+        let Builder {
+            base_path,
+            properties,
+            analyses,
+            settings,
+        } = self;
+
+        let mut container = Container::new(base_path);
+        if let Some(properties) = properties {
+            container.inner.properties = properties;
+        }
+
+        if let Some(associations) = analyses {
+            container.inner.analyses = associations;
+        }
+
+        if let Some(settings_src) = settings {
+            let ContainerSettings {
+                creator,
+                permissions,
+                ..
+            } = settings_src;
+            let mut settings = ContainerSettings::new();
+            settings.creator = creator;
+            settings.permissions = permissions;
+            container.settings = settings;
+        }
+
+        container
     }
 }
 

@@ -242,7 +242,7 @@ mod duplicate {
     /// # Returns
     /// Path to the duplicated root.
     pub async fn duplicate_subgraph(root: impl AsRef<Path>) -> Result<PathBuf, error::Error> {
-        /// Name for directory within temporary directory, to place publicated containers.
+        /// Name for directory within temporary directory, to place duplicated containers.
         const ROOT_DIR_NAME: &str = "data";
         /// How long to wait between moving duplicated tree folder.
         const MOVE_DUPLICATED_TREE_DELAY_MS: u64 = 50;

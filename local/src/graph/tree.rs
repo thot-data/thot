@@ -89,7 +89,7 @@ impl ContainerTreeTransformer {
             .into_values()
             .map(|node| {
                 let mut container = resources::Container::new(rel_paths.get(&node.rid()).unwrap());
-                container.container = node.into_data();
+                container.inner = node.into_data();
                 (container.rid().clone(), ResourceNode::new(container))
             })
             .collect::<HashMap<ResourceId, ResourceNode<resources::Container>>>();

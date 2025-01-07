@@ -7,7 +7,7 @@ use syre_local::project::container;
 fn initialize_existing_folder_as_project() {
     let root_dir = uninitialized_folder_tree_small();
 
-    let mut builder = container::InitOptions::init();
+    let mut builder = container::builder::InitOptions::init();
     builder.recurse(true);
     builder.with_assets();
     builder.build(root_dir.path()).unwrap();

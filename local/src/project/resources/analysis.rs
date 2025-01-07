@@ -30,6 +30,25 @@ impl Analyses {
         }
     }
 
+    pub fn new_with(path: impl Into<PathBuf>, analyses: Vec<AnalysisKind>) -> Self {
+        let inner = analyses
+            .into_iter()
+            .map(|analysis| {
+                let rid = match analysis {
+                    AnalysisKind::Script(ref script) => script.rid().clone(),
+                    AnalysisKind::ExcelTemplate(ref template) => template.rid().clone(),
+                };
+
+                (rid, analysis)
+            })
+            .collect();
+
+        Self {
+            base_path: path.into(),
+            inner,
+        }
+    }
+
     pub fn load_from(base_path: impl Into<PathBuf>) -> StdResult<Self, error::IoSerde> {
         let base_path = base_path.into();
         let path = base_path.join(Self::rel_path());

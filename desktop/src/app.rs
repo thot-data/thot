@@ -147,9 +147,9 @@ mod message {
 
         view! {
             <div class=class_main>
-                <div class="grow px-2">
+                <div class="grow">
                     <div class="relative flex gap-2">
-                        <div class="text-lg grow">{message.title().clone()}</div>
+                        <div class="text-lg grow px-2 break-all">{message.title().clone()}</div>
                         {message
                             .body()
                             .map(|_| {
@@ -166,7 +166,7 @@ mod message {
                             view! {
                                 <div
                                     class:hidden=move || !show_body()
-                                    class="pt-4 max-h-48 overflow-auto select-text scrollbar-thin"
+                                    class="pt-2 px-2 max-h-48 overflow-auto select-text scrollbar-thin break-all"
                                 >
                                     {body}
                                 </div>

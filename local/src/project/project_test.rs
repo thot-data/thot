@@ -1,8 +1,5 @@
 use super::*;
 use crate::common::{app_dir_of, project_file_of, project_settings_file_of};
-use fake::faker::filesystem::raw::DirPath;
-use fake::locales::EN;
-use fake::Fake;
 use syre_core::project::Project as CoreProject;
 
 // ******************

@@ -12,6 +12,8 @@ use std::{
 };
 use syre_core::types::ResourceId;
 
+pub use duplicate::duplicate;
+
 // ************
 // *** Init ***
 // ************
@@ -481,6 +483,307 @@ pub mod converter {
 
             /// An issue occurred when manipulating analyses.
             Analyses(IoSerde),
+        }
+    }
+}
+
+pub mod duplicate {
+    use crate::{common, loader, project::resources, types};
+    use std::{
+        collections::HashMap,
+        fs,
+        path::{Path, PathBuf},
+        sync::Arc,
+    };
+    use syre_core::{self as core, graph::ResourceTree, types::ResourceId};
+
+    pub use error::Error;
+
+    /// Duplicate a project.
+    ///
+    /// # Arguments
+    /// + `src`: Base path of the source project.
+    /// + `dst`: Location of duplicated project. Must be a non-existant path.
+    ///
+    /// # Notes
+    /// + Dupicated project will have name of source project with ` - Copy` appended.
+    /// + Analyses and graph are duplicated without any assets.
+    pub fn duplicate(src: impl AsRef<Path>, dst: impl Into<PathBuf>) -> Result<(), Error> {
+        let src = src.as_ref();
+        let dst: PathBuf = dst.into();
+        if !src.exists() {
+            return Err(Error::SourceDoesNotExist);
+        }
+
+        let project_src = resources::Project::load_from(src).map_err(|err| {
+            let resources::project::LoadError {
+                properties,
+                settings,
+            } = err;
+            if let Err(err) = properties {
+                Error::InvalidSourceProperties(err)
+            } else if let Err(err) = settings {
+                Error::InvalidSourceSettings(err)
+            } else {
+                unreachable!();
+            }
+        })?;
+
+        if dst.exists() {
+            return Err(Error::DestinationAlreadyExists);
+        }
+        let mut tmp = dst.clone();
+        tmp.set_file_name(format!(
+            ".{}.tmp",
+            tmp.file_name().unwrap().to_string_lossy()
+        ));
+        fs::create_dir_all(&tmp).map_err(|err| Error::CreateDestinationFolder(err.kind()))?;
+
+        #[cfg(target_os = "windows")]
+        let hidden = common::fs::hide_folder(&tmp).is_ok();
+
+        let mut project = resources::project::Builder::new(tmp);
+        let mut properties = project_src.properties().clone();
+        let mut project_name = project_src.properties().name.clone();
+        project_name.push_str(" - Copy");
+        properties.name = project_name;
+        project.with_properties(properties);
+        let project = project.build().unwrap();
+
+        project
+            .save()
+            .map_err(|err| Error::SaveProject(err.kind()))?;
+
+        let analyses_src = resources::Analyses::load_from(project_src.base_path())
+            .map_err(Error::LoadAnalyses)?
+            .to_vec();
+        let mut analyses_map = Vec::with_capacity(analyses_src.len());
+        let analyses = analyses_src
+            .into_iter()
+            .map(|analysis_src| match analysis_src {
+                types::AnalysisKind::Script(script_src) => {
+                    let rid_src = script_src.rid().clone();
+                    let core::project::Script {
+                        path,
+                        name,
+                        description,
+                        env,
+                        creator,
+                        ..
+                    } = script_src;
+
+                    let mut script = core::project::Script::new(path, env);
+                    script.name = name;
+                    script.description = description;
+                    script.creator = creator;
+
+                    analyses_map.push((rid_src, script.rid().clone()));
+                    types::AnalysisKind::Script(script)
+                }
+                types::AnalysisKind::ExcelTemplate(_excel_template) => todo!(),
+            })
+            .collect::<Vec<_>>();
+        let analyses = resources::Analyses::new_with(project.base_path().to_path_buf(), analyses);
+        analyses
+            .save()
+            .map_err(|err| Error::SaveAnalyses(err.kind()))?;
+
+        if let Some(analysis_root) = project.analysis_root_path() {
+            common::copy_dir(project_src.analysis_root_path().unwrap(), analysis_root).map_err(
+                |errors| {
+                    tracing::error!(?errors);
+                    let errors = errors
+                        .into_iter()
+                        .map(|(path, err)| error::File { path, error: err })
+                        .collect();
+                    Error::DuplicateAnalyses(errors)
+                },
+            )?;
+        }
+
+        let graph_src =
+            loader::tree::Loader::load(project_src.data_root_path()).map_err(|err| match err {
+                loader::tree::error::Error::Root(_) => panic!("can not access graph root"),
+                loader::tree::error::Error::Ignore { .. } => todo!("invalid ignore file"),
+                loader::tree::error::Error::State(tree) => {
+                    let (nodes, _, _) = tree.to_parts();
+                    let errors = nodes
+                        .into_iter()
+                        .filter_map(|node| {
+                            let node = Arc::into_inner(node).unwrap();
+                            let container = node.into_inner().unwrap();
+                            container.err().map(|container| {
+                                let error = container.data().as_ref().err().unwrap();
+                                error::File {
+                                    path: container.path().clone(),
+                                    error: *error,
+                                }
+                            })
+                        })
+                        .collect::<Vec<_>>();
+
+                    Error::LoadGraph(errors)
+                }
+            })?;
+
+        let (nodes_src, edges_src) = graph_src.into_components();
+        let mut node_map = Vec::with_capacity(nodes_src.len());
+        let data_root_src = project_src.data_root_path();
+        let data_root = project.data_root_path();
+        let nodes = nodes_src
+            .values()
+            .map(|node_src| {
+                let container_src = node_src.data();
+                let container_graph_path = container_src.base_path().to_path_buf();
+                let container_graph_path =
+                    container_graph_path.strip_prefix(&data_root_src).unwrap();
+
+                let mut container =
+                    resources::container::Builder::new(data_root.join(container_graph_path));
+                container.with_properties(container_src.properties.clone());
+                container.with_analyses(container_src.analyses.clone());
+                container.with_settings(container_src.settings.clone());
+                let mut container = container.build();
+                node_map.push((container_src.rid().clone(), container.rid().clone()));
+
+                let analyses = container
+                    .analyses
+                    .iter()
+                    .map(|assoc_src| {
+                        let analysis = analyses_map
+                            .iter()
+                            .find_map(|(src, dst)| {
+                                (assoc_src.analysis() == src).then_some(dst.clone())
+                            })
+                            .unwrap();
+
+                        let mut assoc = core::project::AnalysisAssociation::new(analysis);
+                        assoc.priority = assoc_src.priority;
+                        assoc.autorun = assoc_src.autorun;
+                        assoc
+                    })
+                    .collect::<Vec<_>>();
+
+                container.analyses = analyses;
+                container
+            })
+            .collect::<Vec<_>>();
+
+        let edges = edges_src
+            .into_iter()
+            .map(|(parent_src, children_src)| {
+                let parent = node_map
+                    .iter()
+                    .find_map(|(src, dst)| (*src == parent_src).then_some(dst.clone()))
+                    .unwrap();
+
+                let children = children_src
+                    .iter()
+                    .map(|child_src| {
+                        node_map
+                            .iter()
+                            .find_map(|(src, dst)| (child_src == src).then_some(dst.clone()))
+                            .unwrap()
+                    })
+                    .collect::<indexmap::IndexSet<_>>();
+
+                (parent, children)
+            })
+            .collect::<HashMap<_, _>>();
+
+        let nodes = nodes
+            .into_iter()
+            .map(|container| {
+                (
+                    container.rid().clone(),
+                    core::graph::ResourceNode::new(container),
+                )
+            })
+            .collect();
+        let graph = core::graph::ResourceTree::from_parts(nodes, edges).unwrap();
+
+        save_graph(&graph).map_err(|(path, err)| {
+            let (path, error) = match err {
+                resources::container::error::Save::CreateDir(err) => (path, err.kind()),
+                resources::container::error::Save::SaveFiles {
+                    properties,
+                    assets,
+                    settings,
+                } => {
+                    if let Some(err) = properties {
+                        (crate::common::container_file_of(path), err.kind())
+                    } else if let Some(err) = assets {
+                        (crate::common::assets_file_of(path), err.kind())
+                    } else if let Some(err) = settings {
+                        (crate::common::container_settings_file_of(path), err.kind())
+                    } else {
+                        unreachable!();
+                    }
+                }
+            };
+
+            Error::SaveGraph(error::File { path, error })
+        })?;
+
+        fs::rename(project.base_path(), &dst)
+            .map_err(|err| Error::RenameDestination(err.kind()))?;
+        #[cfg(target_os = "windows")]
+        if hidden {
+            common::fs::unhide_folder(&dst).unwrap();
+        }
+
+        Ok(())
+    }
+
+    fn save_graph(
+        graph: &ResourceTree<resources::Container>,
+    ) -> Result<(), (PathBuf, resources::container::error::Save)> {
+        fn inner(
+            root: &ResourceId,
+            graph: &ResourceTree<resources::Container>,
+        ) -> Result<(), (PathBuf, resources::container::error::Save)> {
+            let node = graph.get(root).unwrap();
+            node.save()
+                .map_err(|err| (node.base_path().to_path_buf(), err))?;
+
+            let children = graph.children(root).unwrap();
+            for child in children {
+                inner(child, graph)?;
+            }
+
+            Ok(())
+        }
+
+        inner(graph.root(), graph)
+    }
+
+    pub mod error {
+        use crate::error::IoSerde;
+        use serde::{Deserialize, Serialize};
+        use std::{io, path::PathBuf};
+
+        #[derive(Serialize, Deserialize, Debug)]
+        pub enum Error {
+            SourceDoesNotExist,
+            InvalidSourceProperties(IoSerde),
+            InvalidSourceSettings(IoSerde),
+            DestinationAlreadyExists,
+            CreateDestinationFolder(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
+            SaveProject(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
+            LoadAnalyses(IoSerde),
+            SaveAnalyses(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
+            DuplicateAnalyses(Vec<File>),
+            LoadGraph(Vec<File>),
+            SaveGraph(File),
+            RenameDestination(#[serde(with = "io_error_serde::ErrorKind")] io::ErrorKind),
+        }
+
+        #[derive(Serialize, Deserialize, Debug)]
+        pub struct File {
+            pub path: PathBuf,
+
+            #[serde(with = "io_error_serde::ErrorKind")]
+            pub error: io::ErrorKind,
         }
     }
 }

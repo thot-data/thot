@@ -43,7 +43,7 @@ fn unique_file_name_should_work() {
 
     // multiple extensions
     let p = create_file_with_extension_in("gz.txt", _dir.path()).unwrap();
-    let q = unique_file_name(p.path().clone()).unwrap();
+    let q = unique_file_name(p.path()).unwrap();
     let r = postfix_file_name(p.path().to_path_buf(), "1");
 
     assert_ne!(p.path(), q, "file name should change");

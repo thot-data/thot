@@ -1,10 +1,12 @@
 //! Common use functions.
 use crate::constants::*;
+use rayon::prelude::*;
 use regex::Regex;
 use std::{
     ffi::OsString,
     io,
     path::{Component, Path, PathBuf, Prefix, MAIN_SEPARATOR},
+    sync::{Arc, Mutex},
 };
 
 /// Creates a unique file name.
@@ -155,6 +157,58 @@ pub fn strip_windows_unc(path: impl AsRef<Path>) -> PathBuf {
             _ => true,
         })
         .fold(PathBuf::new(), |path, component| path.join(component))
+}
+
+/// Recursively copy a folder and its contents.
+///
+/// # Returns
+/// `Err` if any path fails to be copied.
+///
+/// # Notes
+/// Spawns threads for copying.
+pub fn copy_dir(
+    src: impl AsRef<Path>,
+    dst: impl AsRef<Path>,
+) -> Result<(), Vec<(PathBuf, io::ErrorKind)>> {
+    let src: &Path = src.as_ref();
+    let dst: &Path = dst.as_ref();
+
+    let mut errors = vec![];
+    let mut files = vec![];
+    for entry in walkdir::WalkDir::new(src)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+    {
+        let rel_path = entry.path().strip_prefix(src).unwrap();
+        let dst = dst.join(rel_path);
+
+        if entry.file_type().is_file() {
+            files.push((entry.path().to_path_buf(), dst));
+        } else if entry.file_type().is_dir() {
+            if let Err(err) = std::fs::create_dir(dst) {
+                errors.push((entry.path().to_path_buf(), err.kind()));
+            }
+        } else {
+            todo!();
+        };
+    }
+
+    let errors = Arc::new(Mutex::new(errors));
+    files.into_par_iter().for_each({
+        let errors = errors.clone();
+        move |(file_src, file_dst)| {
+            if let Err(err) = std::fs::copy(&file_src, &file_dst) {
+                errors.lock().unwrap().push((file_src, err.kind()));
+            }
+        }
+    });
+
+    let errors = Arc::into_inner(errors).unwrap().into_inner().unwrap();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 // ******************
@@ -362,6 +416,29 @@ pub mod fs {
 
         let res = unsafe {
             FileSystem::SetFileAttributesW(filename_win.as_ptr(), FileSystem::FILE_ATTRIBUTE_HIDDEN)
+        };
+
+        if res == 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn unhide_folder(path: impl AsRef<Path>) -> io::Result<()> {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem;
+
+        let filename_win = path
+            .as_ref()
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<u16>>();
+
+        let res = unsafe {
+            FileSystem::SetFileAttributesW(filename_win.as_ptr(), FileSystem::FILE_ATTRIBUTE_NORMAL)
         };
 
         if res == 0 {

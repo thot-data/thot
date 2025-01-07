@@ -379,45 +379,36 @@ impl Actor {
             .collect::<Vec<_>>();
 
         if projects.is_empty() {
-            vec![]
-        } else {
-            let state = self.app.state::<crate::State>();
-            let user_state = state.user();
-            let mut user_state = user_state.lock().unwrap();
-            let Some(user_state) = user_state.as_mut() else {
-                return vec![];
-            };
-
-            let user_projects = projects
-                .into_iter()
-                .filter(|(path, data)| {
-                    let db::state::DataResource::Ok(settings) = data.settings() else {
-                        return false;
-                    };
-
-                    let Some(permissions) = settings.permissions.get(user_state.rid()) else {
-                        return false;
-                    };
-
-                    if permissions.any() {
-                        true
-                    } else {
-                        false
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            *user.projects().lock().unwrap() =
-                user_projects.iter().map(|(path, _)| path.clone()).collect();
-
-            vec![(
-                lib::event::topic::PROJECT_MANIFEST.to_string(),
-                lib::Event::new(
-                    lib::event::ProjectManifest::Added(user_projects).into(),
-                    event.id().clone(),
-                ),
-            )]
+            return vec![];
         }
+
+        let user_projects = projects
+            .into_iter()
+            .filter(|(_path, data)| {
+                let db::state::DataResource::Ok(settings) = data.settings() else {
+                    return false;
+                };
+
+                let Some(permissions) = settings.permissions.get(user.rid()) else {
+                    return false;
+                };
+
+                permissions.any()
+            })
+            .collect::<Vec<_>>();
+
+        user.projects()
+            .lock()
+            .unwrap()
+            .extend(user_projects.iter().map(|(path, _)| path.clone()));
+
+        vec![(
+            lib::event::topic::PROJECT_MANIFEST.to_string(),
+            lib::Event::new(
+                lib::event::ProjectManifest::Added(user_projects).into(),
+                event.id().clone(),
+            ),
+        )]
     }
 
     fn process_event_app_project_manifest_removed(

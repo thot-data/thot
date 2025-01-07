@@ -1336,6 +1336,10 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   text-wrap: nowrap;
 }
 
+.break-all {
+  word-break: break-all;
+}
+
 .rounded {
   border-radius: 0.25rem;
 }

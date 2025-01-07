@@ -54,6 +54,7 @@ fn main() {
             project::create_project,
             project::delete_project,
             project::deregister_project,
+            project::duplicate_project,
             project::import_project,
             project::initialize_project,
             project::project_analysis_remove,
