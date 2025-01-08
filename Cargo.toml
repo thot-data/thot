@@ -47,7 +47,7 @@ directories = "5.0"
 futures = "0.3"
 glob = "0.3" 
 ignore = "0.4"
-indexmap = "2.6"
+indexmap = "2.7"
 js-sys = "0.3"
 notify = { version = "7.0", default-features = false }
 notify-debouncer-full = { version = "0.4", default-features = false }
@@ -70,7 +70,7 @@ web-sys = "0.3"
 zmq = "0.10.0"
 
 # dev dependencies
-fake = "3.0"
+fake = "3.1"
 rand = "0.8"
 tempfile = "3.14"
 

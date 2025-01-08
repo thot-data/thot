@@ -1077,9 +1077,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.23"
+version = "4.5.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3135e7ec2ef7b10c6ed8950f0f792ed96ee093fa088608f1c76e569722700c84"
+checksum = "9560b07a799281c7e0958b9296854d6fafd4c5f31444a7e5bb1ad6dde5ccf1bd"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1087,9 +1087,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.23"
+version = "4.5.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30582fc632330df2bd26877bde0c1f4470d57c582bbc070376afcd04d8cb4838"
+checksum = "874e0dd3eb68bf99058751ac9712f622e61e6f393a94f7128fa26e3f02f5c7cd"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1099,9 +1099,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.5.18"
+version = "4.5.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ac6a0c7b1a9e9a5186361f67dfa1b88213572f427fb9ab038efb2bd8c582dab"
+checksum = "54b755194d6389280185988721fffba69495eed5ee9feeee9a599b53db80318c"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2021,9 +2021,9 @@ dependencies = [
 
 [[package]]
 name = "event-listener"
-version = "5.3.1"
+version = "5.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6032be9bd27023a771701cc49f9f053c751055f71efb2e0ae5c15809093675ba"
+checksum = "3492acde4c3fc54c845eaab3eed8bd00c7a7d881f78bfc801e43a93dec1331ae"
 dependencies = [
  "concurrent-queue",
  "parking",
@@ -3646,7 +3646,7 @@ checksum = "71dd52191aae121e8611f1e8dc3e324dd0dd1dee1e6dd91d10ee07a3cfb4d9d8"
 [[package]]
 name = "io_error_serde"
 version = "0.0.1"
-source = "git+https://github.com/syre-data/io_error_serde.git#c99185f8fe11d4fb05e1ac679d558faa061d7a50"
+source = "git+https://github.com/syre-data/io_error_serde.git#bd3d25babe61525fe6e06e0728bf5637c3f2cf0c"
 dependencies = [
  "serde",
  "serde_with",
@@ -3961,10 +3961,11 @@ dependencies = [
 
 [[package]]
 name = "leptos-use"
-version = "0.15.2"
-source = "git+https://github.com/Synphonyte/leptos-use.git#4d5d5df061b89f0518dc4ee4f0a77875184c7fb5"
+version = "0.15.3"
+source = "git+https://github.com/Synphonyte/leptos-use.git#4bee75bef070b7a830786eaddefedb9da394c462"
 dependencies = [
  "cfg-if",
+ "chrono",
  "codee",
  "cookie",
  "default-struct-builder",
@@ -4226,9 +4227,9 @@ dependencies = [
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.4.14"
+version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
+checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
 
 [[package]]
 name = "litemap"
@@ -6504,9 +6505,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.42"
+version = "0.38.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f93dc38ecbab2eb790ff964bb77fa94faf256fd3e73285fd7ba0903b76bedb85"
+checksum = "a78891ee6bf2340288408954ac787aa063d8e8817e9f53abb37c695c6d834ef6"
 dependencies = [
  "bitflags 2.6.0",
  "errno",
@@ -7252,9 +7253,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surrealdb-core-nightly"
-version = "2.1.20250106"
+version = "2.1.20250107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bd8020cb0d42861243a2999a6d9ee8079ce39101c68c012795df04586e8957a"
+checksum = "0648d9c3fe345c2cbec3bb00b88dac42d67a0d8cadd74fc61792c5d0f9ab28ca"
 dependencies = [
  "addr",
  "ahash 0.8.11",
@@ -7352,9 +7353,9 @@ dependencies = [
 
 [[package]]
 name = "surrealdb-nightly"
-version = "2.1.20250106"
+version = "2.1.20250107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e779777eaf2894372900e2d5fbe765b16435537ef04bc50e51169ba153615fb3"
+checksum = "69f0e21cb487927290774796b1c8b226efdbe57b333e256eacda1cb5cc47619f"
 dependencies = [
  "arrayvec",
  "async-channel",

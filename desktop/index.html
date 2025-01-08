@@ -8,17 +8,20 @@
     <link data-trunk rel="css" href="styles/output.css" />
     <!-- <link data-trunk rel="tailwind-css" href="styles/main.css" /> -->
 
-    <script>
+    <!-- TODO: Check platform here, as below -->
+    <script data-trunk src="public/scripts/dragdrop.webview2.polyfill.js"></script>
+    <!-- <script>
       (function() {
-        let platform = navigator.platform.toLowerCase();
-        if (platform.startsWith("win")) {
+        let platform = navigator.userAgent.toLowerCase();
+        if (!platform.indexOf("windows") > -1) {
           const DRAG_DROP_POLYFILL_SRC = "public/scripts/dragdrop.webview2.polyfill.js";
           let dragDropPolyfill = document.createElement("script");
+          dragDropPolyfill.setAttribute("data-trunk", "");
           dragDropPolyfill.setAttribute("src", DRAG_DROP_POLYFILL_SRC);
           document.head.appendChild(dragDropPolyfill);
         }
       })();
-    </script>
+    </script> -->
   </head>
   <body>
   </body>

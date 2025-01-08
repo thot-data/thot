@@ -67,7 +67,7 @@ fn AnalysesErr(error: local::error::IoSerde) -> impl IntoView {
 fn AnalysesOk(analyses: ReadSignal<Vec<state::project::Analysis>>) -> impl IntoView {
     let project = expect_context::<state::Project>();
     let messages = expect_context::<types::Messages>();
-    let drag_over_workspace_resource = expect_context::<Signal<DragOverWorkspaceResource>>();
+    let drag_over_workspace_resource = expect_context::<ReadSignal<DragOverWorkspaceResource>>();
 
     let context_menu_active_analysis = ArcRwSignal::<Option<ContextMenuActiveAnalysis>>::new(None);
     provide_context(context_menu_active_analysis.clone());

@@ -196,7 +196,6 @@ fn ProjectDeck(
             .iter()
             .map(|data| data.with(|(p, _)| p.clone()))
             .collect::<Vec<_>>();
-        tracing::debug!(?p)
     });
 
     view! {

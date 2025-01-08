@@ -263,12 +263,9 @@ fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> 
 
     let (drag_over_event, set_drag_over_event) = signal(tauri_sys::window::DragDropEvent::Leave);
     let drag_over_event = leptos_use::signal_throttled(drag_over_event, THROTTLE_DRAG_EVENT);
-    let (drag_over_container_elm, set_drag_over_container_elm) = signal_local(None);
-    let (drag_over_workspace_resource, set_drag_over_workspace_resource) =
-        signal(DragOverWorkspaceResource::new());
-    let drag_over_workspace_resource_signal: Signal<DragOverWorkspaceResource> =
-        Signal::from(drag_over_workspace_resource);
-    provide_context(drag_over_workspace_resource_signal);
+    let drag_over_container_elm = RwSignal::new_local(None);
+    let drag_over_workspace_resource = RwSignal::new(DragOverWorkspaceResource::new());
+    provide_context(drag_over_workspace_resource.read_only());
 
     spawn_local({
         let project = project.clone();
@@ -315,102 +312,27 @@ fn WorkspaceGraph(graph: db::state::Graph, analyze_node: NodeRef<html::Div>) -> 
     });
 
     {
-        // TODO: Tested on Linux and Windows.
-        // Need to test on Mac.
-        // Check if needed on unix systems.
-        use tauri_sys::window::DragDropEvent;
         let _ = Effect::watch(
             move || drag_over_event.get(),
             {
+                let project = project.clone();
                 let graph = graph.clone();
-                move |event, _, _| match event {
-                    DragDropEvent::Enter(payload) => {
-                        // Cursor entered window
-                        if payload.paths().is_empty() {
-                            return;
-                        }
-
-                        let payload = payload.clone();
-                        spawn_local(async move {
-                            let (resource, elm) =
-                                match resource_from_position(payload.position()).await {
-                                    None => (None, None),
-                                    Some((resource, elm)) => (Some(resource), elm),
-                                };
-                            if drag_over_workspace_resource
-                                .with_untracked(|current| resource != **current)
-                            {
-                                set_drag_over_workspace_resource(resource.into());
-                                if let Some(container) = elm {
-                                    set_drag_over_container_elm.update(|elm| {
-                                        let _ = elm.insert(container);
-                                    });
-                                }
-                            }
-                        });
-                    }
-                    DragDropEvent::Over(payload) => {
-                        let payload = payload.clone();
-                        spawn_local(async move {
-                            let (resource, elm) =
-                                match resource_from_position(payload.position()).await {
-                                    None => (None, None),
-                                    Some((resource, elm)) => (Some(resource), elm),
-                                };
-                            if drag_over_workspace_resource
-                                .with_untracked(|current| resource != **current)
-                            {
-                                set_drag_over_workspace_resource(resource.into());
-                                if let Some(container) = elm {
-                                    set_drag_over_container_elm.update(|elm| {
-                                        let _ = elm.insert(container);
-                                    });
-                                } else {
-                                    set_drag_over_container_elm.update(|elm| {
-                                        elm.take();
-                                    });
-                                }
-                            }
-                        });
-                    }
-                    DragDropEvent::Leave => {
-                        // Cursor exited window
-                        if drag_over_workspace_resource.with_untracked(|current| current.is_some())
-                        {
-                            set_drag_over_workspace_resource(None.into());
-                            set_drag_over_container_elm.update(|elm| {
-                                elm.take();
-                            });
-                        }
-                    }
-                    DragDropEvent::Drop(payload) => {
-                        if let Some(resource) =
-                            drag_over_workspace_resource.get_untracked().into_inner()
-                        {
-                            set_drag_over_workspace_resource(None.into());
-                            set_drag_over_container_elm.update(|elm| {
-                                elm.take();
-                            });
-
-                            // NB: Spawn seperate task to handle large copies.
-                            let payload = payload.clone();
-                            spawn_local({
-                                let project = project.clone();
-                                let graph = graph.clone();
-                                async move {
-                                    handle_drop_event(resource, payload, &project, &graph, messages)
-                                        .await
-                                }
-                            });
-                        }
-                    }
+                move |event, _, _| {
+                    handle_drag_drop_event(
+                        event,
+                        drag_over_container_elm,
+                        drag_over_workspace_resource,
+                        &project,
+                        &graph,
+                        messages,
+                    )
                 }
             },
             false,
         );
 
         let _ = Effect::watch(
-            drag_over_container_elm,
+            drag_over_container_elm.read_only(),
             move |elm, prev_container, _| {
                 if let Some(elm) = prev_container {
                     if let Some(container) = elm.as_ref() {
@@ -1172,6 +1094,81 @@ fn container_from_point(x: isize, y: isize) -> Option<(ResourceId, web_sys::Elem
                 None
             }
         })
+}
+
+// TODO: Tested on Linux and Windows.
+// Need to test on Mac.
+// Check if needed on unix systems.
+fn handle_drag_drop_event(
+    event: &tauri_sys::window::DragDropEvent,
+    drag_over_container_elm: RwSignal<Option<web_sys::Element>, LocalStorage>,
+    drag_over_workspace_resource: RwSignal<DragOverWorkspaceResource>,
+    project: &state::Project,
+    graph: &state::Graph,
+    messages: types::Messages,
+) {
+    use tauri_sys::window::DragDropEvent;
+
+    match event {
+        DragDropEvent::Enter(payload) => {
+            // Cursor entered window
+            if payload.paths().is_empty() {
+                return;
+            }
+
+            let payload = payload.clone();
+            spawn_local(async move {
+                let (resource, elm) = match resource_from_position(payload.position()).await {
+                    None => (None, None),
+                    Some((resource, elm)) => (Some(resource), elm),
+                };
+                if **drag_over_workspace_resource.read_untracked() != resource {
+                    drag_over_workspace_resource.set(resource.into());
+                    if let Some(container) = elm {
+                        let _ = drag_over_container_elm.write().insert(container);
+                    }
+                }
+            });
+        }
+        DragDropEvent::Over(payload) => {
+            let payload = payload.clone();
+            spawn_local(async move {
+                let (resource, elm) = match resource_from_position(payload.position()).await {
+                    None => (None, None),
+                    Some((resource, elm)) => (Some(resource), elm),
+                };
+                if **drag_over_workspace_resource.read_untracked() != resource {
+                    drag_over_workspace_resource.set(resource.into());
+                    if let Some(container) = elm {
+                        let _ = drag_over_container_elm.write().insert(container);
+                    } else {
+                        let _ = drag_over_container_elm.write().take();
+                    }
+                }
+            });
+        }
+        DragDropEvent::Leave => {
+            // Cursor exited window
+            if drag_over_workspace_resource.read_untracked().is_some() {
+                drag_over_workspace_resource.set(None.into());
+                let _ = drag_over_container_elm.write().take();
+            }
+        }
+        DragDropEvent::Drop(payload) => {
+            if let Some(resource) = drag_over_workspace_resource.get_untracked().into_inner() {
+                drag_over_workspace_resource.set(None.into());
+                let _ = drag_over_container_elm.write().take();
+
+                // NB: Spawn seperate task to handle large copies.
+                spawn_local({
+                    let project = project.clone();
+                    let graph = graph.clone();
+                    let payload = payload.clone();
+                    async move { handle_drop_event(resource, payload, &project, &graph, messages).await }
+                });
+            }
+        }
+    }
 }
 
 async fn handle_drop_event(

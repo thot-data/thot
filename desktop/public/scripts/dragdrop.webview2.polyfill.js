@@ -35,6 +35,12 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 (function (opts) {
+    let platform = navigator.userAgent.toLowerCase();
+    if (!platform.indexOf("windows") == -1) {
+        // TODO: Replace in favor of checking platform in `index.html`
+        return;
+    }
+
     let isDragging = false;
     let draggedElement = null;
     let startPosition = { x: 0, y: 0 };

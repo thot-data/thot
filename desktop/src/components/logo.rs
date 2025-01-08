@@ -1,5 +1,5 @@
 use crate::app::PrefersDarkTheme;
-use leptos::{prelude::*, text_prop::TextProp};
+use leptos::prelude::*;
 
 #[component]
 pub fn Logo() -> impl IntoView {
