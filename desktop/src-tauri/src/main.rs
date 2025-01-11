@@ -64,6 +64,7 @@ fn main() {
             settings::user_settings_desktop_update,
             settings::user_settings_runner_update,
             settings::project_settings,
+            settings::project_settings_desktop_update,
             settings::project_settings_runner_update,
             user::active_user,
             user::user_count,

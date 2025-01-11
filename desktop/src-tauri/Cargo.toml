@@ -21,8 +21,8 @@ directories.workspace = true
 ignore.workspace = true
 open = "5.3.0"
 rayon.workspace = true
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 syre-core = { workspace = true, features = ["serde"] }
 syre-local = { workspace = true, features = ["fs"] }
 syre-local-database = { workspace = true, features = ["client"] }

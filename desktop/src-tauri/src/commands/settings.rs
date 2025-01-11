@@ -61,10 +61,18 @@ pub fn project_settings(project: PathBuf) -> lib::settings::Project {
         .into()
 }
 
+/// Update the desktop settings for the project.
+#[tauri::command]
+pub fn project_settings_desktop_update(
+    project: PathBuf,
+    update: lib::settings::project::Desktop,
+) -> Result<(), lib::command::error::IoErrorKind> {
+    settings::project::Desktop::save(&project, update).map_err(|err| err.into())
+}
+
 /// Update the runner settings for the project.
 #[tauri::command]
 pub fn project_settings_runner_update(
-    state: tauri::State<crate::State>,
     project: PathBuf,
     update: lib::settings::project::Runner,
 ) -> Result<(), lib::command::error::IoErrorKind> {

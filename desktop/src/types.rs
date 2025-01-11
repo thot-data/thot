@@ -271,6 +271,7 @@ pub mod settings {
         /// If using as a [`Store`] must scope the `*StoreFields` trait.
         #[derive(Store, Clone)]
         pub struct Settings {
+            pub desktop: Result<Desktop, local::error::IoSerde>,
             pub runner: Result<Runner, local::error::IoSerde>,
         }
 
@@ -282,18 +283,50 @@ pub mod settings {
 
         impl From<lib::settings::Project> for Settings {
             fn from(value: lib::settings::Project) -> Self {
-                let lib::settings::Project { runner } = value;
+                let lib::settings::Project { desktop, runner } = value;
                 Self {
-                    runner: runner.map(|runner| runner.into()),
+                    desktop: desktop.map(|settings| settings.into()),
+                    runner: runner.map(|settings| settings.into()),
                 }
             }
         }
 
         impl Into<lib::settings::Project> for Settings {
             fn into(self) -> lib::settings::Project {
-                let Self { runner } = self;
+                let Self { desktop, runner } = self;
                 lib::settings::Project {
-                    runner: runner.map(|runner| runner.into()),
+                    desktop: desktop.map(|settings| settings.into()),
+                    runner: runner.map(|settings| settings.into()),
+                }
+            }
+        }
+
+        #[derive(Store, Clone, Debug)]
+        pub struct Desktop {
+            /// When an asset is drag-dropped, set its `type` property.
+            pub asset_drag_drop_kind: Option<String>,
+        }
+
+        impl From<lib::settings::project::Desktop> for Desktop {
+            fn from(value: lib::settings::project::Desktop) -> Self {
+                let lib::settings::project::Desktop {
+                    asset_drag_drop_kind,
+                } = value;
+
+                Self {
+                    asset_drag_drop_kind,
+                }
+            }
+        }
+
+        impl Into<lib::settings::project::Desktop> for Desktop {
+            fn into(self) -> lib::settings::project::Desktop {
+                let Self {
+                    asset_drag_drop_kind,
+                } = self;
+
+                lib::settings::project::Desktop {
+                    asset_drag_drop_kind,
                 }
             }
         }

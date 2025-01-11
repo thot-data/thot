@@ -4,6 +4,7 @@
 
 pub mod commands;
 pub mod common;
+pub mod constants;
 pub(crate) mod db;
 pub mod settings;
 mod setup;

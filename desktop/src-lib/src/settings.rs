@@ -89,11 +89,18 @@ pub mod project {
 
     #[derive(Serialize, Deserialize, Clone, Debug)]
     pub struct Settings {
+        pub desktop: Result<Desktop, local::error::IoSerde>,
         pub runner: Result<Runner, local::error::IoSerde>,
     }
 
     impl Settings {
         pub fn replace_not_found_with_default(&mut self) {
+            if let Err(err) = &self.desktop {
+                if matches!(err, local::error::IoSerde::Io(io::ErrorKind::NotFound)) {
+                    self.desktop = Ok(Desktop::default());
+                }
+            }
+
             if let Err(err) = &self.runner {
                 if matches!(err, local::error::IoSerde::Io(io::ErrorKind::NotFound)) {
                     self.runner = Ok(Runner::default());
@@ -105,9 +112,15 @@ pub mod project {
     impl Default for Settings {
         fn default() -> Self {
             Self {
+                desktop: Ok(Default::default()),
                 runner: Ok(Default::default()),
             }
         }
+    }
+
+    #[derive(Serialize, Deserialize, Clone, Default, Debug)]
+    pub struct Desktop {
+        pub asset_drag_drop_kind: Option<String>,
     }
 
     #[derive(Serialize, Deserialize, Clone, Default, Debug)]

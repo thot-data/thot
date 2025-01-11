@@ -144,38 +144,94 @@ pub mod user {
 
 pub mod project {
     use super::{json_load, json_save};
+    use crate::common;
+    use serde::{Deserialize, Serialize};
     use std::{io, path::Path};
     use syre_desktop_lib as lib;
-    use syre_local::{self as local, common, project::config::runner_settings};
+    use syre_local::{self as local, project::config::runner_settings};
 
     /// All settings for a user.
     #[derive(Debug)]
     pub struct Settings {
+        pub desktop: Result<Desktop, local::error::IoSerde>,
         pub runner: Result<runner_settings::Settings, local::error::IoSerde>,
     }
 
     impl Settings {
         pub fn load(project: impl AsRef<Path>) -> Self {
-            let runner = Runner::load(project);
-            Self { runner }
+            let desktop = Desktop::load(&project);
+            let runner = Runner::load(&project);
+            Self { desktop, runner }
         }
 
         // Replaces settings whose files were not found with default values.
         pub fn replace_not_found_with_default(self) -> Self {
-            let Self { mut runner } = self;
+            let Self {
+                mut desktop,
+                mut runner,
+            } = self;
+
+            if let Err(local::error::IoSerde::Io(io::ErrorKind::NotFound)) = desktop {
+                desktop = Ok(Desktop::default())
+            }
 
             if let Err(local::error::IoSerde::Io(io::ErrorKind::NotFound)) = runner {
                 runner = Ok(runner_settings::Settings::default())
             }
 
-            Self { runner }
+            Self { desktop, runner }
         }
     }
 
     impl Into<lib::settings::Project> for Settings {
         fn into(self) -> lib::settings::Project {
             lib::settings::Project {
+                desktop: self.desktop.map(|settings| settings.into()),
                 runner: self.runner.map(|settings| settings.into()),
+            }
+        }
+    }
+
+    #[derive(Serialize, Deserialize, Default, Debug, Clone)]
+    pub struct Desktop {
+        asset_drag_drop_kind: Option<String>,
+    }
+    impl Desktop {
+        pub fn load(project: impl AsRef<Path>) -> Result<Desktop, local::error::IoSerde> {
+            let path = common::project_desktop_settings_file_of(project);
+            json_load(&path)
+        }
+
+        pub fn save(
+            project: impl AsRef<Path>,
+            settings: impl Into<Desktop>,
+        ) -> Result<(), io::Error> {
+            let path = common::project_desktop_settings_file_of(project);
+            let settings: Desktop = settings.into();
+            json_save(&settings, &path)
+        }
+    }
+
+    impl Into<lib::settings::project::Desktop> for Desktop {
+        fn into(self) -> lib::settings::project::Desktop {
+            let Self {
+                asset_drag_drop_kind,
+            } = self;
+
+            lib::settings::project::Desktop {
+                asset_drag_drop_kind,
+            }
+        }
+    }
+
+    impl From<lib::settings::project::Desktop> for Desktop {
+        fn from(value: lib::settings::project::Desktop) -> Self {
+            let lib::settings::project::Desktop {
+                asset_drag_drop_kind,
+            } = value;
+
+            Self {
+                asset_drag_drop_kind,
             }
         }
     }
@@ -185,7 +241,7 @@ pub mod project {
         pub fn load(
             project: impl AsRef<Path>,
         ) -> Result<runner_settings::Settings, local::error::IoSerde> {
-            let path = common::project_runner_settings_file_of(project);
+            let path = local::common::project_runner_settings_file_of(project);
             json_load(&path)
         }
 
@@ -193,7 +249,7 @@ pub mod project {
             project: impl AsRef<Path>,
             settings: impl Into<runner_settings::Settings>,
         ) -> Result<(), io::Error> {
-            let path = common::project_runner_settings_file_of(project);
+            let path = local::common::project_runner_settings_file_of(project);
             let settings: runner_settings::Settings = settings.into();
             json_save(&settings, &path)
         }

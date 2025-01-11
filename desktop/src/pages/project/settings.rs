@@ -166,10 +166,158 @@ mod project {
             <div class="relative bg-white dark:bg-secondary-800 dark:text-white h-full w-full">
                 <h1 class="text-lg font-primary pt-2 pb-4 px-2">"Project settings"</h1>
                 <div class="px-2">
+                    <h2 class="text-md font-primary pb-2">"Desktop"</h2>
+                    <desktop::Settings />
+                </div>
+                <div class="px-2">
                     <h2 class="text-md font-primary pb-2">"Runner"</h2>
                     <runner::Settings />
                 </div>
             </div>
+        }
+    }
+
+    mod desktop {
+        use super::{state, InputDebounce};
+        use crate::{
+            commands,
+            types::{self, settings::project::SettingsStoreFields},
+        };
+        use leptos::{
+            either::Either,
+            ev::{Event, MouseEvent},
+            html,
+            prelude::*,
+            task::spawn_local,
+        };
+        use leptos_icons::*;
+        use reactive_stores::Store;
+        use serde::Serialize;
+        use std::{io, num::NonZeroUsize, path::PathBuf};
+        use syre_desktop_lib as lib;
+        use syre_local::error::IoSerde;
+
+        #[component]
+        pub fn Settings() -> impl IntoView {
+            let project = expect_context::<state::Project>();
+            let project_settings = expect_context::<Store<types::settings::Project>>();
+            let settings = project_settings.desktop();
+            let input_debounce = expect_context::<InputDebounce>();
+            let messages = expect_context::<types::Messages>();
+
+            let (asset_drag_drop_kind, set_asset_drag_drop_kind) = signal(
+                settings
+                    .read_untracked()
+                    .as_ref()
+                    .map(|settings| settings.asset_drag_drop_kind.clone())
+                    .ok()
+                    .flatten(),
+            );
+            let asset_drag_drop_kind: Signal<Option<String>> =
+                leptos_use::signal_debounced(asset_drag_drop_kind, *input_debounce);
+
+            let _ = {
+                let project = project.path().get_untracked();
+                Effect::watch(
+                    move || (asset_drag_drop_kind.get(),),
+                    move |(asset_drag_drop_kind,), _, _| {
+                        let update = match &settings.get_untracked() {
+                            Ok(settings) => Ok(settings.clone()),
+                            Err(err) if matches!(err, IoSerde::Io(io::ErrorKind::NotFound)) => {
+                                Ok(lib::settings::project::Desktop::default().into())
+                            }
+                            Err(err) => Err(err.clone()),
+                        };
+
+                        let mut update = match update {
+                            Ok(update) => update,
+                            Err(err) => {
+                                let mut msg =
+                                    types::message::Builder::error("Could not update settings.");
+                                msg.body(format!("{err:?}"));
+                                messages.update(|messages| messages.push(msg.build()));
+                                return;
+                            }
+                        };
+
+                        update.asset_drag_drop_kind = asset_drag_drop_kind.clone();
+                        project_settings.update(|settings| {
+                            settings.desktop = Ok(update.clone());
+                        });
+                        let project = project.clone();
+                        spawn_local(async move {
+                            if let Err(err) = update_settings(project, update.into()).await {
+                                let mut msg =
+                                    types::message::Builder::error("Could not update settings.");
+                                msg.body(format!("{err:?}"));
+                                messages.update(|messages| messages.push(msg.build()));
+                            }
+                        });
+                    },
+                    false,
+                )
+            };
+
+            view! {
+                <form on:submit=move |e| e.prevent_default()>
+                    <div class="pb-2">
+                        <AssetDragDropKind
+                            value=asset_drag_drop_kind
+                            set_value=set_asset_drag_drop_kind
+                        />
+                    </div>
+                </form>
+            }
+        }
+
+        #[component]
+        fn AssetDragDropKind(
+            value: Signal<Option<String>>,
+            set_value: WriteSignal<Option<String>>,
+        ) -> impl IntoView {
+            let update_kind = move |e: Event| {
+                let value = event_target_value(&e);
+                let value = value.trim();
+                if value.is_empty() {
+                    let _ = set_value.write().take();
+                } else {
+                    let _ = set_value.write().insert(value.to_string());
+                }
+            };
+
+            view! {
+                <label
+                    title="Type assigned to assets on drag-drop."
+                    class="flex gap-2 items-center"
+                >
+                    <span class="text-nowrap">"Asset drag drop type"</span>
+                    <div class="grow flex gap-2 items-center">
+                        <input
+                            prop:value=value
+                            on:input=update_kind
+                            class="input-simple grow"
+                            placeholder="Type"
+                        />
+                    </div>
+                </label>
+            }
+        }
+
+        async fn update_settings(
+            project: PathBuf,
+            update: lib::settings::project::Desktop,
+        ) -> Result<(), lib::command::error::IoErrorKind> {
+            #[derive(Serialize)]
+            struct Args {
+                project: PathBuf,
+                update: lib::settings::project::Desktop,
+            }
+
+            tauri_sys::core::invoke_result(
+                "project_settings_desktop_update",
+                Args { project, update },
+            )
+            .await
         }
     }
 
