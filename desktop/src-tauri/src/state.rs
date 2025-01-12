@@ -1,4 +1,5 @@
 //! App state.
+use crate::fs_action;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -10,17 +11,25 @@ use syre_local_database as db;
 pub struct State {
     /// Active user.
     user: Slice<Option<User>>,
+
+    /// Pending actions.
+    actions: Slice<Vec<fs_action::Action>>,
 }
 
 impl State {
     pub fn new() -> Self {
         Self {
             user: new_slice(None),
+            actions: new_slice(vec![]),
         }
     }
 
     pub fn user(&self) -> Slice<Option<User>> {
         self.user.clone()
+    }
+
+    pub fn actions(&self) -> &Slice<Vec<fs_action::Action>> {
+        &self.actions
     }
 }
 

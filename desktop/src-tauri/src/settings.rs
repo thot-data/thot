@@ -194,7 +194,7 @@ pub mod project {
 
     #[derive(Serialize, Deserialize, Default, Debug, Clone)]
     pub struct Desktop {
-        asset_drag_drop_kind: Option<String>,
+        pub asset_drag_drop_kind: Option<String>,
     }
     impl Desktop {
         pub fn load(project: impl AsRef<Path>) -> Result<Desktop, local::error::IoSerde> {

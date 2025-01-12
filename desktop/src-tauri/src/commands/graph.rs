@@ -1,8 +1,9 @@
+use crate::fs_action;
 use std::{
-    fs, io,
+    io,
     path::{Path, PathBuf},
 };
-use syre_core::types::ResourceId;
+use syre_core::{self as core, types::ResourceId};
 use syre_desktop_lib as lib;
 use syre_local as local;
 use syre_local_database::{self as db, common::is_root_path};
@@ -38,6 +39,7 @@ pub fn create_child_container(
 /// `Vec` of `Result`s corresponding to each resource.
 #[tauri::command]
 pub async fn add_file_system_resources(
+    state: tauri::State<'_, crate::State>,
     db: tauri::State<'_, db::Client>,
     resources: Vec<lib::types::AddFsGraphResourceData>,
 ) -> Result<(), Vec<(PathBuf, lib::command::error::IoErrorKind)>> {
@@ -57,25 +59,33 @@ pub async fn add_file_system_resources(
                 todo!();
             };
 
-            (project, path.join(&properties.data_root))
+            (project, path, properties.data_root.clone())
         })
         .collect::<Vec<_>>();
 
+    let user = state.user();
+    let user = user.lock().unwrap().as_ref().map(|user| user.rid().clone());
+
     let mut results = tokio::task::JoinSet::new();
     for resource in resources {
-        let project_path = project_paths
+        let (project_path, data_root) = project_paths
             .iter()
-            .find_map(|(project, path)| {
-                if *project == resource.project {
-                    Some(path)
+            .find_map(|(project_rid, project_path, data_root)| {
+                if *project_rid == resource.project {
+                    Some((project_path.clone(), data_root.clone()))
                 } else {
                     None
                 }
             })
-            .cloned()
             .unwrap();
 
-        results.spawn(async move { add_file_system_resource(resource, project_path).await });
+        let actions = state.actions().clone();
+        results.spawn({
+            let user = user.clone();
+            async move {
+                add_file_system_resource(resource, project_path, data_root, user, actions).await
+            }
+        });
     }
     let results = results.join_all().await;
 
@@ -99,11 +109,18 @@ pub async fn add_file_system_resources(
 async fn add_file_system_resource(
     resource: lib::types::AddFsGraphResourceData,
     project: impl AsRef<Path>,
+    data_root: impl AsRef<Path>,
+    user: Option<ResourceId>,
+    actions: crate::state::Slice<Vec<fs_action::Action>>,
 ) -> Result<(), Vec<(PathBuf, io::ErrorKind)>> {
     use syre_local::types::FsResourceAction;
 
-    let to_path = lib::utils::join_path_absolute(project, &resource.parent);
-    let to_path = to_path.join(resource.path.file_name().unwrap());
+    let project_path = project.as_ref();
+    let data_root = data_root.as_ref();
+    let to_name = resource.path.file_name().unwrap();
+    let data_root_path = project_path.join(data_root);
+    let parent_path = lib::utils::join_path_absolute(data_root_path, &resource.parent);
+    let to_path = parent_path.join(to_name);
     match resource.action {
         FsResourceAction::Move => {
             if to_path == resource.path {
@@ -119,17 +136,114 @@ async fn add_file_system_resource(
                 return Err(vec![(resource.path.clone(), io::ErrorKind::AlreadyExists)]);
             }
 
-            let to_name = local::common::unique_file_name(&to_path)
+            let to_path = local::common::unique_file_name(&to_path)
                 .map_err(|err| vec![(resource.path.clone(), err)])?;
-            let to_path = resource.parent.join(to_name);
             if resource.path.is_file() {
-                tokio::fs::copy(&resource.path, &to_path)
+                let result = tokio::fs::copy(&resource.path, &to_path)
                     .await
                     .map(|_| ())
-                    .map_err(|err| vec![(resource.path.clone(), err.kind())])
+                    .map_err(|err| vec![(resource.path.clone(), err.kind())]);
 
-                // TODO: Set creator. What if already a resource and current creator differs from original?
+                // TODO: What if already a resource and current creator differs from original?
                 // TODO: If file is already a resource, copy info.
+                if result.is_ok() {
+                    let project_settings = crate::settings::project::Desktop::load(project_path);
+                    let creator = user.map(|user| {
+                        core::types::Creator::User(Some(core::types::UserId::Id(user)))
+                    });
+                    let asset_drag_drop_kind = project_settings
+                        .as_ref()
+                        .ok()
+                        .map(|settings| settings.asset_drag_drop_kind.clone())
+                        .flatten();
+
+                    if creator.is_some() || asset_drag_drop_kind.is_some() {
+                        let action = fs_action::Action::new(
+                            Box::new({
+                                let project_path = project_path.to_path_buf();
+                                let container_path = resource.parent.clone();
+                                let to_name = to_name.to_os_string();
+                                move |event| {
+                                    let db::event::UpdateKind::Project {
+                                        path: event_project_path,
+                                        update:
+                                            db::event::Project::Container {
+                                                path: event_container_path,
+                                                update:
+                                                    db::event::Container::Assets(
+                                                        db::event::DataResource::Modified(assets),
+                                                    ),
+                                            },
+                                        ..
+                                    } = event.kind()
+                                    else {
+                                        return false;
+                                    };
+
+                                    if *event_project_path != project_path {
+                                        return false;
+                                    }
+
+                                    if *event_container_path != container_path {
+                                        return false;
+                                    }
+
+                                    assets.iter().any(|asset| asset.path == to_name)
+                                }
+                            }),
+                            Box::new({
+                                let to_name = to_name.to_os_string();
+                                move |event| {
+                                    let db::event::UpdateKind::Project {
+                                        path: event_project_path,
+                                        update:
+                                            db::event::Project::Container {
+                                                path: event_container_path,
+                                                update:
+                                                    db::event::Container::Assets(
+                                                        db::event::DataResource::Modified(assets),
+                                                    ),
+                                            },
+                                        ..
+                                    } = event.kind()
+                                    else {
+                                        panic!("invalid event kind");
+                                    };
+
+                                    let Ok(mut assets) =
+                                        local::loader::container::Loader::load_from_only_assets(
+                                            &parent_path,
+                                        )
+                                    else {
+                                        tracing::trace!("assets file could not be loaded");
+                                        return;
+                                    };
+
+                                    let Some(asset) =
+                                        assets.iter_mut().find(|asset| asset.path == to_name)
+                                    else {
+                                        tracing::trace!("asset not found");
+                                        return;
+                                    };
+
+                                    if let Some(creator) = creator {
+                                        asset.properties.creator = creator;
+                                    }
+                                    if let Some(asset_drag_drop_kind) = asset_drag_drop_kind {
+                                        let _ = asset.properties.kind.insert(asset_drag_drop_kind);
+                                    }
+
+                                    if let Err(err) = assets.save(&parent_path) {
+                                        tracing::trace!("could not save assets: {err:?}");
+                                    }
+                                }
+                            }),
+                        );
+                        let mut actions = actions.lock().unwrap();
+                        actions.push(action);
+                    }
+                }
+                result
             } else if resource.path.is_dir() {
                 copy_dir(&resource.path, &to_path).await
             } else {

@@ -466,6 +466,17 @@ impl Actor {
             panic!("invalid event kind");
         };
 
+        let state = self.app.state::<crate::State>();
+        let actions = state.actions();
+        let mut actions = actions.lock().unwrap();
+        let event_actions = actions
+            .extract_if(.., |action| action.matches(&event))
+            .collect::<Vec<_>>();
+        drop(actions);
+        for action in event_actions {
+            action.call(&event);
+        }
+
         match update {
             db::event::Project::FolderRemoved
             | db::event::Project::Moved(_)

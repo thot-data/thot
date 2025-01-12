@@ -1,11 +1,13 @@
 #![feature(io_error_more)]
 #![feature(assert_matches)]
 #![feature(result_flattening)]
+#![feature(extract_if)]
 
 pub mod commands;
 pub mod common;
 pub mod constants;
 pub(crate) mod db;
+mod fs_action;
 pub mod settings;
 mod setup;
 pub mod state;
