@@ -30,7 +30,7 @@ fn main() {
     db.run().unwrap();
 }
 
-fn panic_hook(panic_info: &std::panic::PanicInfo) {
+fn panic_hook(panic_info: &std::panic::PanicHookInfo) {
     let payload = if let Some(payload) = panic_info.payload().downcast_ref::<&str>() {
         Some(&**payload)
     } else if let Some(payload) = panic_info.payload().downcast_ref::<String>() {

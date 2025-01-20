@@ -29,10 +29,9 @@ to_json <- function(obj) {
 #' @returns Path to the local database executable for the current system.
 database_server_path <- function() {
   sys_info <- Sys.info()
-  exe <- switch(
-    sys_info["sysname"],
+  exe <- switch(sys_info["sysname"],
     "Linux" = "x86_64-unknown-linux-gnu",
-    "Darwin" = paste(sys_info["machine"], "-apple-darwin", sep=""),
+    "Darwin" = paste(sys_info["machine"], "-apple-darwin", sep = ""),
     "Windows" = "x86_64-pc-windows-msvc.exe",
   )
 
@@ -51,6 +50,43 @@ escape_str <- function(val) {
   gsub("\\\\", "\\\\\\\\", val)
 }
 
+#' Split a path into its parts.
+#'
+#' @param path Path to split.
+#'
+#' @returns List of path parts.
+split_path <- function(path) {
+  if (dirname(path) == path) {
+    path
+  } else {
+    c(split_path(dirname(path)), basename(path))
+  }
+}
+
+
+#' @param path Base path.
+#' @param start Prefix.
+#'
+#' @returns Relative path from `start` to `path`.
+
+relpath <- function(path, start) {
+  WINDOWS_UNC_PREFIX <- "^\\\\\\\\\\?\\\\"
+  path <- gsub(WINDOWS_UNC_PREFIX, "", path)
+  start <- gsub(WINDOWS_UNC_PREFIX, "", start)
+  path_parts <- split_path(path)
+  start_parts <- split_path(start)
+  
+  for (idx in seq_along(start_parts)) {
+    if (start_parts[idx] != path_parts[idx]) {
+      stop("start does not prefix path")
+    }
+  }
+
+  idx_start <- length(start_parts) + 1
+  rel_path_parts <- path_parts[idx_start:length(path_parts)]
+  do.call(file.path, as.list(rel_path_parts))
+}
+
 #' Normalize Windows paths.
 #' If total path length is less than 256, returns the normalized path,
 #' otherwise returns the device (UNC) path.
@@ -58,22 +94,22 @@ escape_str <- function(val) {
 #' @param p1 Base path.
 #' @param p2 Extension path.
 #'
-#' @returns Normalized path
+#' @returns Normalized path.
 join_path_windows <- function(p1, p2) {
   len <- nchar(p1) + nchar(p2)
   if (len < 256) {
     return(normalizePath(file.path(p1, p2), mustWork = FALSE))
   }
 
-  PATH_PREFIX <- "\\\\?\\"
-  if (!startsWith(p1, PATH_PREFIX)) {
-    p1 <- paste(PATH_PREFIX, p1, sep = "")
+  WINDOWS_UNC_PREFIX <- "\\\\?\\"
+  if (!startsWith(p1, WINDOWS_UNC_PREFIX)) {
+    p1 <- paste(WINDOWS_UNC_PREFIX, p1, sep = "")
   }
 
   if (!endsWith(p1, "\\")) {
     # no slashes
     p1 <- paste(p1, "\\\\", sep = "")
-  } else if (!endsWith("\\\\")) {
+  } else if (!endsWith(p1, "\\\\")) {
     # one slash
     p1 <- paste(p1, "\\", sep = "")
   }
@@ -108,9 +144,9 @@ json_empty_list_to_obj <- function(keys, json) {
   }
 
   for (key in keys) {
-    search <- sprintf('"%s":\\s*\\[\\]', key)
+    search <- sprintf('"%s":\\s*\\[[\\r\\n\\s]*\\]', key)
     replace <- sprintf('"%s":{}', key)
-    json <- gsub(search, replace, json)
+    json <- gsub(search, replace, json, perl = TRUE)
   }
 
   json

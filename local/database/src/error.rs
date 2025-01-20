@@ -57,6 +57,9 @@ pub enum Error {
 
     #[error("{0}")]
     IoSerde(IoSerde),
+
+    #[error("{message}: {error}")]
+    Deserialize { message: String, error: String },
 }
 
 #[cfg(any(feature = "server", feature = "client"))]

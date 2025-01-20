@@ -30,7 +30,8 @@ send_cmd <- function(socket, cmd, result = TRUE) {
 #' @returns Whether a Syre database is available.
 database_available <- function() {
   server_up <- tryCatch({
-    socketConnection(port = SYRE_PORT)
+    socket <- socketConnection(port = SYRE_PORT)
+    close(socket)
     TRUE
   },
   error = function(cond) {
@@ -46,7 +47,7 @@ database_available <- function() {
   }
 
   # check if database is responsive
-  cmd <- '{"Database": "Id"}'
+  cmd <- '{"Config": "Id"}'
   id <- send_cmd(zmq_socket(), cmd, result = FALSE)
   id == "syre local database"
 }
@@ -73,15 +74,20 @@ load_graph <- function(socket, project) {
   send_cmd(socket, cmd)
 }
 
-#' Gets a Syre Container.
+#' Get a container.
 #'
 #' @param socket ZMQ socket.
-#' @param id Container id.
+#' @param project Project id.
+#' @param container Graph path to project. (i.e. Root container has path `/`.)
 #'
 #' @returns List of Container properties.
-get_container <- function(socket, id) {
-  cmd <- sprintf('{"Container": {"Get": "%s"}}', id)
-  send_cmd(socket, cmd, result = FALSE)
+get_container <- function(socket, project, container) {
+  cmd <- sprintf(
+    '{"Container": {"Get": {"project": "%s", "container": "%s"}}}',
+    project,
+    escape_str(container)
+  )
+  send_cmd(socket, cmd)
 }
 
 #' Gets a Syre Container's path.

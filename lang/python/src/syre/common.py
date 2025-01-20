@@ -6,6 +6,7 @@ FLAGS_FILE = "flags.json"
 
 PROJECT_ID_KEY = "SYRE_PROJECT_ID"
 CONTAINER_ID_KEY = "SYRE_CONTAINER_ID"
+ANALYSIS_ID_KEY = "SYRE_ANALYSIS_ID"
 
 
 def dev_mode() -> bool:
@@ -19,7 +20,8 @@ def dev_mode() -> bool:
 
 
 def assets_file_of(base_path: str) -> str:
-    """Returns the path to the container file of the base path."""
+    """Returns the path to the container file of the base path.
+    """
     return os.path.join(base_path, APP_DIR, ASSETS_FILE)
 
 

@@ -1,6 +1,6 @@
 Package: syre
 Title: Syre scentific data management and analysis bindings for R.
-Version: 0.10.2
+Version: 0.11.0
 Authors@R: 
     person("Brian", "Carlsen", , "carlsen.bri@gmail.com", role = c("aut", "cre"))
 Description: R bindings to interact with the Syre scientific data management and analysis tool suite.

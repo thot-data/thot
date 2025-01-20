@@ -10,7 +10,7 @@ pub const REQ_REP_PORT: PortNumber = 7047;
 /// Local port for PUB-SUB communication.
 pub const PUB_SUB_PORT: PortNumber = 7048;
 
-/// Local port for PUB-SUB communication.
+/// Local port for communication with datastore.
 pub const DATASTORE_PORT: PortNumber = 7049;
 
 /// PUB-SUB topic

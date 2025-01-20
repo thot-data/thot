@@ -15,7 +15,7 @@ import zmq
 
 from syre import _LEGACY_
 from .types import OptStr, Tags, Metadata
-from .common import CONTAINER_ID_KEY, PROJECT_ID_KEY, assets_file_of, flags_file_of
+from .common import CONTAINER_ID_KEY, PROJECT_ID_KEY, ANALYSIS_ID_KEY, assets_file_of, flags_file_of
 from .resources import Container, Asset, dict_to_container, dict_to_asset
 
 OptTags = Union[Tags, None]
@@ -43,7 +43,7 @@ class FlagSeverity(StrEnum):
     Info = "Info"
     Warning = "Warning"
     Error = "Error"
-        
+
 
 class Database:
     """
@@ -108,7 +108,8 @@ class Database:
             )
 
     def _init_dev(self, dev_root: str, chdir: bool):
-        """Initialize the database in a dev environment."""
+        """Initialize the database in a dev environment.
+        """
         # TODO: Allow relative paths
         # See `inspect.stack`
         if not os.path.isabs(dev_root):
@@ -166,7 +167,7 @@ class Database:
         root = self._socket.recv_json()
         root = root["Ok"]
         if root is None:
-            raise RuntimeError("Could not get root Container")
+            raise RuntimeError("Could not get root container")
 
         root_properties = root["properties"]
         if "Err" in root_properties:
@@ -175,6 +176,9 @@ class Database:
             )
         root_properties = root_properties["Ok"]
         self._root_id: str = root_properties["rid"]
+        
+        user = self._active_user()
+        self._creator = {"User": {"Id": user}}
 
         if chdir:
             analysis_root = project_properties["analysis_root"]
@@ -210,12 +214,12 @@ class Database:
 
         if platform.system() == "Windows":
             if self._root.startswith(ROOT_DIR):
-                container_graph_path = self._root[len(ROOT_DIR) :]
+                container_graph_path = self._root[len(ROOT_DIR):]
             else:
                 raise RuntimeError(f"Invalid path for {CONTAINER_ID_KEY}")
         else:
             container_graph_path = os.path.relpath(self._root, ROOT_DIR)
-            
+
         self._data_root = os.path.join(project_path, project_properties["data_root"])
         self._root_path: str = os.path.join(self._data_root, container_graph_path)
 
@@ -229,6 +233,12 @@ class Database:
 
         root_properties = root["properties"]["Ok"]
         self._root_id: str = root_properties["rid"]
+        
+        analysis_id: OptStr = os.getenv(ANALYSIS_ID_KEY)
+        if analysis_id is None:
+            raise RuntimeError(f"{ANALYSIS_ID_KEY} not set")
+        
+        self._creator = {"Script": analysis_id}
 
         if chdir:
             analysis_root = project_properties["analysis_root"]
@@ -248,7 +258,6 @@ class Database:
         s = socket.socket()
         try:
             s.bind((LOCALHOST, SYRE_PORT))
-
         except OSError as err:
             system = platform.system()
             if system == "Darwin":
@@ -262,7 +271,6 @@ class Database:
                     raise err
             else:
                 raise err
-
         else:
             # socket not bound, no chance of database running
             return False
@@ -482,15 +490,11 @@ class Database:
             >>>     f.write("Some new data")
         """
         if os.path.isabs(file):
-            raise ValueError("file must be relative")
-
-        user = self._active_user()
-        if user is None:
-            raise RuntimeError("could not get active user")
+            raise ValueError("file must be a relative path")
 
         properties = {
             "created": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "creator": {"User": {"Id": user}},
+            "creator": self._creator,
             "name": name,
             "kind": type,
             "description": description,
@@ -501,17 +505,17 @@ class Database:
 
         with open(assets_file_of(self._root_path), "r+") as f:
             assets: list = json.load(f)
-            updated = False
+            update = False
             dirty = False
             for stored_asset in assets:
                 if stored_asset["path"] == asset["path"]:
+                    update = True
                     if stored_asset["properties"] != asset["properties"]:
                         stored_asset["properties"] = asset["properties"]
                         dirty = True
-                    updated = True
                     break
 
-            if not updated:
+            if not update:
                 assets.append(asset)
                 dirty = True
 
@@ -538,16 +542,16 @@ class Database:
             severity (FlagSeverity): Flag's severity. Defaults to `FlagSeverity.Warning`.
         """
         resource_type = type(resource)
-        if  resource_type == Container:
+        if resource_type == Container:
             container_rid = resource._rid
-            resource_container_path = "/"
         elif resource_type == Asset:
             container = resource.parent()
             container_rid = container._rid
-            resource_container_path = resource.file
         else:
-            raise TypeError(f"`resource` must be a `Container` or `Asset`, found {resource_type}")
-            
+            raise TypeError(
+                f"`resource` must be a `Container` or `Asset`, found {resource_type}"
+            )
+
         self._socket.send_json(
             {
                 "Container": {
@@ -562,9 +566,13 @@ class Database:
         if container_path is None:
             raise RuntimeError(f"Error setting flag: Could not get container path.")
         assert os.path.commonpath([container_path, self._data_root]) == self._data_root
-        
-        if resource_type == Asset:
-            resource_container_path = os.path.relpath(resource_container_path, container_path)
+
+        if resource_type == Container:
+            resource_container_path = "/"
+        elif resource_type == Asset:
+            resource_container_path = os.path.relpath(
+                resource.file, container_path
+            )
 
         flags_path = flags_file_of(container_path)
         if (not os.path.exists(flags_path)) or (os.stat(flags_path).st_size == 0):
@@ -574,7 +582,7 @@ class Database:
                 flags = json.load(f)
                 if type(flags) != dict:
                     raise RuntimeError("Invalid flags file.")
-        
+
         flag = {
             "id": str(uuid()),
             "message": message,
@@ -584,7 +592,7 @@ class Database:
             flags[resource_container_path].append(flag)
         else:
             flags[resource_container_path] = [flag]
-                
+
         with open(flags_path, "w+") as f:
             json_overwrite(flags, f)
 
@@ -616,7 +624,7 @@ class Database:
         self._socket.send_json({"State": "LocalConfig"})
         config = self._socket.recv_json()
         if "Err" in config:
-            raise RuntimeError(f"Could not get loca config: {config['Err']}")
+            raise RuntimeError(f"Could not get local config: {config['Err']}")
         config = config["Ok"]
 
         return config["user"]

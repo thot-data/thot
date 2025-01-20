@@ -35,7 +35,15 @@ impl Actor {
     #[tracing::instrument(skip(self))]
     fn listen(&self) -> Result {
         loop {
-            let query = self.receive_query()?;
+            let query = match self.receive_query() {
+                Ok(query) => query,
+                Err(Error::Deserialize { message, error }) => {
+                    tracing::error!(?message, ?error);
+                    self.zmq_socket.send("", 0)?; // TODO: Respond with error?
+                    continue;
+                }
+                Err(err) => return Err(err),
+            };
             let (tx, rx) = crossbeam::channel::bounded(1);
             self.tx.send(Query { query, tx }).unwrap();
 
@@ -52,15 +60,16 @@ impl Actor {
 
         let Some(msg_str) = msg.as_str() else {
             let err_msg = "invalid message: could not convert to string";
-            tracing::debug!(?err_msg);
             return Err(Error::ZMQ(err_msg.into()));
         };
 
         let cmd = match serde_json::from_str(msg_str) {
             Ok(cmd) => cmd,
             Err(err) => {
-                tracing::debug!(?err, msg = msg_str);
-                return Err(Error::ZMQ(format!("{err:?}")));
+                return Err(Error::Deserialize {
+                    message: msg_str.to_string(),
+                    error: format!("{err}"),
+                });
             }
         };
 

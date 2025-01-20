@@ -1,5 +1,5 @@
 //! Syre project runner.
-use super::{tree, Runnable, Tree, CONTAINER_ID_KEY, PROJECT_ID_KEY};
+use super::{tree, Runnable, Tree, ANALYSIS_ID_KEY, CONTAINER_ID_KEY, PROJECT_ID_KEY};
 use crate::types::ResourceId;
 use core::time;
 use rayon::prelude::*;
@@ -563,6 +563,7 @@ impl Analyzer {
                     self.hooks.pre_analysis(&exec_ctx);
                     self.run_analysis(
                         analysis,
+                        analysis.id(),
                         container_path.clone(),
                         container_id,
                         project.clone(),
@@ -638,6 +639,7 @@ impl Analyzer {
     fn run_analysis(
         &self,
         analysis: &Box<dyn Runnable + Send + Sync>,
+        analysis_id: &ResourceId,
         container_path: PathBuf,
         container_id: &ResourceId,
         project: ResourceId,
@@ -658,6 +660,7 @@ impl Analyzer {
         let mut child = match cmd
             .env(PROJECT_ID_KEY, project.to_string())
             .env(CONTAINER_ID_KEY, &container_path)
+            .env(ANALYSIS_ID_KEY, analysis_id.to_string())
             .stdout(process::Stdio::piped())
             .stderr(process::Stdio::piped())
             .spawn()

@@ -93,7 +93,10 @@ class Container:
         if self._db is None or not dev_mode():
             return self._assets
         
-        self._db._socket.send_json({"Container": {"GetByIdForAnalysis": {"project": self._db._project, "container": self._rid}}})
+        self._db._socket.send_json({"Container": {"GetByIdForAnalysis": {
+            "project": self._db._project,
+            "container": self._rid
+        }}})
         container = self._db._socket.recv_json()
         if container is None:
             raise RuntimeError("Could not get Container")
