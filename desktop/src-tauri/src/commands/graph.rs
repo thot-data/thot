@@ -1,5 +1,6 @@
 use crate::fs_action;
 use std::{
+    ffi::OsStr,
     io,
     path::{Path, PathBuf},
 };
@@ -115,10 +116,9 @@ async fn add_file_system_resource(
 ) -> Result<(), Vec<(PathBuf, io::ErrorKind)>> {
     use syre_local::types::FsResourceAction;
 
-    let project_path = project.as_ref();
     let data_root = data_root.as_ref();
     let to_name = resource.path.file_name().unwrap();
-    let data_root_path = project_path.join(data_root);
+    let data_root_path = project.as_ref().join(data_root);
     let parent_path = lib::utils::join_path_absolute(data_root_path, &resource.parent);
     let to_path = parent_path.join(to_name);
     match resource.action {
@@ -139,111 +139,16 @@ async fn add_file_system_resource(
             let to_path = local::common::unique_file_name(&to_path)
                 .map_err(|err| vec![(resource.path.clone(), err)])?;
             if resource.path.is_file() {
-                let result = tokio::fs::copy(&resource.path, &to_path)
-                    .await
-                    .map(|_| ())
-                    .map_err(|err| vec![(resource.path.clone(), err.kind())]);
-
-                // TODO: What if already a resource and current creator differs from original?
-                // TODO: If file is already a resource, copy info.
-                if result.is_ok() {
-                    let project_settings = crate::settings::project::Desktop::load(project_path);
-                    let creator = user.map(|user| {
-                        core::types::Creator::User(Some(core::types::UserId::Id(user)))
-                    });
-                    let asset_drag_drop_kind = project_settings
-                        .as_ref()
-                        .ok()
-                        .map(|settings| settings.asset_drag_drop_kind.clone())
-                        .flatten();
-
-                    if creator.is_some() || asset_drag_drop_kind.is_some() {
-                        let action = fs_action::Action::new(
-                            Box::new({
-                                let project_path = project_path.to_path_buf();
-                                let container_path = resource.parent.clone();
-                                let to_name = to_name.to_os_string();
-                                move |event| {
-                                    let db::event::UpdateKind::Project {
-                                        path: event_project_path,
-                                        update:
-                                            db::event::Project::Container {
-                                                path: event_container_path,
-                                                update:
-                                                    db::event::Container::Assets(
-                                                        db::event::DataResource::Modified(assets),
-                                                    ),
-                                            },
-                                        ..
-                                    } = event.kind()
-                                    else {
-                                        return false;
-                                    };
-
-                                    if *event_project_path != project_path {
-                                        return false;
-                                    }
-
-                                    if *event_container_path != container_path {
-                                        return false;
-                                    }
-
-                                    assets.iter().any(|asset| asset.path == to_name)
-                                }
-                            }),
-                            Box::new({
-                                let to_name = to_name.to_os_string();
-                                move |event| {
-                                    let db::event::UpdateKind::Project {
-                                        path: event_project_path,
-                                        update:
-                                            db::event::Project::Container {
-                                                path: event_container_path,
-                                                update:
-                                                    db::event::Container::Assets(
-                                                        db::event::DataResource::Modified(assets),
-                                                    ),
-                                            },
-                                        ..
-                                    } = event.kind()
-                                    else {
-                                        panic!("invalid event kind");
-                                    };
-
-                                    let Ok(mut assets) =
-                                        local::loader::container::Loader::load_from_only_assets(
-                                            &parent_path,
-                                        )
-                                    else {
-                                        tracing::trace!("assets file could not be loaded");
-                                        return;
-                                    };
-
-                                    let Some(asset) =
-                                        assets.iter_mut().find(|asset| asset.path == to_name)
-                                    else {
-                                        tracing::trace!("asset not found");
-                                        return;
-                                    };
-
-                                    if let Some(creator) = creator {
-                                        asset.properties.creator = creator;
-                                    }
-                                    if let Some(asset_drag_drop_kind) = asset_drag_drop_kind {
-                                        let _ = asset.properties.kind.insert(asset_drag_drop_kind);
-                                    }
-
-                                    if let Err(err) = assets.save(&parent_path) {
-                                        tracing::trace!("could not save assets: {err:?}");
-                                    }
-                                }
-                            }),
-                        );
-                        let mut actions = actions.lock().unwrap();
-                        actions.push(action);
-                    }
-                }
-                result
+                add_file_system_resource_file_resource(
+                    &resource,
+                    &to_path,
+                    to_name,
+                    user,
+                    project,
+                    parent_path,
+                    actions,
+                )
+                .await
             } else if resource.path.is_dir() {
                 copy_dir(&resource.path, &to_path).await
             } else {
@@ -252,6 +157,118 @@ async fn add_file_system_resource(
         }
         FsResourceAction::Reference => todo!(),
     }
+}
+
+async fn add_file_system_resource_file_resource(
+    resource: &lib::types::AddFsGraphResourceData,
+    dst: impl AsRef<Path>,
+    to_name: &OsStr,
+    user: Option<ResourceId>,
+    project: impl AsRef<Path>,
+    parent_path: PathBuf,
+    actions: crate::state::Slice<Vec<fs_action::Action>>,
+) -> Result<(), Vec<(PathBuf, io::ErrorKind)>> {
+    let result = tokio::fs::copy(&resource.path, dst)
+        .await
+        .map(|_| ())
+        .map_err(|err| vec![(resource.path.clone(), err.kind())]);
+
+    // TODO: What if already a resource and current creator differs from original?
+    // TODO: If file is already a resource, copy info.
+    if result.is_ok() {
+        let project_settings = crate::settings::project::Desktop::load(project.as_ref());
+        let creator =
+            user.map(|user| core::types::Creator::User(Some(core::types::UserId::Id(user))));
+        let asset_drag_drop_kind = project_settings
+            .as_ref()
+            .ok()
+            .map(|settings| settings.asset_drag_drop_kind.clone())
+            .flatten();
+
+        if creator.is_some() || asset_drag_drop_kind.is_some() {
+            let action = fs_action::Action::new(
+                Box::new({
+                    let project_path = project.as_ref().to_path_buf();
+                    let container_path = resource.parent.clone();
+                    let to_name = to_name.to_os_string();
+                    move |event| {
+                        let db::event::UpdateKind::Project {
+                            path: event_project_path,
+                            update:
+                                db::event::Project::Container {
+                                    path: event_container_path,
+                                    update:
+                                        db::event::Container::Assets(db::event::DataResource::Modified(
+                                            assets,
+                                        )),
+                                },
+                            ..
+                        } = event.kind()
+                        else {
+                            return false;
+                        };
+
+                        if *event_project_path != project_path {
+                            return false;
+                        }
+
+                        if *event_container_path != container_path {
+                            return false;
+                        }
+
+                        assets.iter().any(|asset| asset.path == to_name)
+                    }
+                }),
+                Box::new({
+                    let to_name = to_name.to_os_string();
+                    move |event| {
+                        let db::event::UpdateKind::Project {
+                            path: event_project_path,
+                            update:
+                                db::event::Project::Container {
+                                    path: event_container_path,
+                                    update:
+                                        db::event::Container::Assets(db::event::DataResource::Modified(
+                                            assets,
+                                        )),
+                                },
+                            ..
+                        } = event.kind()
+                        else {
+                            panic!("invalid event kind");
+                        };
+
+                        let Ok(mut assets) =
+                            local::loader::container::Loader::load_from_only_assets(&parent_path)
+                        else {
+                            tracing::trace!("assets file could not be loaded");
+                            return;
+                        };
+
+                        let Some(asset) = assets.iter_mut().find(|asset| asset.path == to_name)
+                        else {
+                            tracing::trace!("asset not found");
+                            return;
+                        };
+
+                        if let Some(creator) = creator {
+                            asset.properties.creator = creator;
+                        }
+                        if let Some(asset_drag_drop_kind) = asset_drag_drop_kind {
+                            let _ = asset.properties.kind.insert(asset_drag_drop_kind);
+                        }
+
+                        if let Err(err) = assets.save(&parent_path) {
+                            tracing::trace!("could not save assets: {err:?}");
+                        }
+                    }
+                }),
+            );
+            let mut actions = actions.lock().unwrap();
+            actions.push(action);
+        }
+    }
+    result
 }
 
 #[tauri::command]
@@ -301,46 +318,63 @@ pub async fn copy_dir(
     src: impl AsRef<Path>,
     dst: impl AsRef<Path>,
 ) -> Result<(), Vec<(PathBuf, io::ErrorKind)>> {
-    let src: &Path = src.as_ref();
-    let dst: &Path = dst.as_ref();
-    let mut results = tokio::task::JoinSet::new();
-    for entry in walkdir::WalkDir::new(src)
-        .into_iter()
-        .filter_map(|entry| entry.ok())
-    {
-        let rel_path = entry.path().strip_prefix(src).unwrap();
-        let dst = dst.join(rel_path);
+    // NOTE: `inner` should be `async`, but must be desugared because of
+    // https://github.com/rust-lang/rust/issues/123072
+    fn inner(
+        src: PathBuf,
+        dst: PathBuf,
+    ) -> impl std::future::Future<Output = Result<(), Vec<(PathBuf, io::ErrorKind)>>> + Send {
+        async move {
+            let mut results = tokio::task::JoinSet::new();
+            for entry in walkdir::WalkDir::new(&src)
+                .max_depth(1)
+                .into_iter()
+                .skip(1)
+                .filter_map(|entry| entry.ok())
+            {
+                let rel_path = entry.path().strip_prefix(&src).unwrap();
+                let dst = dst.join(rel_path);
 
-        results.spawn(async move {
-            if entry.file_type().is_file() {
-                match tokio::fs::copy(entry.path(), dst).await {
-                    Ok(_) => Ok(()),
-                    Err(err) => Err((entry.path().to_path_buf(), err.kind())),
-                }
-            } else if entry.file_type().is_dir() {
-                match tokio::fs::create_dir(dst).await {
-                    Ok(_) => Ok(()),
-                    Err(err) => Err((entry.path().to_path_buf(), err.kind())),
-                }
-            } else {
-                todo!();
+                results.spawn(async move {
+                    if entry.file_type().is_file() {
+                        match tokio::fs::copy(entry.path(), dst).await {
+                            Ok(_) => Ok(()),
+                            Err(err) => Err(vec![(entry.path().to_path_buf(), err.kind())]),
+                        }
+                    } else if entry.file_type().is_dir() {
+                        match tokio::fs::create_dir(&dst).await {
+                            Ok(_) => inner(entry.path().to_path_buf(), dst).await,
+                            Err(err) => Err(vec![(entry.path().to_path_buf(), err.kind())]),
+                        }
+                    } else {
+                        todo!();
+                    }
+                });
             }
-        });
+            let results = results.join_all().await;
+
+            let errors = results
+                .into_iter()
+                .filter_map(|result| match result {
+                    Ok(_) => None,
+                    Err(err) => Some(err),
+                })
+                .flatten()
+                .collect::<Vec<_>>();
+
+            if errors.is_empty() {
+                Ok(())
+            } else {
+                Err(errors)
+            }
+        }
     }
-    let results = results.join_all().await;
 
-    let errors = results
-        .into_iter()
-        .filter_map(|result| match result {
-            Ok(_) => None,
-            Err(err) => Some(err),
-        })
-        .collect::<Vec<_>>();
-
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
+    assert!(src.as_ref().is_dir());
+    let src = src.as_ref().to_path_buf();
+    match tokio::fs::create_dir(&dst).await {
+        Ok(_) => inner(src, dst.as_ref().to_path_buf()).await,
+        Err(err) => Err(vec![(src, err.kind())]),
     }
 }
 

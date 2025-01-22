@@ -48,9 +48,16 @@ pub async fn file_size(paths: Vec<PathBuf>) -> Result<Vec<u64>, Vec<(PathBuf, Io
 
 /// Gets the size of folder's contents.
 fn dir_size(path: impl AsRef<Path>) -> Result<u64, io::ErrorKind> {
-    assert!(path.as_ref().is_dir());
-    walkdir::WalkDir::new(path)
-        .into_iter()
+    let mut dirs = walkdir::WalkDir::new(path).into_iter();
+    if let Some(root_err) = dirs.next().map(|root| root.err()).flatten() {
+        let err = root_err
+            .into_io_error()
+            .map(|err| err.kind())
+            .unwrap_or(io::ErrorKind::Other);
+        return Err(err);
+    };
+
+    let size = dirs
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| {
             if entry.file_type().is_file() {
@@ -61,6 +68,7 @@ fn dir_size(path: impl AsRef<Path>) -> Result<u64, io::ErrorKind> {
                 None
             }
         })
-        .reduce(|total, size| total + size)
-        .ok_or(io::ErrorKind::NotFound)
+        .fold(0, |total, size| total + size);
+
+    Ok(size)
 }
