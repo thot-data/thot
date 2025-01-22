@@ -1585,13 +1585,11 @@ fn Asset(asset: state::Asset) -> impl IntoView {
             data-resource=DATA_KEY_ASSET
             data-rid=rid
         >
-            <div class="grow inline-flex gap-1 items-center">
+            <div class="grow inline-flex gap-1 w-0 items-center">
                 <span class=icon_class>
                     <Icon icon />
                 </span>
-                <TruncateLeft class="grow" inner_class="align-middle">
-                    {title}
-                </TruncateLeft>
+                <span class="truncate">{title}</span>
             </div>
             <div class="flex gap-2 items-center">
                 <AssetFlags asset=asset.path().read_only() container=(*container).clone() />
