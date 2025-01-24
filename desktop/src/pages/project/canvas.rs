@@ -1537,6 +1537,9 @@ fn Asset(asset: state::Asset) -> impl IntoView {
 
             async move {
                 let container_path = graph.path(&container).unwrap();
+                let fs_resource_present = asset.fs_resource().with_untracked(|fs_resource| {
+                    matches!(fs_resource, db::state::FileResource::Present)
+                });
                 if let Err(err) = remove_asset(
                     project.get_untracked(),
                     container_path,
@@ -1544,10 +1547,12 @@ fn Asset(asset: state::Asset) -> impl IntoView {
                 )
                 .await
                 {
-                    tracing::error!(?err);
-                    let mut msg = types::message::Builder::error("Could not remove asset file");
-                    msg.body(format!("{err:?}"));
-                    messages.update(|messages| messages.push(msg.build()));
+                    if fs_resource_present || !matches!(err, io::ErrorKind::NotFound) {
+                        tracing::error!(?err);
+                        let mut msg = types::message::Builder::error("Could not remove asset file");
+                        msg.body(format!("{err:?}"));
+                        messages.update(|messages| messages.push(msg.build()));
+                    }
                 };
             }
         }

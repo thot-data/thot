@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    io,
     path::{Path, PathBuf},
 };
 use syre_core::{
@@ -190,9 +190,34 @@ pub fn asset_remove_file(
     let (project_path, project_data) = db.project().get_by_id(project).unwrap().unwrap();
     let data_root = &project_data.properties().as_ref().unwrap().data_root;
     let data_root = project_path.join(data_root);
-    let asset_path = container.join(asset);
-    let path = lib::utils::join_path_absolute(data_root, asset_path);
+    let container_path = lib::utils::join_path_absolute(data_root, container);
+    let asset_path = container_path.join(&asset);
 
-    // TODO: Change to `trash`.
-    fs::remove_file(path).map_err(|err| err.into())
+    if asset_path.exists() {
+        trash::delete(asset_path).map_err(|err| {
+            tracing::debug!(?err);
+            let err = match err {
+                trash::Error::Unknown { description } => todo!(),
+                trash::Error::Os { code, description } => todo!(),
+                trash::Error::CouldNotAccess { .. } => io::ErrorKind::PermissionDenied,
+                trash::Error::CanonicalizePath { .. } => io::ErrorKind::NotFound,
+                trash::Error::ConvertOsString { .. } => io::ErrorKind::InvalidFilename,
+                trash::Error::TargetedRoot
+                | trash::Error::RestoreCollision { .. }
+                | trash::Error::RestoreTwins { .. } => unreachable!(),
+            };
+
+            err.into()
+        })
+    } else {
+        let mut assets =
+            local::loader::container::Loader::load_from_only_assets(&container_path).unwrap();
+        assert!(assets
+            .iter()
+            .find(|stored_asset| stored_asset.path == asset)
+            .is_some());
+
+        assets.retain(|stored_asset| stored_asset.path != asset);
+        assets.save(&container_path).map_err(|err| err.into())
+    }
 }
