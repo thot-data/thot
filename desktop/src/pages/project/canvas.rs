@@ -1287,14 +1287,11 @@ fn ContainerOk(
             on:dragover=move |e| e.prevent_default()
             on:drop=drop
             class=(
-                ["border-2", "border-secondary-900", "dark:border-secondary-100"],
-                {
-                    let highlight = highlight.clone();
-                    move || !highlight()
-                },
+                ["outline-4", "-outline-offset-4", "outline-primary-700", "outline"],
+                highlight.clone(),
             )
-            class=(["border-4", "border-primary-700"], highlight.clone())
-            class="relative h-full cursor-pointer rounded bg-white dark:bg-secondary-700"
+            class="relative h-full cursor-pointer rounded bg-white dark:bg-secondary-700 \
+            border-2 border-secondary-900 dark:border-secondary-100"
             data-resource=DATA_KEY_CONTAINER
             data-rid=rid
             data-path=path

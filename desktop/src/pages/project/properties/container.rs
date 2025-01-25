@@ -1381,7 +1381,7 @@ mod flags {
                 <super::Header />
                 {move || {
                     if flags.read().as_ref().map(|flags| flags.read().is_empty()).unwrap_or(true) {
-                        Either::Left(view! { <div class="text-lg text-center">"(No flags)"</div> })
+                        Either::Left(view! { <div class="text-lg text-center">"(no flags)"</div> })
                     } else {
                         Either::Right(
                             view! {

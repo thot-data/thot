@@ -425,7 +425,8 @@ fn ProjectNav() -> impl IntoView {
                     <button
                         on:mousedown=open_settings
                         type="button"
-                        class="align-middle p-1 hover:bg-secondary-100 dark:hover:bg-secondary-800 rounded border border-transparent hover:border-black dark:hover:border-white"
+                        class="align-middle p-1 hover:bg-secondary-100 dark:hover:bg-secondary-800 rounded \
+                            border border-transparent hover:border-black dark:hover:border-white"
                     >
                         <Icon icon=components::icon::Settings />
                     </button>

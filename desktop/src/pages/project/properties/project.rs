@@ -13,7 +13,7 @@ use leptos::{
 };
 use name::Editor as Name;
 use serde::Serialize;
-use std::{io, path::PathBuf};
+use std::path::PathBuf;
 use syre_core as core;
 use syre_desktop_lib as lib;
 use syre_local as local;
@@ -132,7 +132,8 @@ fn DeleteProjectConfirmation() -> impl IntoView {
     };
 
     view! {
-        <div class="bg-white border border-black rounded dark:bg-secondary-800 dark:border-secondary-400 dark:text-white px-4 py-2">
+        <div class="bg-white border border-black rounded dark:bg-secondary-800 \
+        dark:border-secondary-400 dark:text-white px-4 py-2">
             <div class="text-2xl pb-2">"Are you sure you want to delete this project?"</div>
             <div class="pb-2">
                 <form on:submit=delete_project_action>

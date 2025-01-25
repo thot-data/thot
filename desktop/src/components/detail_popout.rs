@@ -17,7 +17,8 @@ pub fn DetailPopout(
     };
 
     view! {
-        <div class="rounded border border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 shadow shadow-primary-700 dark:shadow-none">
+        <div class="rounded border border-secondary-300 dark:border-secondary-600 \
+        bg-white dark:bg-secondary-700 shadow shadow-primary-700 dark:shadow-none">
             <div class="flex p-1 border-b dark:border-secondary-500">
                 <span class="grow">{title.get()}</span>
                 <span>

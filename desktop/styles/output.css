@@ -1437,11 +1437,6 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
   border-color: rgb(81 161 196 / var(--tw-border-opacity, 1));
 }
 
-.border-primary-700 {
-  --tw-border-opacity: 1;
-  border-color: rgb(34 129 170 / var(--tw-border-opacity, 1));
-}
-
 .border-red-600 {
   --tw-border-opacity: 1;
   border-color: rgb(220 38 38 / var(--tw-border-opacity, 1));
@@ -1852,6 +1847,22 @@ input.input-compact:not([type="checkbox"]):where(.dark, .dark *) {
 .shadow-primary-700 {
   --tw-shadow-color: #2281aa;
   --tw-shadow: var(--tw-shadow-colored);
+}
+
+.outline {
+  outline-style: solid;
+}
+
+.outline-4 {
+  outline-width: 4px;
+}
+
+.-outline-offset-4 {
+  outline-offset: -4px;
+}
+
+.outline-primary-700 {
+  outline-color: #2281aa;
 }
 
 .filter {
