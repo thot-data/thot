@@ -1,6 +1,137 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@plugin '@tailwindcss/forms';
+@plugin 'tailwind-scrollbar';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-primary-50: #f1fdff;
+  --color-primary-100: #e8f7f9;
+  --color-primary-200: #d0e6e9;
+  --color-primary-300: #b4dce1;
+  --color-primary-400: #95d1d9;
+  --color-primary-500: #77b9ce;
+  --color-primary-600: #51a1c4;
+  --color-primary-700: #2281aa;
+  --color-primary-800: #065b80;
+  --color-primary-900: #00364e;
+
+  --color-secondary-50: #f3f4f7;
+  --color-secondary-100: #e1e3e6;
+  --color-secondary-200: #c4c7cc;
+  --color-secondary-300: #a6aab3;
+  --color-secondary-400: #898e99;
+  --color-secondary-500: #6b7280;
+  --color-secondary-600: #565b66;
+  --color-secondary-700: #40444d;
+  --color-secondary-800: #2b2e33;
+  --color-secondary-900: #181a1e;
+
+  --color-syre-red-50: #ffe9e1;
+  --color-syre-red-100: #ffc1ab;
+  --color-syre-red-200: #ee9676;
+  --color-syre-red-300: #e97d55;
+  --color-syre-red-400: #e05c2b;
+  --color-syre-red-500: #d5410b;
+  --color-syre-red-600: #b33000;
+  --color-syre-red-700: #871319;
+  --color-syre-red-800: #570c10;
+  --color-syre-red-900: #3a080b;
+
+  --color-syre-yellow-50: #fffbf2;
+  --color-syre-yellow-100: #ffeecc;
+  --color-syre-yellow-200: #fee8b0;
+  --color-syre-yellow-300: #ffdc82;
+  --color-syre-yellow-400: #ffcc67;
+  --color-syre-yellow-500: #ffb800;
+  --color-syre-yellow-600: #d99717;
+  --color-syre-yellow-700: #996600;
+  --color-syre-yellow-800: #664400;
+  --color-syre-yellow-900: #3d2900;
+
+  --color-syre-green-50: #f7faf0;
+  --color-syre-green-100: #e9f1d8;
+  --color-syre-green-200: #d3e9cd;
+  --color-syre-green-300: #bed58b;
+  --color-syre-green-400: #a8c764;
+  --color-syre-green-500: #92b93d;
+  --color-syre-green-600: #759431;
+  --color-syre-green-700: #486f25;
+  --color-syre-green-800: #3a4a18;
+  --color-syre-green-900: #242e0f;
+
+  --font-primary: Oddity, Roboto, Inter, Avenir, Helvetica, Arial, sans-serif;
+  --font-secondary: Roboto, Inter, Avenir, Helvetica, Arial, sans-serif;
+
+  --transition-property-width: width;
+  --transition-property-size: width, height;
+  --transition-property-absolute-position: top, bottom, left, right;
+}
+
+/*
+  The default border color has changed to `currentColor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}
+
+@utility btn {
+  @apply border border-solid rounded-2xl px-4 py-1 dark:text-white;
+}
+
+@utility btn-primary {
+  @apply bg-primary-700 text-white hover:bg-primary-800 dark:border-primary-600 
+			dark:bg-primary-500 dark:text-black dark:hover:bg-primary-400;
+}
+
+@utility btn-secondary {
+  @apply border-secondary-900 hover:bg-secondary-100 dark:border-secondary-600 
+			dark:bg-secondary-600 dark:hover:bg-secondary-500;
+}
+
+@utility input-simple {
+  @apply rounded-sm focus:border-primary-300 focus:ring-3 focus:ring-primary-200/50 
+		  dark:bg-secondary-800 dark:focus:border-primary-700 dark:focus:ring-primary-800/50;
+
+  &input:not([type='checkbox']) {
+    @apply dark:text-white w-full;
+  }
+}
+
+@utility input-compact {
+  @apply max-w-full px-1 py-0.5 leading-5 rounded-xs focus:border-primary-300 
+			focus:ring-3 focus:ring-primary-200/50 dark:bg-secondary-800 
+			dark:focus:border-primary-700 dark:focus:ring-primary-800/50;
+
+  &[type='select'] {
+    @apply pr-4;
+  }
+
+  &input:not([type='checkbox']) {
+    @apply dark:text-white;
+  }
+}
+
+@utility truncate-rtl {
+  @apply truncate text-left;
+  direction: rtl;
+}
+
+@utility ltr {
+  direction: ltr;
+}
 
 @layer base {
 	@font-face {
@@ -11,54 +142,5 @@
 
 	.linecap-round {
 		stroke-linecap: "round";
-	}
-}
-
-@layer components {
-	.btn {
-		@apply border border-solid rounded-2xl px-4 py-1 dark:text-white; 
-	}
-
-	.btn-primary {
-		@apply bg-primary-700 text-white hover:bg-primary-800 dark:border-primary-600 
-			dark:bg-primary-500 dark:text-black dark:hover:bg-primary-400;
-	}
-
-	.btn-secondary {
-		@apply border-secondary-900 hover:bg-secondary-100 dark:border-secondary-600 
-			dark:bg-secondary-600 dark:hover:bg-secondary-500;
-	}
-
-	.input-simple {
-		@apply rounded focus:border-primary-300 focus:ring focus:ring-primary-200 
-			focus:ring-opacity-50 dark:bg-secondary-800 dark:focus:border-primary-700 
-			dark:focus:ring-primary-800;
-	}
-
-	input.input-simple:not([type="checkbox"]) {
-		@apply dark:text-white w-full;
-	}
-
-	.input-compact {
-		@apply max-w-full px-1 py-0.5 leading-5 rounded-sm focus:border-primary-300 
-			focus:ring focus:ring-primary-200 focus:ring-opacity-50 dark:bg-secondary-800 
-			dark:focus:border-primary-700 dark:focus:ring-primary-800;
-	}
-
-	.input-compact[type="select"] {
-		@apply pr-4;
-	}
-
-	input.input-compact:not([type="checkbox"]) {
-		@apply dark:text-white;
-	}
-
-	.truncate-rtl {
-		@apply truncate text-left;
-		direction: rtl;
-	}
-
-	.ltr {
-		direction: ltr;
 	}
 }

@@ -1046,7 +1046,7 @@ fn CreateChildContainer(
     };
 
     view! {
-        <div class="px-4 py-2 rounded bg-white dark:bg-secondary-900">
+        <div class="px-4 py-2 rounded-sm bg-white dark:bg-secondary-900">
             <h1 class="text-center text-lg pb-2 dark:text-white">"Create a new child"</h1>
             <form on:submit=move |e| {
                 e.prevent_default();
@@ -1597,7 +1597,7 @@ fn Asset(asset: state::Asset) -> impl IntoView {
                 <AssetFlags asset=asset.path().read_only() container=(*container).clone() />
                 <button
                     on:mousedown=remove_asset
-                    class="align-middle rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-800"
+                    class="align-middle rounded-xs hover:bg-secondary-200 dark:hover:bg-secondary-800"
                 >
                     <Icon icon=components::icon::Remove />
                 </button>
@@ -1805,7 +1805,7 @@ fn AnalysisAssociation(association: state::AnalysisAssociation) -> impl IntoView
             <div>
                 <button
                     on:mousedown=remove_association
-                    class="align-middle rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-800"
+                    class="align-middle rounded-xs hover:bg-secondary-200 dark:hover:bg-secondary-800"
                 >
                     <Icon icon=components::icon::Remove />
                 </button>
@@ -2108,7 +2108,7 @@ fn ContainerErr(
         <div
             on:contextmenu=contextmenu
             node_ref=node_ref
-            class="h-full flex flex-col border-4 border-syre-red-600 rounded bg-white dark:bg-secondary-700"
+            class="h-full flex flex-col border-4 border-syre-red-600 rounded-sm bg-white dark:bg-secondary-700"
             data-resource=DATA_KEY_CONTAINER
             data-path=path
         >

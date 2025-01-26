@@ -1,10 +1,10 @@
 {
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.10",
-    "postcss-import": "^16.1.0",
+    "@tailwindcss/postcss": "^4.0.0",
     "postcss-nesting": "^13.0.1",
-    "tailwind-scrollbar": "^3.1.0",
-    "tailwindcss": "^3.4.14"
+    "tailwind-scrollbar": "4.0.0-beta.0",
+    "tailwindcss": "^4.0.0"
   },
   "dependencies": {
     "@tauri-apps/plugin-dialog": "^2.2.0"

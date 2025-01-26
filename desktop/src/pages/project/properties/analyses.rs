@@ -357,7 +357,7 @@ fn ScriptView(analysis: state::project::Analysis) -> impl IntoView {
                     type="button"
                     title=absent_title
                     on:mousedown=remove_analysis
-                    class="align-middle rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-900"
+                    class="align-middle rounded-xs hover:bg-secondary-200 dark:hover:bg-secondary-900"
                 >
                     <Icon icon=components::icon::Remove />
                 </button>

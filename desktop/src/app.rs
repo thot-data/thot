@@ -128,19 +128,19 @@ mod message {
 
         let (class_main, class_btn) = match message.kind() {
             types::message::MessageKind::Info => (
-                "flex bg-primary-500 border border-primary-600 rounded",
+                "flex bg-primary-500 border border-primary-600 rounded-sm",
                 "border-l border-l-primary-600 flex",
             ),
             types::message::MessageKind::Success => (
-                "flex bg-syre-green-600 border border-syre-green-700 rounded",
+                "flex bg-syre-green-600 border border-syre-green-700 rounded-sm",
                 "border-l border-l-green-700 flex",
             ),
             types::message::MessageKind::Warning => (
-                "flex bg-syre-yellow-600 border border-syre-yellow-700 rounded",
+                "flex bg-syre-yellow-600 border border-syre-yellow-700 rounded-sm",
                 "border-l border-l-yellow-700 flex",
             ),
             types::message::MessageKind::Error => (
-                "flex bg-syre-red-500 border border-syre-red-700 rounded",
+                "flex bg-syre-red-500 border border-syre-red-700 rounded-sm",
                 "border-l border-l-red-700 flex",
             ),
         };

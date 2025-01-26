@@ -23,7 +23,7 @@ pub fn Settings(
                 <button
                     on:mousedown=trigger_close
                     type="button"
-                    class="rounded hover:bg-secondary-100 dark:hover:bg-secondary-700"
+                    class="rounded-sm hover:bg-secondary-100 dark:hover:bg-secondary-700"
                 >
                     <Icon icon=icon::Close />
                 </button>
@@ -181,7 +181,7 @@ pub mod user {
                                             <button
                                                 type="button"
                                                 on:mousedown=toggle_theme
-                                                class="text-2xl p-2 border rounded"
+                                                class="text-2xl p-2 border rounded-sm"
                                                 title="Light mode"
                                             >
                                                 <Icon icon=icondata::BsSun />
@@ -194,7 +194,7 @@ pub mod user {
                                             <button
                                                 type="button"
                                                 on:mousedown=toggle_theme
-                                                class="text-2xl p-2 border border-black rounded"
+                                                class="text-2xl p-2 border border-black rounded-sm"
                                                 title="Dark mode"
                                             >
                                                 <Icon icon=icondata::BsMoon />
@@ -437,7 +437,7 @@ pub mod user {
                     <button
                         type="button"
                         on:mousedown=select_path
-                        class="aspect-square p-1 rounded-sm border border-black dark:border-white"
+                        class="aspect-square p-1 rounded-xs border border-black dark:border-white"
                     >
                         <Icon icon=icondata::FaFolderOpenRegular />
                     </button>
@@ -510,7 +510,7 @@ pub mod user {
                     <button
                         type="button"
                         on:mousedown=select_path
-                        class="aspect-square p-1 rounded-sm border border-black dark:border-white"
+                        class="aspect-square p-1 rounded-xs border border-black dark:border-white"
                     >
                         <Icon icon=icondata::FaFolderOpenRegular />
                     </button>

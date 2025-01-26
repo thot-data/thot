@@ -116,14 +116,14 @@ fn PreviewSelector() -> impl IntoView {
     };
 
     const CLASS_FORM_DIV: &str = "px-2 w-full";
-    const CLASS_CHECKBOX: &str = "w-4 h-4 rounded";
+    const CLASS_CHECKBOX: &str = "w-4 h-4 rounded-sm";
     const CLASS_LABEL: &str = "pl-2";
     view! {
         <div class="relative z-10">
             <div
                 on:mousedown=activate
                 class=("rounded-b-none", move || active.read().is_some())
-                class="cursor-pointer inline-flex w-40 px-2 rounded border border-secondary-600 dark:border-secondary-200"
+                class="cursor-pointer inline-flex w-40 px-2 rounded-sm border border-secondary-600 dark:border-secondary-200"
             >
                 <span class="grow truncate">{preview_list}</span>
                 <span class="pl-2 inline-flex items-center">
@@ -289,7 +289,7 @@ fn Controls() -> impl IntoView {
         <button
             on:mousedown=refresh
             type="button"
-            class="btn-secondary p-1 rounded-sm"
+            class="btn-secondary p-1 rounded-xs"
             title="Refresh"
         >
             <Icon icon=components::icon::Refresh />

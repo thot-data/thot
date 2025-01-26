@@ -183,7 +183,7 @@ mod properties {
                                             move || !add_metadatum_visible(),
                                         )
 
-                                        class="aspect-square w-full rounded-sm"
+                                        class="aspect-square w-full rounded-xs"
                                     >
                                         <Icon icon=components::icon::Add />
                                     </button>
@@ -661,7 +661,7 @@ mod properties {
                         <button
                             type="button"
                             on:mousedown=remove_datum
-                            class="aspect-square h-full rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-700"
+                            class="aspect-square h-full rounded-xs hover:bg-secondary-200 dark:hover:bg-secondary-700"
                         >
                             <Icon icon=components::icon::Remove />
                         </button>
@@ -794,7 +794,7 @@ mod flags {
                 <div class="text-center pb-2">
                     <button
                         on:mousedown=trigger_remove_all
-                        class="px-4 bg-secondary-50 dark:bg-secondary-600 rounded border"
+                        class="px-4 bg-secondary-50 dark:bg-secondary-600 rounded-sm border"
                         disabled=remove_all_action.pending()
                     >
                         "Remove all"

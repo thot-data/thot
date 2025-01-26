@@ -260,7 +260,7 @@ fn ProjectCardOk(project: Project, path: PathBuf) -> impl IntoView {
         <A
             href=project.rid().to_string()
             on:contextmenu=contextmenu
-            attr:class="w-1/3 min-w-52 rounded border border-secondary-900 dark:bg-secondary-700 dark:border-secondary-50"
+            attr:class="w-1/3 min-w-52 rounded-sm border border-secondary-900 dark:bg-secondary-700 dark:border-secondary-50"
         >
             <div class="px-4 py-2 flex flex-col h-full">
                 <h3 class="text-2xl font-primary">{project.name.clone()}</h3>
@@ -392,7 +392,7 @@ fn CreateProjectDialog(path: RwSignal<Option<PathBuf>>) -> impl IntoView {
     };
 
     view! {
-        <div class="px-4 py-2 rounded border border-black bg-white dark:bg-secondary-800 dark:border-secondary-400">
+        <div class="px-4 py-2 rounded-sm border border-black bg-white dark:bg-secondary-800 dark:border-secondary-400">
             <div class="text-center text-2xl pb-2 dark:text-white">"Create a new project"</div>
             <form on:submit=create_project>
                 <div class="pb-4">

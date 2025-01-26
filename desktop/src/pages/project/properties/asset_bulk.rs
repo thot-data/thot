@@ -338,7 +338,7 @@ pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
                                         },
                                     )
 
-                                    class="aspect-square w-full rounded-sm"
+                                    class="aspect-square w-full rounded-xs"
                                 >
                                     <Icon icon=components::icon::Add />
                                 </button>
@@ -385,7 +385,7 @@ pub fn Editor(assets: Signal<Vec<ResourceId>>) -> impl IntoView {
                                         },
                                     )
 
-                                    class="aspect-square w-full rounded-sm"
+                                    class="aspect-square w-full rounded-xs"
                                 >
                                     <Icon icon=components::icon::Add />
                                 </button>

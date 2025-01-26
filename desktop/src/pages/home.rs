@@ -147,7 +147,7 @@ fn MainNav() -> impl IntoView {
                     >
                         <Icon
                             icon=icondata::IoLogOutOutline
-                            attr:class="[&_*]:dark:!stroke-white h-4"
+                            attr:class="dark:**:stroke-white! h-4"
                         />
                     </A>
                 </li>

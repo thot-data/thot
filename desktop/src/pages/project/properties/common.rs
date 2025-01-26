@@ -229,7 +229,7 @@ pub mod metadata {
                 </div>
                 <ValueEditor value oninput debounce=*input_debounce />
                 <div class="py-1 flex justify-center">
-                    <button class="rounded-sm hover:bg-primary-400 dark:hover:bg-primary-700">
+                    <button class="rounded-xs hover:bg-primary-400 dark:hover:bg-primary-700">
                         <Icon icon=components::icon::Add />
                     </button>
                 </div>
@@ -731,7 +731,7 @@ pub mod metadata {
                 on:blur=onblur
                 placeholder="Separate values by comma, semicolon, or new line."
                 class=(
-                    ["border-2", "!border-syre-red-600", "focus:ring-syre-red-600"],
+                    ["border-2", "border-syre-red-600!", "focus:ring-syre-red-600"],
                     move || error.with(|error| error.is_some()),
                 )
                 class="input-compact align-top overflow-auto scrollbar-thin"
@@ -1027,7 +1027,7 @@ pub mod analysis_associations {
                     <button
                         type="button"
                         on:mousedown=add
-                        class="hover:bg-primary-400 dark:hover:bg-primary-700 rounded-sm"
+                        class="hover:bg-primary-400 dark:hover:bg-primary-700 rounded-xs"
                     >
                         <Icon icon=components::icon::Add />
                     </button>
@@ -1353,7 +1353,7 @@ pub mod bulk {
                     <div class="py-1 flex justify-center">
                         <button
                             type="button"
-                            class="rounded-sm hover:bg-primary-400 dark:hover:bg-primary-700"
+                            class="rounded-xs hover:bg-primary-400 dark:hover:bg-primary-700"
                         >
                             <Icon icon=components::icon::Add />
                         </button>
@@ -1500,7 +1500,7 @@ pub mod bulk {
                         <button
                             type="button"
                             on:mousedown=move |_| onremove.run(())
-                            class="aspect-square h-full rounded-sm hover:bg-secondary-200 dark:hover:bg-secondary-700"
+                            class="aspect-square h-full rounded-xs hover:bg-secondary-200 dark:hover:bg-secondary-700"
                         >
 
                             <Icon icon=components::icon::Remove />
@@ -1830,7 +1830,7 @@ pub mod bulk {
                     on:input=move |e| set_input_value(event_target_value(&e))
                     placeholder=placeholder
                     class=(
-                        ["border-2", "!border-syre-red-600", "focus:ring-syre-red-600"],
+                        ["border-2", "border-syre-red-600!", "focus:ring-syre-red-600"],
                         move || error.with(|error| error.is_some()),
                     )
                     class="input-compact align-top overflow-auto scrollbar-thin"

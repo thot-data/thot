@@ -16,9 +16,9 @@ ws_protocol = "ws"
 [[hooks]]
 stage = "pre_build"
 command = "sh"
-command_arguments = ["-c", "npx tailwindcss -i styles/main.css -o styles/output.css"]
+command_arguments = ["-c", "npx @tailwindcss/cli -i styles/main.css -o styles/output.css"]
 
 # Windows
 [hooks.windows]
 command = "cmd"
-command_arguments = ["/c", "npx tailwindcss -i styles\\main.css -o styles\\output.css"]
+command_arguments = ["/c", "npx @tailwindcss/cli -i styles\\main.css -o styles\\output.css"]

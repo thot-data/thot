@@ -42,7 +42,7 @@ pub fn Settings(
                 <button
                     on:mousedown=trigger_close
                     type="button"
-                    class="rounded hover:bg-secondary-100 dark:hover:bg-secondary-700"
+                    class="rounded-sm hover:bg-secondary-100 dark:hover:bg-secondary-700"
                 >
                     <Icon icon=icon::Close />
                 </button>
@@ -514,7 +514,7 @@ mod project {
                     <button
                         type="button"
                         on:mousedown=select_path
-                        class="aspect-square p-1 rounded-sm border border-black dark:border-white"
+                        class="aspect-square p-1 rounded-xs border border-black dark:border-white"
                     >
                         <Icon icon=icondata::FaFolderOpenRegular />
                     </button>
@@ -587,7 +587,7 @@ mod project {
                     <button
                         type="button"
                         on:mousedown=select_path
-                        class="aspect-square p-1 rounded-sm border border-black dark:border-white"
+                        class="aspect-square p-1 rounded-xs border border-black dark:border-white"
                     >
                         <Icon icon=icondata::FaFolderOpenRegular />
                     </button>
